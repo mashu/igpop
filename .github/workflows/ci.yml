@@ -37,3 +37,15 @@ jobs:
           key: web
       - run: cargo clippy -p igpop-web --target wasm32-unknown-unknown -- -D warnings
       - run: node --check web/static/app.js && node --check web/static/worker.js
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - run: wasm-pack build web --target web --release --no-typescript --out-dir pkg
+      - name: Assemble the app
+        run: |
+          mkdir -p app/pkg
+          cp web/static/* app/
+          cp web/pkg/*.js web/pkg/*.wasm app/pkg/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-app
+          path: app
+          retention-days: 7
