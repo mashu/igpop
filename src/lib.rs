@@ -199,206 +199,255 @@ pub struct Output {
     pub warnings: Vec<String>,
 }
 
+/// A run in two halves, for programs that can download concurrently:
+/// after `start` (loci and placement) they may fetch `downloads()` ahead,
+/// before `finish` reads the population data and judges the alleles.
+pub struct Session<'a> {
+    config: &'a Config,
+    build: String,
+    coords_label: String,
+    /// Genes whose coordinates are on another build.
+    elsewhere: HashMap<String, String>,
+    windows: Vec<locus::Window>,
+    placed: Vec<Placed>,
+    sources: Sources,
+}
+
+/// One whole run.
 pub fn run(config: &Config) -> Result<Output> {
-    config.check()?;
-    let build = io::normalise_build(&config.build);
-    let defaults = defaults(&build);
+    Session::start(config)?.finish()
+}
 
-    // Step 1: loci and placement.
-    let (all_coords, coords_label) = match &config.coords {
-        Some(text) => (io::parse_coords(&text.content, &text.name)?, format!("`{}`", text.name)),
-        None => (
-            io::parse_coords(BUILTIN_COORDS, "built-in coordinates")?,
-            "built-in human IGH table".to_string(),
-        ),
-    };
-    // Genes whose coordinates are on another build, to say so in the report.
-    let elsewhere: HashMap<String, String> = all_coords
-        .iter()
-        .filter(|c| c.build != build)
-        .map(|c| (c.gene.clone(), c.build.clone()))
-        .collect();
-    let coords: Vec<io::Coord> = all_coords.into_iter().filter(|c| c.build == build).collect();
-    if coords.is_empty() {
-        bail!("no coordinate rows for build '{build}'");
-    }
-    let Some(reference_spec) = config.reference.clone().or(defaults.as_ref().map(|d| d.reference.to_string())) else {
-        bail!("no default reference for build '{build}'; give one");
-    };
-    note!("reference: {reference_spec}");
-    let windows = locus::load_windows(coords, &mut io::Reference::open(&reference_spec)?, config.flank)?;
-    note!(
-        "{} loci on {build} ({} genes on other builds skipped)",
-        windows.len(),
-        elsewhere.len()
-    );
+impl<'a> Session<'a> {
+    /// Step 1: loci and placement.
+    pub fn start(config: &'a Config) -> Result<Self> {
+        config.check()?;
+        let build = io::normalise_build(&config.build);
+        let defaults = defaults(&build);
 
-    let aliases = match &config.aliases {
-        Some(text) => locus::parse_aliases(&text.content, &text.name)?,
-        None if config.coords.is_none() => locus::parse_aliases(BUILTIN_ALIASES, "built-in aliases")?,
-        None => HashMap::new(),
-    };
-    let options = locus::PlaceOptions {
-        min_identity: config.min_identity,
-        paralog_check: config.paralog_check,
-        scoring: align::Scoring::default(),
-    };
-    let alleles = io::parse_fasta(&config.alleles.content);
-    if alleles.is_empty() {
-        bail!("{} holds no FASTA records", config.alleles.name);
-    }
-    note!("aligning {} alleles", alleles.len());
-    let mut placed = locus::place_all(&alleles, &windows, &aliases, &options)?;
-    placed.sort_by(|a, b| a.allele.cmp(&b.allele));
-
-    // Step 2: population evidence.
-    let default = |pick: fn(&Defaults) -> Option<&'static str>| defaults.as_ref().and_then(pick);
-    let sources = Sources {
-        kgp: config.kgp.resolve(default(|d| d.kgp)),
-        gnomad: config.gnomad.resolve(default(|d| d.gnomad)),
-        dbsnp: config.dbsnp.resolve(default(|d| d.dbsnp)),
-        phased: config.phased.resolve(default(|d| d.phased)),
-        pedigree: config.pedigree.clone().unwrap_or_else(|| DEFAULT_PEDIGREE.to_string()),
-        dbsnp_exclude: config.dbsnp_exclude.clone(),
-        common: config.limits.common,
-    };
-    let ev = Evidence::load(sources, &windows, &placed, fetch::Cache(config.cache_dir.as_deref()))?;
-
-    // Step 3: calibration and assessment.
-    let trusted_names: Option<HashSet<&str>> = config.trusted.as_ref().map(|text| {
-        text.lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty() && !l.starts_with('#'))
-            .collect()
-    });
-    let is_trusted = |p: &Placed| match &trusted_names {
-        Some(names) => names.contains(p.allele.as_str()),
-        None => !p.allele.contains(&config.candidate_marker),
-    };
-    // The haplotype check comes first: it also tells which alleles are
-    // real beyond the named trusted ones.
-    let haplotypes = HaplotypeCheck::new(&ev, &windows, &placed);
-    let checked: Vec<AlleleHaplotype> = placed
-        .iter()
-        .enumerate()
-        .map(|(i, p)| haplotypes.of(i, p.variants.len(), config.limits.coincidence))
-        .collect();
-    // The yardstick for the score: cleanly placed alleles that are named
-    // as trusted, or whose two or more differences are established
-    // together as a haplotype.
-    let yardstick: Vec<Yardstick> = placed
-        .iter()
-        .zip(&checked)
-        .map(|(p, haplotype)| match p.status {
-            Status::Ok if is_trusted(p) => Yardstick::Named,
-            Status::Ok if haplotype.support.is_some() && p.variants.len() >= 2 => Yardstick::Haplotype,
-            _ => Yardstick::No,
-        })
-        .collect();
-    let calibrating: Vec<(&Placed, Yardstick)> = placed
-        .iter()
-        .zip(&yardstick)
-        .filter(|(_, y)| **y != Yardstick::No)
-        .map(|(p, y)| (p, *y))
-        .collect();
-    let calibration = config.calibration.as_ref().map(|t| (t.content.as_str(), t.name.as_str()));
-    let model = ScoreModel::new(&ev, &windows, &calibrating, calibration)?;
-    if model.calibration.is_some() {
-        note!("score: calibrated from {}", model.description.replace('`', ""));
-    }
-    let judge = assess::Judge {
-        ev: &ev,
-        model: &model,
-        limits: &config.limits,
-    };
-    let results: Vec<AlleleResult> = placed
-        .iter()
-        .zip(checked)
-        .enumerate()
-        .map(|(i, (p, haplotype))| {
-            let other_build = elsewhere.get(&p.gene).map(String::as_str);
-            assess::assess_allele(&judge, p, is_trusted(p), yardstick[i], haplotype, other_build)
-        })
-        .collect();
-
-    // Step 4: tables and report.
-    let variant_rows: Vec<tables::VariantRow> = results
-        .iter()
-        .flat_map(|allele| {
-            allele
-                .variants
-                .iter()
-                .zip(&allele.placed.variants)
-                .map(|(v, called)| tables::VariantRow {
-                    ev: &ev,
-                    allele,
-                    called,
-                    v,
-                    prior: config.prior,
-                })
-        })
-        .collect();
-    let (requests, bytes) = net::totals();
-    let summary_input = report::Input {
-        prefix: &config.prefix,
-        build: &build,
-        alleles: config.alleles.name.clone(),
-        coords: coords_label,
-        prior: config.prior,
-        limits: &config.limits,
-        results: &results,
-        ev: &ev,
-        model: &model,
-        haplotypes: &haplotypes,
-        requests,
-        bytes,
-    };
-    let alleles_table = tables::alleles_table();
-    let mut files = vec![
-        ("report.md", report::render(&summary_input)),
-        ("final.tsv", alleles_table.render(results.iter().filter(|r| r.verdict.passes()))),
-        ("alleles.tsv", alleles_table.render(&results)),
-        ("variants.tsv", tables::variants_table().render(&variant_rows)),
-        ("alignments.tsv", tables::alignments_table(&build).render(&placed)),
-        ("alignments.txt", tables::alignments_text(&build, &windows, &placed)?),
-    ];
-    if ev.counted() {
-        files.push(("score_calibration.tsv", tables::calibration_table(&model)?));
-    }
-    if !ev.dbsnp.datasets.is_empty() {
-        files.push(("dbsnp_datasets.tsv", tables::datasets_table(&ev)?));
-    }
-    if haplotypes.coincidence.is_some() {
-        files.push((
-            "haplotype_calibration.tsv",
-            tables::haplotype_table(&haplotypes, config.limits.coincidence)?,
-        ));
-    }
-
-    let mut summary = Vec::new();
-    if requests > 0 {
-        summary.push(format!("downloaded {:.2} MB in {requests} requests", bytes as f64 / 1e6));
-    }
-    let count = |status: Status| placed.iter().filter(|p| p.status == status).count();
-    summary.push(format!(
-        "{} alleles: {}",
-        placed.len(),
-        Status::ALL
+        // Step 1: loci and placement.
+        let (all_coords, coords_label) = match &config.coords {
+            Some(text) => (io::parse_coords(&text.content, &text.name)?, format!("`{}`", text.name)),
+            None => (
+                io::parse_coords(BUILTIN_COORDS, "built-in coordinates")?,
+                "built-in human IGH table".to_string(),
+            ),
+        };
+        // Genes whose coordinates are on another build, to say so in the report.
+        let elsewhere: HashMap<String, String> = all_coords
             .iter()
-            .map(|s| format!("{} {}", count(*s), s.as_str()))
-            .collect::<Vec<_>>()
-            .join(", ")
-    ));
-    let tally: Vec<String> = report::VERDICTS
-        .iter()
-        .map(|v| (v, results.iter().filter(|r| r.verdict == *v).count()))
-        .filter(|(_, k)| *k > 0)
-        .map(|(v, k)| format!("{k} {}", v.as_str()))
-        .collect();
-    summary.push(format!("verdicts: {}", tally.join(", ")));
-    Ok(Output {
-        files,
-        summary,
-        warnings: report::warnings(&summary_input),
-    })
+            .filter(|c| c.build != build)
+            .map(|c| (c.gene.clone(), c.build.clone()))
+            .collect();
+        let coords: Vec<io::Coord> = all_coords.into_iter().filter(|c| c.build == build).collect();
+        if coords.is_empty() {
+            bail!("no coordinate rows for build '{build}'");
+        }
+        let Some(reference_spec) = config.reference.clone().or(defaults.as_ref().map(|d| d.reference.to_string())) else {
+            bail!("no default reference for build '{build}'; give one");
+        };
+        note!("reference: {reference_spec}");
+        let windows = locus::load_windows(coords, &mut io::Reference::open(&reference_spec)?, config.flank)?;
+        note!(
+            "{} loci on {build} ({} genes on other builds skipped)",
+            windows.len(),
+            elsewhere.len()
+        );
+
+        let aliases = match &config.aliases {
+            Some(text) => locus::parse_aliases(&text.content, &text.name)?,
+            None if config.coords.is_none() => locus::parse_aliases(BUILTIN_ALIASES, "built-in aliases")?,
+            None => HashMap::new(),
+        };
+        let options = locus::PlaceOptions {
+            min_identity: config.min_identity,
+            paralog_check: config.paralog_check,
+            scoring: align::Scoring::default(),
+        };
+        let alleles = io::parse_fasta(&config.alleles.content);
+        if alleles.is_empty() {
+            bail!("{} holds no FASTA records", config.alleles.name);
+        }
+        note!("aligning {} alleles", alleles.len());
+        let mut placed = locus::place_all(&alleles, &windows, &aliases, &options)?;
+        placed.sort_by(|a, b| a.allele.cmp(&b.allele));
+
+        // Where the population data of step 2 is read from.
+        let default = |pick: fn(&Defaults) -> Option<&'static str>| defaults.as_ref().and_then(pick);
+        let sources = Sources {
+            kgp: config.kgp.resolve(default(|d| d.kgp)),
+            gnomad: config.gnomad.resolve(default(|d| d.gnomad)),
+            dbsnp: config.dbsnp.resolve(default(|d| d.dbsnp)),
+            phased: config.phased.resolve(default(|d| d.phased)),
+            pedigree: config.pedigree.clone().unwrap_or_else(|| DEFAULT_PEDIGREE.to_string()),
+            dbsnp_exclude: config.dbsnp_exclude.clone(),
+            common: config.limits.common,
+        };
+        Ok(Session {
+            config,
+            build,
+            coords_label,
+            elsewhere,
+            windows,
+            placed,
+            sources,
+        })
+    }
+
+    /// The tabix-indexed files `finish` will read, with their regions.
+    pub fn downloads(&self) -> Vec<evidence::Download> {
+        evidence::downloads(&self.sources, &self.windows, &self.placed)
+    }
+
+    /// Steps 2 to 4: population evidence, assessment, tables and report.
+    pub fn finish(self) -> Result<Output> {
+        let Session {
+            config,
+            build,
+            coords_label,
+            elsewhere,
+            windows,
+            placed,
+            sources,
+        } = self;
+        let ev = Evidence::load(sources, &windows, &placed, fetch::Cache(config.cache_dir.as_deref()))?;
+
+        // Step 3: calibration and assessment.
+        let trusted_names: Option<HashSet<&str>> = config.trusted.as_ref().map(|text| {
+            text.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .collect()
+        });
+        let is_trusted = |p: &Placed| match &trusted_names {
+            Some(names) => names.contains(p.allele.as_str()),
+            None => !p.allele.contains(&config.candidate_marker),
+        };
+        // The haplotype check comes first: it also tells which alleles are
+        // real beyond the named trusted ones.
+        let haplotypes = HaplotypeCheck::new(&ev, &windows, &placed);
+        let checked: Vec<AlleleHaplotype> = placed
+            .iter()
+            .enumerate()
+            .map(|(i, p)| haplotypes.of(i, p.variants.len(), config.limits.coincidence))
+            .collect();
+        // The yardstick for the score: cleanly placed alleles that are named
+        // as trusted, or whose two or more differences are established
+        // together as a haplotype.
+        let yardstick: Vec<Yardstick> = placed
+            .iter()
+            .zip(&checked)
+            .map(|(p, haplotype)| match p.status {
+                Status::Ok if is_trusted(p) => Yardstick::Named,
+                Status::Ok if haplotype.support.is_some() && p.variants.len() >= 2 => Yardstick::Haplotype,
+                _ => Yardstick::No,
+            })
+            .collect();
+        let calibrating: Vec<(&Placed, Yardstick)> = placed
+            .iter()
+            .zip(&yardstick)
+            .filter(|(_, y)| **y != Yardstick::No)
+            .map(|(p, y)| (p, *y))
+            .collect();
+        let calibration = config.calibration.as_ref().map(|t| (t.content.as_str(), t.name.as_str()));
+        let model = ScoreModel::new(&ev, &windows, &calibrating, calibration)?;
+        if model.calibration.is_some() {
+            note!("score: calibrated from {}", model.description.replace('`', ""));
+        }
+        let judge = assess::Judge {
+            ev: &ev,
+            model: &model,
+            limits: &config.limits,
+        };
+        let results: Vec<AlleleResult> = placed
+            .iter()
+            .zip(checked)
+            .enumerate()
+            .map(|(i, (p, haplotype))| {
+                let other_build = elsewhere.get(&p.gene).map(String::as_str);
+                assess::assess_allele(&judge, p, is_trusted(p), yardstick[i], haplotype, other_build)
+            })
+            .collect();
+
+        // Step 4: tables and report.
+        let variant_rows: Vec<tables::VariantRow> = results
+            .iter()
+            .flat_map(|allele| {
+                allele
+                    .variants
+                    .iter()
+                    .zip(&allele.placed.variants)
+                    .map(|(v, called)| tables::VariantRow {
+                        ev: &ev,
+                        allele,
+                        called,
+                        v,
+                        prior: config.prior,
+                    })
+            })
+            .collect();
+        let (requests, bytes) = net::totals();
+        let summary_input = report::Input {
+            prefix: &config.prefix,
+            build: &build,
+            alleles: config.alleles.name.clone(),
+            coords: coords_label,
+            prior: config.prior,
+            limits: &config.limits,
+            results: &results,
+            ev: &ev,
+            model: &model,
+            haplotypes: &haplotypes,
+            requests,
+            bytes,
+        };
+        let alleles_table = tables::alleles_table();
+        let mut files = vec![
+            ("report.md", report::render(&summary_input)),
+            ("final.tsv", alleles_table.render(results.iter().filter(|r| r.verdict.passes()))),
+            ("alleles.tsv", alleles_table.render(&results)),
+            ("variants.tsv", tables::variants_table().render(&variant_rows)),
+            ("alignments.tsv", tables::alignments_table(&build).render(&placed)),
+            ("alignments.txt", tables::alignments_text(&build, &windows, &placed)?),
+        ];
+        if ev.counted() {
+            files.push(("score_calibration.tsv", tables::calibration_table(&model)?));
+        }
+        if !ev.dbsnp.datasets.is_empty() {
+            files.push(("dbsnp_datasets.tsv", tables::datasets_table(&ev)?));
+        }
+        if haplotypes.coincidence.is_some() {
+            files.push((
+                "haplotype_calibration.tsv",
+                tables::haplotype_table(&haplotypes, config.limits.coincidence)?,
+            ));
+        }
+
+        let mut summary = Vec::new();
+        if requests > 0 {
+            summary.push(format!("downloaded {:.2} MB in {requests} requests", bytes as f64 / 1e6));
+        }
+        let count = |status: Status| placed.iter().filter(|p| p.status == status).count();
+        summary.push(format!(
+            "{} alleles: {}",
+            placed.len(),
+            Status::ALL
+                .iter()
+                .map(|s| format!("{} {}", count(*s), s.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        let tally: Vec<String> = report::VERDICTS
+            .iter()
+            .map(|v| (v, results.iter().filter(|r| r.verdict == *v).count()))
+            .filter(|(_, k)| *k > 0)
+            .map(|(v, k)| format!("{k} {}", v.as_str()))
+            .collect();
+        summary.push(format!("verdicts: {}", tally.join(", ")));
+        Ok(Output {
+            files,
+            summary,
+            warnings: report::warnings(&summary_input),
+        })
+    }
 }

@@ -205,8 +205,8 @@ function display(files, warnings, summary = []) {
 
   const candidates = state.alleles.filter(isCandidate).length;
   $('results-title').textContent = `Results for ${state.prefix}`;
-  const fromStore = summary.find((line) => line.includes("browser's store"));
-  $('results-sub').textContent = `${state.alleles.length} alleles: ${candidates} candidates and ${state.alleles.length - candidates} trusted alleles.${fromStore ? ` ${fromStore[0].toUpperCase()}${fromStore.slice(1)}.` : ''}`;
+  const traffic = summary.find((line) => line.includes("browser's store"));
+  $('results-sub').textContent = `${state.alleles.length} alleles: ${candidates} candidates and ${state.alleles.length - candidates} trusted alleles.${traffic ? ` ${traffic}.` : ''}`;
   renderTiles();
   renderWarnings(warnings);
   renderFilters();
@@ -365,6 +365,71 @@ function alleleDetail(allele) {
   return parts;
 }
 
+// ---- explaining the score --------------------------------------------------
+
+/** Shows `content` next to `trigger` on hover, keyboard focus or tap.
+ *  The explanation is placed on the page, not inside the table, so that a
+ *  scrolling table cannot cut it off. */
+function explain(trigger, content) {
+  explain.count = (explain.count || 0) + 1;
+  const tip = el('span', { class: 'hint-text', role: 'tooltip', id: `hint-${explain.count}` }, content);
+  trigger.setAttribute('aria-describedby', tip.id);
+  const show = () => {
+    tip.classList.add('open');
+    const at = trigger.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const left = Math.min(Math.max(8, at.left + at.width / 2 - width / 2), window.innerWidth - width - 8);
+    const below = at.bottom + 8 + tip.offsetHeight < window.innerHeight;
+    tip.style.left = `${left}px`;
+    tip.style.top = below ? `${at.bottom + 8}px` : `${Math.max(8, at.top - 8 - tip.offsetHeight)}px`;
+  };
+  const hide = () => tip.classList.remove('open');
+  for (const type of ['mouseenter', 'focus']) trigger.addEventListener(type, show);
+  for (const type of ['mouseleave', 'blur']) trigger.addEventListener(type, hide);
+  trigger.addEventListener('keydown', (event) => { if (event.key === 'Escape') hide(); });
+  return el('span', { class: 'hint' }, trigger, tip);
+}
+
+/** A small "?" with an explanation. */
+function hint(label, content) {
+  return explain(el('button', { type: 'button', class: 'hint-button', 'aria-label': label, text: '?' }), content);
+}
+
+/** What a score of this size means, in a few words. */
+function scoreWords(score) {
+  if (score >= 10) return 'typical of real variants';
+  if (score >= 3) return 'speaks for a real variant';
+  if (score > 1 / 3) return 'says little either way';
+  if (score > 0.1) return 'speaks against';
+  return 'typical of arbitrary changes';
+}
+
+const times = (score) => (score >= 1
+  ? `${score >= 10 ? Math.round(score) : score.toFixed(1)} times more often among real variants`
+  : `${Math.round(1 / score)} times more often among arbitrary changes`);
+
+/** The score explained, with the levels of this run's calibration. */
+function scoreHint() {
+  const rows = state.files['score_calibration.tsv'] ? parseTSV(state.files['score_calibration.tsv']).filter((r) => given(r.score)) : [];
+  const levels = { none: 'never seen', '>=10%': 'seen in 10% or more of a population' };
+  const brief = (score) => (score >= 10 ? Math.round(score) : score >= 1 ? score.toFixed(1) : Number(score.toPrecision(2)));
+  // Levels with the same score are one line.
+  const lines = [];
+  for (const row of rows.reverse()) {
+    const name = levels[row.support] || `seen in ${row.support.replace('<', 'under ').replace('-', ' to ')}`;
+    const last = lines[lines.length - 1];
+    if (last && last.score === row.score) last.names.push(name);
+    else lines.push({ score: row.score, names: [name] });
+  }
+  return el('span', {},
+    el('b', { text: 'How to read the score' }),
+    el('span', { text: 'Take all variants seen as often as this one. The score says how much more often such a variant belongs to a real allele than is an arbitrary base change (what an error would give).' }),
+    lines.length ? el('span', { class: 'hint-table' }, lines.map((line) => el('span', {},
+      el('b', { text: brief(Number(line.score)) }),
+      el('span', { text: `${line.names.reverse().join(', or ')}: ${scoreWords(Number(line.score))}` })))) : null,
+    el('span', { text: '10 or more counts as supported, 0.1 or less as needing confirmation. Around 1 the frequency cannot tell.' }));
+}
+
 // ---- variants: one row each, with a frequency strip -------------------------
 
 const LOG_MIN = -6; // strip runs from 1 in a million to 100%
@@ -433,14 +498,25 @@ function variantTable(variants) {
   return el('div', { class: 'scroll' }, el('table', { class: 'variants' },
     el('caption', { text: 'Differences from the reference genome' }),
     el('thead', {}, el('tr', {},
-      ...['Variant', 'Position in allele', 'Verdict by frequency', 'Why', 'Score (likelihood ratio)', 'Frequency, 1 per million to 100% (log scale)'].map((h) => el('th', { scope: 'col', text: h })))),
+      ...['Variant', 'Position in allele', 'Verdict by frequency', 'Why'].map((h) => el('th', { scope: 'col', text: h })),
+      el('th', { scope: 'col' }, 'Score ', hint('What the score means', scoreHint())),
+      el('th', { scope: 'col', text: 'Frequency, 1 per million to 100% (log scale)' }))),
     el('tbody', {}, variants.map((v) => el('tr', {},
       el('th', { scope: 'row' }, rsLink(v), el('small', { text: ` ${change(v)}, ${v.contig}:${v.genome_pos}` })),
       el('td', { text: v.aln_pos }),
       el('td', {}, badge(v.verdict)),
       el('td', {}, chips(v.filters)),
-      el('td', { class: 'num', text: given(v.score) ? Number(v.score).toFixed(v.score < 1 ? 3 : 1) : '–' }),
+      scoreCell(v),
       el('td', {}, strip(v)))))));
+}
+
+function scoreCell(v) {
+  if (!given(v.score)) return el('td', { class: 'num', text: '–', title: 'Insertions and deletions have no score.' });
+  const score = Number(v.score);
+  const text = score < 1 ? score.toFixed(3) : score.toFixed(1);
+  return el('td', { class: 'num' }, explain(el('span', { class: 'hint-value', tabindex: '0', text }), el('span', {},
+    el('b', { text: `${text}: ${scoreWords(score)}` }),
+    el('span', { text: `Variants seen as often as this one occur ${times(score)}.` }))));
 }
 
 // ---- haplotype check -----------------------------------------------------

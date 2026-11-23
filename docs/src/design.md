@@ -18,6 +18,14 @@ text and returns its outputs as text. Two programs use it:
 | Command line | `src/main.rs` (feature `cli`) | options, reading and writing files, blocking HTTP (`ureq`), threads (`rayon`) |
 | Web app | `web/` (crate `igpop-web`, WebAssembly) and `web/static/` (the page) | HTTP through the browser, progress messages to the page |
 
+A run can also be taken in two halves (`Session::start`, then
+`Session::finish`), with `Session::downloads` in between naming the files
+and regions the second half will read. The web app uses this to download
+them ahead, three at a time per server (`web/src/ahead.rs`): the reader of
+a region (`tabix::Reader`) does no I/O itself, it says which bytes it needs
+and is fed them, so it asks for exactly the same bytes when downloading
+ahead as during the analysis, which then finds them already there.
+
 The library itself has no network or thread dependency: the transport is
 registered through `net::set_transport`, progress goes through
 `log::set_sink`, and `par::map` runs in parallel only with the `cli`

@@ -1,75 +1,36 @@
-//! igpop for the browser. The page runs this module in a Web Worker:
-//! `run` blocks until the analysis is done, reads remote data with
-//! synchronous requests (allowed in workers) and reports progress through
-//! a JavaScript callback.
+//! igpop for the browser. The page runs this module in a Web Worker.
+//!
+//! A run has three parts. `Session::start` places the alleles. Then the
+//! regions the run will need are downloaded ahead, several at a time
+//! (`ahead`). Then `Session::finish` does the analysis; it reads its data
+//! with blocking requests (allowed in workers), and finds what was
+//! downloaded ahead already there. If downloading ahead fails, the
+//! analysis still works, one request at a time.
 //!
 //! Downloaded pieces are kept in a store the page provides (`store.js`),
 //! so later runs need little downloading. A piece is stored under the
-//! file's `Last-Modified` date: the first request to each file in a run
-//! always goes to the server and tells whether the file has changed, in
-//! which case its old pieces are simply no longer found.
+//! file's `Last-Modified` date, which each run asks the server for once:
+//! pieces of a file that has changed are simply no longer found.
 //!
 //! Only data hosts that allow cross-origin requests can be read from a
 //! browser. The reference, 1000 Genomes and dbSNP hosts do; the gnomAD
 //! bucket does not, so the web app runs without reading gnomAD directly
 //! (dbSNP still relays gnomAD's overall frequencies).
 
+mod ahead;
+
 use anyhow::anyhow;
-use igpop::{Choice, Config, Text};
+use igpop::{Choice, Config, Session, Text};
 use js_sys::{Array, Function, Object, Reflect, Uint8Array};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use wasm_bindgen::prelude::*;
 use web_sys::{XmlHttpRequest, XmlHttpRequestResponseType};
 
 thread_local! {
     /// Where progress messages go during a run.
     static PROGRESS: RefCell<Option<Function>> = const { RefCell::new(None) };
-}
-
-/// The page's store of downloaded pieces, and what this run learned about
-/// the files it read.
-#[derive(Default)]
-struct Kept {
-    /// Object with `get(key) -> Uint8Array | undefined` and `put(key, bytes)`.
-    store: Option<Object>,
-    /// Per file read in this run: its `Last-Modified` date, or `None` if
-    /// the server gave none (such a file is not stored).
-    versions: HashMap<String, Option<String>>,
-    /// Requests answered from the store, and their bytes.
-    hits: (u64, u64),
-}
-
-thread_local! {
     static KEPT: RefCell<Kept> = RefCell::new(Kept::default());
-}
-
-impl Kept {
-    fn key(&self, url: &str, range: Option<&str>) -> Option<String> {
-        let version = self.versions.get(url)?.as_ref()?;
-        Some(format!("{url}\n{version}\n{}", range.unwrap_or("all")))
-    }
-
-    fn get(&mut self, url: &str, range: Option<&str>) -> Option<Vec<u8>> {
-        let key = self.key(url, range)?;
-        let get: Function = Reflect::get(self.store.as_ref()?, &"get".into()).ok()?.dyn_into().ok()?;
-        let found = get.call1(self.store.as_ref()?, &key.into()).ok()?;
-        if found.is_undefined() || found.is_null() {
-            return None;
-        }
-        let bytes = Uint8Array::new(&found).to_vec();
-        self.hits = (self.hits.0 + 1, self.hits.1 + bytes.len() as u64);
-        Some(bytes)
-    }
-
-    fn put(&self, url: &str, range: Option<&str>, bytes: &[u8]) {
-        let (Some(key), Some(store)) = (self.key(url, range), self.store.as_ref()) else {
-            return;
-        };
-        if let Some(put) = Reflect::get(store, &"put".into()).ok().and_then(|f| f.dyn_into::<Function>().ok()) {
-            let _ = put.call2(store, &key.into(), &Uint8Array::from(bytes));
-        }
-    }
 }
 
 fn progress(message: &str) {
@@ -80,8 +41,82 @@ fn progress(message: &str) {
     });
 }
 
-/// One synchronous GET; `Err` is a network failure (including a blocked
-/// cross-origin request), not an HTTP error status.
+/// Downloaded pieces: the page's store, which lasts between visits, and
+/// what this run learned about the files it read.
+#[derive(Default)]
+struct Kept {
+    /// Object with `get(key) -> Uint8Array | undefined` and `put(key, bytes)`.
+    store: Option<Object>,
+    /// Per file read in this run: its `Last-Modified` date, or `None` if
+    /// the server gave none (such a file is not stored between visits).
+    versions: HashMap<String, Option<String>>,
+    /// Pieces downloaded ahead that could not go into the store.
+    memory: HashMap<String, Vec<u8>>,
+    /// Names of the store's pieces this run wrote or has already counted.
+    seen: HashSet<String>,
+    /// Bytes read from pieces that were in the store before this run.
+    reused: u64,
+}
+
+impl Kept {
+    /// The name of a piece in the store: file, version, byte range.
+    fn stored_as(&self, url: &str, range: Option<&str>) -> Option<String> {
+        let version = self.versions.get(url)?.as_ref()?;
+        Some(format!("{url}\n{version}\n{}", range.unwrap_or("all")))
+    }
+
+    fn in_memory_as(url: &str, range: Option<&str>) -> String {
+        format!("{url}\n{}", range.unwrap_or("all"))
+    }
+
+    fn method(&self, name: &str) -> Option<(&Object, Function)> {
+        let store = self.store.as_ref()?;
+        Some((store, Reflect::get(store, &name.into()).ok()?.dyn_into().ok()?))
+    }
+
+    fn get(&mut self, url: &str, range: Option<&str>) -> Option<Vec<u8>> {
+        if let Some(bytes) = self.memory.get(&Self::in_memory_as(url, range)) {
+            return Some(bytes.clone());
+        }
+        let key = self.stored_as(url, range)?;
+        let (store, get) = self.method("get")?;
+        let found = get.call1(store, &key.as_str().into()).ok()?;
+        if found.is_undefined() || found.is_null() {
+            return None;
+        }
+        let bytes = Uint8Array::new(&found).to_vec();
+        // Counted once, however often the piece is read in this run.
+        if self.seen.insert(key) {
+            self.reused += bytes.len() as u64;
+        }
+        Some(bytes)
+    }
+
+    fn put(&mut self, url: &str, range: Option<&str>, bytes: &[u8]) {
+        match (self.stored_as(url, range), self.method("put")) {
+            (Some(key), Some((store, put))) => {
+                let _ = put.call2(store, &key.as_str().into(), &Uint8Array::from(bytes));
+                self.seen.insert(key);
+            }
+            _ => {
+                self.memory.insert(Self::in_memory_as(url, range), bytes.to_vec());
+            }
+        }
+    }
+}
+
+/// The status a successful request has: 206 for a range, 200 for a file.
+fn success(range: Option<&str>) -> u16 {
+    if range.is_some() {
+        206
+    } else {
+        200
+    }
+}
+
+/// One blocking GET; `Err` is a network failure (including a blocked
+/// cross-origin request), not an HTTP error status. Also returns the
+/// file's `Last-Modified` date.
 fn get_once(url: &str, range: Option<&str>) -> Result<(igpop::net::Response, Option<String>), JsValue> {
     let request = XmlHttpRequest::new()?;
     request.open_with_async("GET", url, false)?;
@@ -97,17 +132,16 @@ fn get_once(url: &str, range: Option<&str>) -> Result<(igpop::net::Response, Opt
     } else {
         Uint8Array::new(&body).to_vec()
     };
+    igpop::net::record(bytes.len());
     Ok(((status, bytes), request.get_response_header("Last-Modified")?))
 }
 
-/// The transport igpop uses in the browser: from the store if the piece
-/// is there, otherwise from the server (and then into the store). A failed
-/// request is tried three times; servers occasionally drop a connection.
+/// The transport igpop uses in the browser: a kept piece if there is one,
+/// otherwise from the server (and then kept). A failed request is tried
+/// three times; servers occasionally drop a connection.
 fn transport(url: &str, range: Option<&str>) -> anyhow::Result<igpop::net::Response> {
-    // A successful response: 206 for a range, 200 for a whole file.
-    let wanted = if range.is_some() { 206 } else { 200 };
     if let Some(bytes) = KEPT.with(|kept| kept.borrow_mut().get(url, range)) {
-        return Ok((wanted, bytes));
+        return Ok((success(range), bytes));
     }
     let mut last = JsValue::UNDEFINED;
     for _ in 0..3 {
@@ -119,7 +153,7 @@ fn transport(url: &str, range: Option<&str>) -> anyhow::Result<igpop::net::Respo
                 KEPT.with(|kept| {
                     let mut kept = kept.borrow_mut();
                     kept.versions.entry(url.to_string()).or_insert(modified);
-                    if response.0 == wanted {
+                    if response.0 == success(range) {
                         kept.put(url, range, &response.1);
                     }
                 });
@@ -158,15 +192,15 @@ pub fn version() -> String {
 
 /// Analyse the alleles of one FASTA text.
 ///
-/// Returns `{ files: { "<name>": "<content>", ... }, summary: [...],
+/// Resolves to `{ files: { "<name>": "<content>", ... }, summary: [...],
 /// warnings: [...] }`, the same files the command-line program writes.
 /// `on_progress` is called with one line of text at a time.
 #[wasm_bindgen]
-pub fn run(
-    fasta: &str,
-    fasta_name: &str,
-    build: &str,
-    candidate_marker: &str,
+pub async fn run(
+    fasta: String,
+    fasta_name: String,
+    build: String,
+    candidate_marker: String,
     haplotypes: bool,
     paralog_check: bool,
     on_progress: Function,
@@ -178,15 +212,18 @@ pub fn run(
     KEPT.with(|kept| {
         let mut kept = kept.borrow_mut();
         kept.versions.clear();
-        kept.hits = (0, 0);
+        kept.memory.clear();
+        kept.seen.clear();
+        kept.reused = 0;
     });
+    let (_, before) = igpop::net::totals();
 
     let mut config = Config::new(Text {
-        name: fasta_name.to_string(),
-        content: fasta.to_string(),
+        name: fasta_name,
+        content: fasta,
     });
-    config.build = build.to_string();
-    config.candidate_marker = candidate_marker.to_string();
+    config.build = build;
+    config.candidate_marker = candidate_marker;
     config.paralog_check = paralog_check;
     config.gnomad = Choice::Off;
     if !haplotypes {
@@ -194,16 +231,24 @@ pub fn run(
     }
     config.prefix = "igpop".to_string();
 
-    let result = igpop::run(&config);
+    let failed = |e: anyhow::Error| JsValue::from_str(&format!("{e:#}"));
+    let session = Session::start(&config).map_err(failed)?;
+    ahead::download(session.downloads()).await;
+    let result = session.finish();
     PROGRESS.with(|slot| *slot.borrow_mut() = None);
-    let mut output = result.map_err(|e| JsValue::from_str(&format!("{e:#}")))?;
-    let (hits, bytes) = KEPT.with(|kept| kept.borrow().hits);
-    if hits > 0 {
-        output.summary.push(format!(
-            "{hits} requests ({:.1} MB) were answered from this browser's store",
-            bytes as f64 / 1e6
-        ));
-    }
+    let reused = KEPT.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        kept.memory.clear();
+        kept.reused
+    });
+    let mut output = result.map_err(failed)?;
+    let downloaded = igpop::net::totals().1 - before;
+    output.summary.retain(|line| !line.starts_with("downloaded"));
+    output.summary.push(format!(
+        "{:.1} MB downloaded, {:.1} MB taken from this browser's store",
+        downloaded as f64 / 1e6,
+        reused as f64 / 1e6
+    ));
 
     let files = Object::new();
     for (name, content) in &output.files {

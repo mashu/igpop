@@ -1,6 +1,6 @@
 [package]
 name = "igpop-web"
-version = "0.12.1"
+version = "0.13.0"
 edition = "2021"
 description = "igpop compiled to WebAssembly for the browser app"
 license = "MIT"
@@ -12,10 +12,21 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1"
+futures = "0.3"
 igpop = { path = "..", default-features = false }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["XmlHttpRequest", "XmlHttpRequestResponseType"] }
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Headers",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "WorkerGlobalScope",
+    "XmlHttpRequest",
+    "XmlHttpRequestResponseType",
+] }
 
 # The wasm-opt that wasm-pack downloads cannot read the module current Rust
 # produces (reference types); the release profile already optimises.

@@ -20,7 +20,7 @@ inside your browser tab:
 |---|---|
 | Tiles | Number of alleles per verdict. Click one to filter the list. |
 | Allele list | One line per allele, grouped by gene: verdict, the reasons it did not pass in plain words, the haplotype check. Search and filters above. |
-| An opened allele | Every difference from the reference with its verdict, score and a frequency strip: one mark per population on a scale from one in a million to 100%, with the 1% line. Below: the haplotype check as bars per superpopulation, and the alignment of the gene with this allele highlighted. |
+| An opened allele | Every difference from the reference with its verdict, score (hover over a score, or the `?` beside the column title, for what it means in this run) and a frequency strip: one mark per population on a scale from one in a million to 100%, with the 1% line. Below: the haplotype check as bars per superpopulation, and the alignment of the gene with this allele highlighted. |
 | Score and checks | The calibration table as bars, and how the trusted alleles fared. |
 | Report | The run report. |
 
@@ -37,9 +37,10 @@ The page can also display results of the command-line program: drop the
   566 alleles get a stricter verdict in the web app (14 supported become
   inconclusive, 1 inconclusive becomes needs_confirmation); none gets a
   more lenient one. For final results use the command line.
-- **Slower the first time.** One download at a time and one processor
-  core; the downloads are most of the waiting. Later runs on the same
-  genes use the stored data. D and J sets
+- **Slower the first time.** One processor core, and downloads limited
+  to three at a time per data server (the servers refuse bursts). The
+  downloads are most of the waiting. Later runs on the same genes use the
+  stored data. D and J sets
   take well under a minute; a full V set downloads roughly 100 MB and takes
   several minutes.
 - **Fewer options.** Genome build, candidate marker, haplotype check on or

@@ -1,6 +1,6 @@
 [package]
 name = "igpop"
-version = "0.12.1"
+version = "0.13.0"
 edition = "2021"
 description = "Population evidence for germline alleles (IG/TR) at user-supplied loci"
 license = "MIT"

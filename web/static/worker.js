@@ -1,6 +1,7 @@
-// Runs the analysis off the main thread. The WebAssembly module blocks
-// until it is done and reads remote data with synchronous requests, which
-// browsers allow only in workers. Downloaded pieces are kept in the
+// Runs the analysis off the main thread. The WebAssembly module first
+// downloads the regions it needs, several at a time, and then analyses
+// without pauses, reading with synchronous requests, which browsers allow
+// only in workers. Downloaded pieces are kept in the
 // browser (store.js) so that later runs need little or no downloading.
 import init, { run, use_store, version } from './pkg/igpop_web.js';
 import { Store } from './store.js';
@@ -21,7 +22,7 @@ self.onmessage = async (event) => {
     return;
   }
   try {
-    const output = run(
+    const output = await run(
       job.fasta, job.name, job.build, job.marker, job.haplotypes, job.paralog,
       (message) => postMessage({ type: 'log', message }),
     );

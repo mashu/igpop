@@ -198,3 +198,19 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 .file:hover { border-color: var(--accent); }
 .file b { font-family: var(--mono); font-size: 0.9rem; overflow-wrap: anywhere; }
 .file span, .file small { color: var(--muted); font-size: 0.85rem; }
+
+/* Explanations shown on hover, keyboard focus or tap. */
+.hint { position: relative; display: inline-block; text-transform: none; letter-spacing: 0; }
+.hint-button { width: 1.25rem; height: 1.25rem; padding: 0; border-radius: 50%; border: 1px solid var(--muted); background: transparent; color: var(--muted); font-size: 0.75rem; font-weight: 700; line-height: 1; }
+.hint-value { border-bottom: 1px dotted var(--muted); cursor: help; }
+.hint-text {
+  display: none; position: fixed; z-index: 20; width: max-content; max-width: min(24rem, calc(100vw - 16px));
+  padding: 0.7rem 0.85rem; text-align: left; white-space: normal;
+  font-size: 0.85rem; font-weight: 400; line-height: 1.45; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.22);
+}
+.hint-text.open { display: block; }
+.hint-text > span { display: grid; gap: 0.45rem; }
+.hint-table { display: grid; gap: 0.2rem; }
+.hint-table > span { display: grid; grid-template-columns: 3.2rem 1fr; gap: 0.5rem; }
+.hint-table b { text-align: right; font-variant-numeric: tabular-nums; }

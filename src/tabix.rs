@@ -147,19 +147,44 @@ impl Tabix {
             .cloned()
     }
 
-    /// Lines whose record starts at or before `end` and whose position plus
-    /// the length of column 4 (VCF REF) reaches `start`. 1-based, inclusive.
+    /// Lines whose record starts at or before `end` and reaches `start`
+    /// (by the length of column 4, VCF REF, or by END for symbolic
+    /// alleles). 1-based, inclusive.
     pub fn query(&self, contig: &str, start: u64, end: u64) -> Result<Vec<String>> {
-        let Some(tid) = self.names.iter().position(|n| n == contig) else {
-            return Ok(Vec::new());
-        };
-        let index = &self.refs[tid];
-        let (beg0, end0) = (start - 1, end);
-        let window = (beg0 >> 14) as usize;
-        if window >= index.linear.len() {
-            return Ok(Vec::new());
+        let mut reader = self.reader(contig, start, end);
+        let mut source = Source::open(&self.spec)?;
+        while let Some((from, to)) = reader.request() {
+            reader.feed(&source.read(from, Some(to))?)?;
         }
-        let floor = index.linear[window];
+        Ok(reader.finish())
+    }
+
+    /// The path or URL of the indexed file.
+    pub fn spec(&self) -> &str {
+        &self.spec
+    }
+
+    /// A reader for one region. It does no I/O itself: it says which bytes
+    /// of the file it needs next and is fed them, so the same logic serves
+    /// blocking reads here and concurrent downloads in the browser.
+    pub fn reader(&self, contig: &str, start: u64, end: u64) -> Reader {
+        let mut reader = Reader {
+            contig: contig.to_string(),
+            start,
+            end,
+            col_seq: self.col_seq,
+            col_beg: self.col_beg,
+            chunks: Vec::new().into_iter(),
+            current: None,
+            lines: Vec::new(),
+        };
+        let Some(index) = self.names.iter().position(|n| n == contig).map(|tid| &self.refs[tid]) else {
+            return reader;
+        };
+        let (beg0, end0) = (start - 1, end);
+        let Some(floor) = index.linear.get((beg0 >> 14) as usize).copied() else {
+            return reader;
+        };
         // Chunks of every bin that overlaps the region. A record spanning
         // far (a structural variant with END) sits in a coarse bin, in a
         // chunk of its own well before the region; chunks are therefore
@@ -180,90 +205,143 @@ impl Tabix {
                 _ => merged.push(chunk),
             }
         }
+        reader.chunks = merged.into_iter();
+        reader.next_chunk();
+        reader
+    }
+}
 
-        let mut source = Source::open(&self.spec)?;
-        let mut out = Vec::new();
-        for (first, until) in merged {
-            let (last_block, last_len) = (until >> 16, (until & 0xffff) as usize);
-            let mut wanted_until = Some(last_block + 0xffff);
-            let mut next_byte = first >> 16;
-            // File offset of the block at the front of `packed`.
-            let mut block_at = next_byte;
-            let mut skip = (first & 0xffff) as usize;
-            let mut packed: Vec<u8> = Vec::new();
-            let mut text: Vec<u8> = Vec::new();
-            'read: loop {
-                if block_at > last_block || (block_at == last_block && last_len == 0) {
-                    break 'read;
-                }
-                // Make sure one whole BGZF block is buffered.
-                let block_len = loop {
-                    if packed.len() >= 18 {
-                        let len = u16::from_le_bytes([packed[16], packed[17]]) as usize + 1;
-                        if packed.len() >= len {
-                            break len;
-                        }
-                    }
-                    // First request: to the end of the chunk, capped so a
-                    // dense file is still read in moderate pieces.
-                    let last = wanted_until
-                        .take()
-                        .filter(|u| *u >= next_byte)
-                        .map(|u| u.min(next_byte + 4 * PIECE - 1))
-                        .unwrap_or(next_byte + PIECE - 1);
-                    let more = source.read(next_byte, Some(last))?;
-                    if more.is_empty() {
-                        break 'read;
-                    }
-                    next_byte += more.len() as u64;
-                    packed.extend_from_slice(&more);
-                };
-                let mut block = Vec::new();
-                GzDecoder::new(&packed[..block_len])
-                    .read_to_end(&mut block)
-                    .context("corrupt BGZF block")?;
-                packed.drain(..block_len);
-                if block_at == last_block {
-                    block.truncate(last_len);
-                }
-                block_at += block_len as u64;
-                text.extend_from_slice(&block[skip.min(block.len())..]);
-                skip = 0;
+/// One chunk of the file being read: BGZF blocks from a virtual offset to
+/// a virtual offset (file offset of a block << 16 | offset inside it).
+struct Chunk {
+    /// The block the chunk ends in, and how much of that block belongs to it.
+    last_block: u64,
+    last_len: usize,
+    /// The bytes to ask for next.
+    pending: (u64, u64),
+    /// File offset of the block at the front of `packed`.
+    block_at: u64,
+    /// Bytes to skip in the first block.
+    skip: usize,
+    packed: Vec<u8>,
+    text: Vec<u8>,
+}
 
-                let mut consumed = 0;
-                while let Some(nl) = text[consumed..].iter().position(|b| *b == b'\n') {
-                    let line = std::str::from_utf8(&text[consumed..consumed + nl])?;
-                    consumed += nl + 1;
-                    if line.starts_with('#') {
-                        continue;
-                    }
-                    let fields: Vec<&str> = line.splitn(9, '\t').collect();
-                    if fields.len() < self.col_beg.max(5) || fields[self.col_seq - 1] != contig {
-                        break 'read;
-                    }
-                    let pos: u64 = fields[self.col_beg - 1].parse()?;
-                    if pos > end {
-                        break 'read;
-                    }
-                    // Last base of the record: REF, or END for symbolic alleles.
-                    let stated = fields
-                        .get(7)
-                        .filter(|_| fields[4].contains('<'))
-                        .and_then(|info| info.split(';').find_map(|x| x.strip_prefix("END=")))
-                        .and_then(|x| x.parse::<u64>().ok());
-                    let last_base = stated.unwrap_or(pos + fields[3].len() as u64 - 1).max(pos);
-                    if last_base >= start {
-                        out.push(line.to_string());
-                    }
-                }
-                text.drain(..consumed);
+/// See [`Tabix::reader`].
+pub struct Reader {
+    contig: String,
+    start: u64,
+    end: u64,
+    col_seq: usize,
+    col_beg: usize,
+    chunks: std::vec::IntoIter<(u64, u64)>,
+    current: Option<Chunk>,
+    lines: Vec<String>,
+}
+
+impl Reader {
+    fn next_chunk(&mut self) {
+        self.current = self.chunks.next().map(|(first, until)| {
+            let (at, last_block) = (first >> 16, until >> 16);
+            // First request: to the end of the chunk, capped so a dense
+            // file is still read in moderate pieces.
+            let to = (last_block + 0xffff).min(at + 4 * PIECE - 1).max(at);
+            Chunk {
+                last_block,
+                last_len: (until & 0xffff) as usize,
+                pending: (at, to),
+                block_at: at,
+                skip: (first & 0xffff) as usize,
+                packed: Vec::new(),
+                text: Vec::new(),
             }
+        });
+    }
+
+    /// The bytes `from..=to` of the file the reader needs next; `None`
+    /// when the region is read.
+    pub fn request(&self) -> Option<(u64, u64)> {
+        self.current.as_ref().map(|chunk| chunk.pending)
+    }
+
+    /// Give the reader the bytes it asked for (fewer, or none, at the end
+    /// of the file).
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<()> {
+        let Some(chunk) = self.current.as_mut() else {
+            return Ok(());
+        };
+        let from = chunk.pending.0 + bytes.len() as u64;
+        chunk.pending = (from, from + PIECE - 1);
+        chunk.packed.extend_from_slice(bytes);
+        let mut done = bytes.is_empty();
+        while !done {
+            if chunk.block_at > chunk.last_block || (chunk.block_at == chunk.last_block && chunk.last_len == 0) {
+                done = true;
+                break;
+            }
+            // One whole BGZF block must be buffered.
+            if chunk.packed.len() < 18 {
+                break;
+            }
+            let block_len = u16::from_le_bytes([chunk.packed[16], chunk.packed[17]]) as usize + 1;
+            if chunk.packed.len() < block_len {
+                break;
+            }
+            let mut block = Vec::new();
+            GzDecoder::new(&chunk.packed[..block_len])
+                .read_to_end(&mut block)
+                .context("corrupt BGZF block")?;
+            chunk.packed.drain(..block_len);
+            if chunk.block_at == chunk.last_block {
+                block.truncate(chunk.last_len);
+            }
+            chunk.block_at += block_len as u64;
+            chunk.text.extend_from_slice(&block[chunk.skip.min(block.len())..]);
+            chunk.skip = 0;
+
+            let mut consumed = 0;
+            while let Some(nl) = chunk.text[consumed..].iter().position(|b| *b == b'\n') {
+                let line = std::str::from_utf8(&chunk.text[consumed..consumed + nl])?;
+                consumed += nl + 1;
+                if line.starts_with('#') {
+                    continue;
+                }
+                let fields: Vec<&str> = line.splitn(9, '\t').collect();
+                if fields.len() < self.col_beg.max(5) || fields[self.col_seq - 1] != self.contig {
+                    done = true;
+                    break;
+                }
+                let pos: u64 = fields[self.col_beg - 1].parse()?;
+                if pos > self.end {
+                    done = true;
+                    break;
+                }
+                // Last base of the record: REF, or END for symbolic alleles.
+                let stated = fields
+                    .get(7)
+                    .filter(|_| fields[4].contains('<'))
+                    .and_then(|info| info.split(';').find_map(|x| x.strip_prefix("END=")))
+                    .and_then(|x| x.parse::<u64>().ok());
+                let last_base = stated.unwrap_or(pos + fields[3].len() as u64 - 1).max(pos);
+                if last_base >= self.start {
+                    self.lines.push(line.to_string());
+                }
+            }
+            chunk.text.drain(..consumed);
         }
-        // Chunks of different bins can interleave: restore file order.
+        if done {
+            self.next_chunk();
+        }
+        Ok(())
+    }
+
+    /// The lines of the region, in file order.
+    pub fn finish(mut self) -> Vec<String> {
+        // Chunks of different bins can interleave.
         let position = |line: &String| line.split('\t').nth(1).and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
-        out.sort_by_key(position);
-        out.dedup();
-        Ok(out)
+        self.lines.sort_by_key(position);
+        self.lines.dedup();
+        self.lines
     }
 }
 

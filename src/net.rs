@@ -29,10 +29,14 @@ fn request(url: &str, range: Option<&str>) -> Result<Response> {
     let Some(transport) = TRANSPORT.get() else {
         bail!("no transport registered (net::set_transport)");
     };
-    let (status, body) = transport(url, range)?;
+    transport(url, range)
+}
+
+/// A transport reports each response it actually received over the
+/// network (and not what it answered from a store of its own).
+pub fn record(bytes: usize) {
     REQUESTS.fetch_add(1, Relaxed);
-    BYTES.fetch_add(body.len() as u64, Relaxed);
-    Ok((status, body))
+    BYTES.fetch_add(bytes as u64, Relaxed);
 }
 
 /// (number of requests, bytes downloaded) so far.
@@ -106,6 +110,7 @@ mod native {
                         let name = url.rsplit('/').next().unwrap_or(url);
                         eprintln!("  GET {name}: {} bytes in {:.1}s", body.len(), started.elapsed().as_secs_f64());
                     }
+                    super::record(body.len());
                     return Ok((status, body));
                 }
                 Err(ureq::Error::Status(code, _)) if code != 429 && !(500..600).contains(&code) => return Ok((code, Vec::new())),

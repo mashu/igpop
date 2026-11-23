@@ -215,6 +215,55 @@ impl Dbsnp {
     }
 }
 
+/// The loci of the alleles that satisfy `wanted`, merged into regions.
+fn loci(windows: &[Window], placed: &[Placed], wanted: impl Fn(&Placed) -> bool) -> Vec<Region> {
+    let regions = windows
+        .iter()
+        .filter(|w| placed.iter().any(|p| p.gene == w.coord.gene && wanted(p)))
+        .map(|w| (w.coord.contig.clone(), w.start, w.end()))
+        .collect();
+    merge_regions(regions, 10_000)
+}
+
+/// Frequencies are read for loci with at least one variant.
+fn frequency_regions(windows: &[Window], placed: &[Placed]) -> Vec<Region> {
+    loci(windows, placed, |p| !p.variants.is_empty())
+}
+
+/// The phased panel is read for loci with any placed allele.
+fn haplotype_regions(windows: &[Window], placed: &[Placed]) -> Vec<Region> {
+    loci(windows, placed, |p| p.placement.is_some() && p.status != Status::LowIdentity)
+}
+
+/// One tabix-indexed file a run reads, and the regions it reads of it.
+pub struct Download {
+    /// Path or URL; `{contig}` stands for the contig name.
+    pub spec: String,
+    pub regions: Vec<Region>,
+}
+
+/// Everything `Evidence::load` will read region by region, so that a
+/// program able to download concurrently can fetch it ahead.
+pub fn downloads(sources: &Sources, windows: &[Window], placed: &[Placed]) -> Vec<Download> {
+    let frequency = frequency_regions(windows, placed);
+    let mut out: Vec<Download> = [&sources.kgp, &sources.gnomad, &sources.dbsnp]
+        .into_iter()
+        .flatten()
+        .map(|spec| Download {
+            spec: spec.clone(),
+            regions: frequency.clone(),
+        })
+        .collect();
+    if let Some(spec) = &sources.phased {
+        out.push(Download {
+            spec: spec.clone(),
+            regions: haplotype_regions(windows, placed),
+        });
+    }
+    out.retain(|d| !d.regions.is_empty());
+    out
+}
+
 pub struct Evidence {
     pub sources: Sources,
     /// The regions whose population data was read.
@@ -234,15 +283,7 @@ impl Evidence {
     /// Read every source for the loci that need it. Frequencies: loci with
     /// at least one variant. Phased panel: loci with any placed allele.
     pub fn load(sources: Sources, windows: &[Window], placed: &[Placed], cache: Cache) -> Result<Self> {
-        let loci = |wanted: &dyn Fn(&Placed) -> bool| -> Vec<Region> {
-            let regions = windows
-                .iter()
-                .filter(|w| placed.iter().any(|p| p.gene == w.coord.gene && wanted(p)))
-                .map(|w| (w.coord.contig.clone(), w.start, w.end()))
-                .collect();
-            merge_regions(regions, 10_000)
-        };
-        let regions = loci(&|p| !p.variants.is_empty());
+        let regions = frequency_regions(windows, placed);
         let mut ev = Evidence {
             sources,
             regions,
@@ -305,7 +346,7 @@ impl Evidence {
             ev.dbsnp.select(&ev.sources.dbsnp_exclude, &duplicated, ev.sources.common);
         }
 
-        let hap_regions = loci(&|p| p.placement.is_some() && p.status != Status::LowIdentity);
+        let hap_regions = haplotype_regions(windows, placed);
         if hap_regions.is_empty() {
             ev.sources.phased = None;
         }
