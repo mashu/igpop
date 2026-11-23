@@ -22,9 +22,18 @@ see [Limitations](limitations.md)). Check its variants in `variants.tsv`
 and the alignment.
 
 **Why is `supported` not the same as "all variants common"?**
-It nearly is. A variant is `supported` when it is classed `common`, or when
-its guaranteed frequency is at a level where trusted variants are at least
-ten times more frequent than arbitrary changes.
+A variant is `supported` when it is classed `common`, or when its
+guaranteed frequency is at a level where variants of real alleles are at
+least ten times more frequent than arbitrary changes. And a whole allele is
+`supported` when chromosomes with exactly its sequence exist in phased
+genomes, however rare its single differences are.
+
+**The score is above 1 but the allele is inconclusive.**
+A score near 1 means the frequency says nothing either way. IGHV is so
+variable that about 1 in 17 arbitrary base changes coincides with a real
+variant at 0.1% or more, so a single rare difference cannot score high.
+Such an allele passes only through the haplotype check, and only if all
+its variants are in the phased panel.
 
 **Many alleles say "fits another locus at least as well".**
 Duplicated genes (IGHV1-69/1-69D, IGHV3-23/3-23D, IGHV3-30 and its

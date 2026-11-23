@@ -5,7 +5,7 @@
 //! that a chromosome transmitted in a trio is not counted twice.
 
 use crate::freq::{self, Key, PopCount, POPS};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// One alternate allele of the panel with the haplotypes that carry it.
 struct Carried {
@@ -19,12 +19,14 @@ struct Carried {
 
 pub struct Panel {
     words: usize,
-    /// Founder haplotypes per superpopulation.
+    /// Founder haplotypes per superpopulation, and all of them.
     masks: [Vec<u64>; 5],
+    founder_mask: Vec<u64>,
     pub founders: usize,
     sites: HashMap<String, Vec<Carried>>,
 }
 
+#[derive(Clone)]
 pub struct Assessment {
     /// Indices of the allele's variants that are not sites of the panel.
     pub untested: Vec<usize>,
@@ -33,6 +35,8 @@ pub struct Assessment {
     /// Haplotypes carrying every variant and no other panel variant within
     /// the allele; `None` when some variant could not be tested.
     pub exact: Option<[PopCount; 5]>,
+    /// Founders (people) carrying such a chromosome.
+    pub exact_donors: Option<u32>,
 }
 
 impl Assessment {
@@ -91,9 +95,11 @@ impl Panel {
         if founders == 0 {
             anyhow::bail!("no sample of the phased VCF is a founder with a superpopulation in the pedigree file");
         }
+        let founder_mask = (0..words).map(|w| masks.iter().fold(0, |all, m| all | m[w])).collect();
         Ok(Panel {
             words,
             masks,
+            founder_mask,
             founders,
             sites: HashMap::new(),
         })
@@ -176,7 +182,7 @@ impl Panel {
             }
         }
         let carrying = self.count(&all);
-        let exact = untested.is_empty().then(|| {
+        let clean = untested.is_empty().then(|| {
             let mut clean = all.clone();
             for site in sites.iter().filter(|s| s.from <= span.1 && s.to >= span.0) {
                 if site.key.as_ref().is_some_and(|k| variants.contains(&k)) {
@@ -184,9 +190,109 @@ impl Panel {
                 }
                 clean.iter_mut().zip(&site.bits).for_each(|(c, b)| *c &= !b);
             }
-            self.count(&clean)
+            clean
         });
-        Assessment { untested, carrying, exact }
+        // A person's two chromosomes are neighbouring bits.
+        let donors = |bits: &[u64]| -> u32 {
+            bits.iter()
+                .zip(&self.founder_mask)
+                .map(|(b, m)| (((b & m) | ((b & m) >> 1)) & 0x5555_5555_5555_5555).count_ones())
+                .sum()
+        };
+        Assessment {
+            untested,
+            carrying,
+            exact: clean.as_deref().map(|bits| self.count(bits)),
+            exact_donors: clean.as_deref().map(donors),
+        }
+    }
+}
+
+/// How often an arbitrary single-base change of a real chromosome gives a
+/// sequence that itself exists in the panel, and on how many chromosomes.
+///
+/// For every founder chromosome and every possible single-base change
+/// within a locus, the changed sequence is looked up among the founder
+/// chromosomes. This is what a sequencing or PCR error on a real allele
+/// would look like in the haplotype check, and so the yardstick for how
+/// much a "found" is worth.
+#[derive(Default)]
+pub struct Coincidence {
+    /// Changed sequences found on exactly `k` chromosomes: `k -> number`.
+    found: BTreeMap<u32, u64>,
+    /// All (chromosome, change) pairs tried.
+    tried: u64,
+}
+
+impl Coincidence {
+    /// Add one locus; `span` = first and last reference position.
+    pub fn add_locus(&mut self, panel: &Panel, contig: &str, span: (u64, u64)) {
+        let empty = Vec::new();
+        let sites: Vec<&Carried> = panel
+            .sites
+            .get(contig)
+            .unwrap_or(&empty)
+            .iter()
+            .filter(|s| s.from <= span.1 && s.to >= span.0)
+            .collect();
+        // The sequence of each founder chromosome, as the sites it carries.
+        let mut carried: HashMap<usize, Vec<u16>> = HashMap::new();
+        for (local, site) in sites.iter().enumerate() {
+            for (w, word) in site.bits.iter().zip(&panel.founder_mask).map(|(b, m)| b & m).enumerate() {
+                let mut rest = word;
+                while rest != 0 {
+                    carried
+                        .entry(64 * w + rest.trailing_zeros() as usize)
+                        .or_default()
+                        .push(local as u16);
+                    rest &= rest - 1;
+                }
+            }
+        }
+        let chromosomes = 2 * panel.founders as u32;
+        let mut sequences: HashMap<Vec<u16>, u32> = HashMap::new();
+        sequences.insert(Vec::new(), chromosomes - carried.len() as u32);
+        for signature in carried.into_values() {
+            *sequences.entry(signature).or_default() += 1;
+        }
+        sequences.retain(|_, count| *count > 0);
+        // Single-base sites inside the locus, with their position.
+        let single: Vec<(u16, u64)> = sites
+            .iter()
+            .enumerate()
+            .filter_map(|(local, site)| match &site.key {
+                Some((pos, r, a)) if r.len() == 1 && a.len() == 1 && *pos >= span.0 && *pos <= span.1 => Some((local as u16, *pos)),
+                _ => None,
+            })
+            .collect();
+        for (sequence, weight) in &sequences {
+            for (site, pos) in &single {
+                // The base at this position changes: to the reference if
+                // the chromosome carries this allele, otherwise to this
+                // allele (replacing another one it may carry there).
+                let mut changed: Vec<u16> = sequence
+                    .iter()
+                    .copied()
+                    .filter(|s| !single.iter().any(|(other, at)| other == s && at == pos))
+                    .collect();
+                if !sequence.contains(site) {
+                    changed.push(*site);
+                    changed.sort_unstable();
+                }
+                if let Some(count) = sequences.get(&changed) {
+                    *self.found.entry(*count).or_default() += *weight as u64;
+                }
+            }
+        }
+        self.tried += chromosomes as u64 * 3 * (span.1 - span.0 + 1);
+    }
+
+    /// Share of arbitrary changes found on at least `count` chromosomes.
+    pub fn rate(&self, count: u32) -> f64 {
+        if self.tried == 0 {
+            return f64::NAN;
+        }
+        self.found.range(count..).map(|(_, n)| *n).sum::<u64>() as f64 / self.tried as f64
     }
 }
 
@@ -224,6 +330,21 @@ mod tests {
         assert_eq!((r.status(2), r.untested.clone()), ("incomplete", vec![1]));
         // No variants: haplotypes identical to the reference over the span.
         let r = p.assess("c", (90, 130), &[]);
-        assert_eq!(total(&r.exact.unwrap()).ac, 1);
+        assert_eq!((total(&r.exact.unwrap()).ac, r.exact_donors), (1, Some(1)));
+    }
+
+    #[test]
+    fn coincidence_counts_changed_chromosomes_that_exist() {
+        // Founder chromosomes: {100,110}, {110,120}, {}, {110}.
+        let p = panel();
+        let mut c = Coincidence::default();
+        c.add_locus(&p, "c", (91, 130));
+        // 4 chromosomes x 3 changes x 40 positions were tried.
+        assert_eq!(c.tried, 480);
+        // One base apart: {100,110}-{110}, {110,120}-{110}, {}-{110}; each
+        // pair counts once from either side, every sequence exists once.
+        assert_eq!(c.found.get(&1), Some(&6));
+        assert!((c.rate(1) - 6.0 / 480.0).abs() < 1e-12);
+        assert_eq!(c.rate(2), 0.0);
     }
 }

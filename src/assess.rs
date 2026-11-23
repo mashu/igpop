@@ -34,6 +34,9 @@ pub struct Limits {
     pub supported: f64,
     /// Score up to which a variant is `needs_confirmation`.
     pub confirm: f64,
+    /// A haplotype supports an allele if fewer than this share of
+    /// arbitrary changes are found as often.
+    pub coincidence: f64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -183,7 +186,7 @@ impl ScoreModel {
     /// Tabulate this run and choose the scores: a file (its text and name)
     /// if given; otherwise
     /// this run; otherwise, with too few trusted variants, the built-in table.
-    pub fn new(ev: &Evidence, windows: &[Window], trusted_alleles: &[&Placed], file: Option<(&str, &str)>) -> Result<Self> {
+    pub fn new(ev: &Evidence, windows: &[Window], yardstick: &[(&Placed, Yardstick)], file: Option<(&str, &str)>) -> Result<Self> {
         let (mut arbitrary, mut trusted) = ([0u64; BINS], [0u64; BINS]);
         if ev.counted() {
             let mut positions: HashSet<(&str, u64)> = HashSet::new();
@@ -200,7 +203,7 @@ impl ScoreModel {
                 }
             }
             let mut variants: HashSet<Lookup> = HashSet::new();
-            for p in trusted_alleles {
+            for (p, _) in yardstick {
                 for c in p.variants.iter().filter(|c| c.kind == Kind::Snv) {
                     let lookup = p.lookup(c);
                     if variants.insert(lookup.clone()) {
@@ -221,14 +224,18 @@ impl ScoreModel {
                 Some(c) => (
                     Some(c),
                     ScoreSource::Run,
-                    format!("this run: {nt} single-base variants of trusted alleles against {na} possible single-base changes in the same genes"),
+                    format!(
+                        "this run: {nt} single-base variants of {} named trusted alleles and {} alleles confirmed as haplotypes, against {na} possible single-base changes in the same genes",
+                        yardstick.iter().filter(|(_, y)| *y == Yardstick::Named).count(),
+                        yardstick.iter().filter(|(_, y)| *y == Yardstick::Haplotype).count(),
+                    ),
                 ),
                 None => (
                     Some(score::builtin()),
                     ScoreSource::BuiltIn,
                     format!(
                         "the built-in table, because this run has only {nt} single-base variants of trusted alleles (at least {} are needed). \
-                         It was computed from 559 human IGHV alleles on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and dbSNP",
+                         It was computed from 566 human IGHV alleles on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and dbSNP",
                         score::MIN_TRUSTED
                     ),
                 ),
@@ -274,7 +281,15 @@ pub struct VariantResult {
     pub site_qc: Vec<String>,
 }
 
-pub fn assess_variant(ev: &Evidence, placed: &Placed, called: &Called, model: &ScoreModel, limits: &Limits) -> VariantResult {
+/// What a variant or an allele is judged with.
+pub struct Judge<'a> {
+    pub ev: &'a Evidence,
+    pub model: &'a ScoreModel,
+    pub limits: &'a Limits,
+}
+
+pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> VariantResult {
+    let (ev, model, limits) = (judge.ev, judge.model, judge.limits);
     let lookup = placed.lookup(called);
     let rsid = ev.dbsnp.rsids.get(&lookup).cloned().unwrap_or_else(|| ".".into());
     let (pos, reference, alternate) = (
@@ -357,22 +372,162 @@ pub fn assess_variant(ev: &Evidence, placed: &Placed, called: &Called, model: &S
     }
 }
 
+/// Why an allele's variants calibrate the score.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Yardstick {
+    /// Named as trusted and cleanly placed.
+    Named,
+    /// Two or more differences whose combination is established as a
+    /// haplotype: real variation found by the data, rare alleles included.
+    Haplotype,
+    No,
+}
+
+impl Yardstick {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Yardstick::Named => "named",
+            Yardstick::Haplotype => "haplotype",
+            Yardstick::No => ".",
+        }
+    }
+}
+
+/// The haplotype check supports an allele.
+#[derive(Clone, Copy)]
+pub struct HaplotypeSupport {
+    /// Founder chromosomes with exactly the allele's sequence.
+    pub chromosomes: u32,
+    /// The people carrying them.
+    pub donors: u32,
+    /// Share of arbitrary single-base changes of real chromosomes found on
+    /// at least that many chromosomes.
+    pub coincidence: f64,
+}
+
+/// The haplotype check of one allele.
+#[derive(Clone)]
+pub struct AlleleHaplotype {
+    pub assessment: Option<hap::Assessment>,
+    pub coincidence: Option<f64>,
+    pub support: Option<HaplotypeSupport>,
+}
+
+/// The haplotype check of every allele, and its calibration.
+pub struct HaplotypeCheck {
+    /// Per allele, in the order of `placed`.
+    pub alleles: Vec<Option<hap::Assessment>>,
+    /// `None` without a phased panel.
+    pub coincidence: Option<hap::Coincidence>,
+}
+
+impl HaplotypeCheck {
+    pub fn new(ev: &Evidence, windows: &[Window], placed: &[Placed]) -> Self {
+        let Some(panel) = &ev.panel else {
+            return HaplotypeCheck {
+                alleles: placed.iter().map(|_| None).collect(),
+                coincidence: None,
+            };
+        };
+        let alleles = placed
+            .iter()
+            .map(|p| match &p.placement {
+                Some(at) if p.status != Status::LowIdentity => {
+                    let keys: Vec<_> = p.variants.iter().map(|c| &c.key).collect();
+                    Some(panel.assess(&at.contig, at.span, &keys))
+                }
+                _ => None,
+            })
+            .collect();
+        // Calibrated on the loci of the run, each counted once.
+        let mut loci: Vec<(&str, u64, u64)> = placed
+            .iter()
+            .filter_map(|p| p.placement.as_ref())
+            .map(|at| &windows[at.window].coord)
+            .map(|c| (c.contig.as_str(), c.start, c.end))
+            .collect();
+        loci.sort();
+        loci.dedup();
+        let mut coincidence = hap::Coincidence::default();
+        for (contig, start, end) in loci {
+            coincidence.add_locus(panel, contig, (start, end));
+        }
+        HaplotypeCheck {
+            alleles,
+            coincidence: Some(coincidence),
+        }
+    }
+
+    /// The check of the allele at `index`. Its haplotype supports it if
+    /// the exact sequence is on at least two founder chromosomes (one can
+    /// be a genotyping error) and fewer than `limit` of arbitrary changes
+    /// are found that often.
+    pub fn of(&self, index: usize, n_variants: usize, limit: f64) -> AlleleHaplotype {
+        let assessment = self.alleles[index].clone();
+        let exact = assessment.as_ref().and_then(|a| a.exact.as_ref()).map(|e| hap::total(e).ac);
+        let coincidence = match (exact, &self.coincidence) {
+            (Some(chromosomes), Some(c)) if n_variants > 0 => Some(c.rate(chromosomes)),
+            _ => None,
+        };
+        let support = match (exact, coincidence, &assessment) {
+            (Some(chromosomes), Some(rate), Some(a)) if chromosomes >= 2 && rate <= limit => Some(HaplotypeSupport {
+                chromosomes,
+                donors: a.exact_donors.unwrap_or(0),
+                coincidence: rate,
+            }),
+            _ => None,
+        };
+        AlleleHaplotype {
+            assessment,
+            coincidence,
+            support,
+        }
+    }
+
+    /// The smallest number of chromosomes that counts as support.
+    pub fn required(&self, limit: f64) -> Option<u32> {
+        let coincidence = self.coincidence.as_ref()?;
+        (2..=100_000).find(|c| coincidence.rate(*c) <= limit)
+    }
+}
+
 /// Everything concluded about one allele.
 pub struct AlleleResult<'a> {
     pub placed: &'a Placed,
     /// Named as trusted (by `--trusted` or the candidate marker).
     pub trusted: bool,
+    /// Whether, and why, its variants calibrate the score.
+    pub yardstick: Yardstick,
     pub variants: Vec<VariantResult>,
+    /// The verdict from the frequencies of its variants alone.
+    pub by_frequency: Verdict,
+    /// The verdict: `by_frequency`, raised to `supported` if the allele's
+    /// exact sequence is established as a haplotype.
     pub verdict: Verdict,
     pub reason: String,
     pub notes: Vec<String>,
     pub haplotype: Option<hap::Assessment>,
+    /// Share of arbitrary changes found on at least as many chromosomes
+    /// as this allele's exact sequence.
+    pub haplotype_coincidence: Option<f64>,
+    /// Set if the haplotype check supports the allele.
+    pub haplotype_support: Option<HaplotypeSupport>,
 }
 
 impl AlleleResult<'_> {
-    /// Trusted and cleanly placed: its variants calibrate the score.
+    /// Its variants calibrate the score.
     pub fn calibrates(&self) -> bool {
-        self.trusted && self.placed.status == Status::Ok
+        self.yardstick != Yardstick::No
+    }
+
+    /// Which evidence makes the allele `supported`.
+    pub fn supported_by(&self) -> &'static str {
+        match (self.by_frequency == Verdict::Supported, self.haplotype_support.is_some()) {
+            (true, true) => "frequency+haplotype",
+            (true, false) => "frequency",
+            (false, true) if self.verdict == Verdict::Supported => "haplotype",
+            _ => ".",
+        }
     }
 
     pub fn ids(&self, wanted: impl Fn(&VariantResult) -> bool) -> Vec<String> {
@@ -419,26 +574,22 @@ impl AlleleResult<'_> {
 
 /// `other_build`: a build on which the allele's gene does have coordinates.
 pub fn assess_allele<'a>(
-    ev: &Evidence,
+    judge: &Judge,
     placed: &'a Placed,
     trusted: bool,
+    yardstick: Yardstick,
+    haplotype: AlleleHaplotype,
     other_build: Option<&str>,
-    model: &ScoreModel,
-    limits: &Limits,
 ) -> AlleleResult<'a> {
-    let variants: Vec<VariantResult> = placed
-        .variants
-        .iter()
-        .map(|c| assess_variant(ev, placed, c, model, limits))
-        .collect();
+    let variants: Vec<VariantResult> = placed.variants.iter().map(|c| assess_variant(judge, placed, c)).collect();
     let total = variants.len();
     let with = |verdict: Verdict| -> Vec<&str> { variants.iter().filter(|v| v.verdict == verdict).map(|v| v.id.as_str()).collect() };
     let weakest = |verdict: Verdict, what: &str| {
         let ids = with(verdict);
         (verdict, format!("{} of {total} variant(s) {what}: {}", ids.len(), ids.join(";")))
     };
-    // The verdict of an allele is that of its weakest variant.
-    let (verdict, reason) = match placed.status {
+    // By frequency, the verdict of an allele is that of its weakest variant.
+    let (by_frequency, frequency_reason) = match placed.status {
         Status::NoCoordinates => (
             Verdict::NotPlaced,
             match other_build {
@@ -455,6 +606,22 @@ pub fn assess_allele<'a>(
         _ if !with(Verdict::Inconclusive).is_empty() => weakest(Verdict::Inconclusive, "with weak population support"),
         _ if !with(Verdict::NotAssessed).is_empty() => weakest(Verdict::NotAssessed, "without population data"),
         _ => (Verdict::Supported, format!("all variants ({total}) have population support")),
+    };
+    // An allele whose exact sequence is established as a haplotype is
+    // supported whatever the frequencies of its single variants.
+    let undecided = matches!(
+        by_frequency,
+        Verdict::Inconclusive | Verdict::NeedsConfirmation | Verdict::NotAssessed
+    );
+    let (verdict, reason) = match &haplotype.support {
+        Some(h) if undecided => (
+            Verdict::Supported,
+            format!(
+                "exact sequence on {} chromosomes of {} people in the phased panel; by frequency alone: {frequency_reason}",
+                h.chromosomes, h.donors
+            ),
+        ),
+        _ => (by_frequency, frequency_reason),
     };
 
     let mut notes: Vec<String> = Vec::new();
@@ -476,23 +643,18 @@ pub fn assess_allele<'a>(
     if flagged > 0 {
         notes.push(format!("{flagged} variant(s) at sites failing 1000 Genomes site QC"));
     }
-
-    // Haplotype check: the allele's variants together on one chromosome.
-    let haplotype = match (&ev.panel, &placed.placement) {
-        (Some(panel), Some(p)) if placed.status != Status::LowIdentity => {
-            let keys: Vec<_> = placed.variants.iter().map(|c| &c.key).collect();
-            Some(panel.assess(&p.contig, p.span, &keys))
-        }
-        _ => None,
-    };
     AlleleResult {
         placed,
         trusted,
+        yardstick,
         variants,
+        by_frequency,
         verdict,
         reason,
         notes,
-        haplotype,
+        haplotype: haplotype.assessment,
+        haplotype_coincidence: haplotype.coincidence,
+        haplotype_support: haplotype.support,
     }
 }
 
@@ -526,6 +688,7 @@ mod tests {
             common: 0.01,
             supported: 10.0,
             confirm: 0.1,
+            coincidence: 0.05,
         };
         let v = |class, score| variant_verdict(class, score, &limits).as_str();
         assert_eq!(v(Class::Common, Some(0.04)), "supported");

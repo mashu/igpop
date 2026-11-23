@@ -16,7 +16,7 @@ When it finishes, the last lines on screen look like this:
 
 ```
 566 alleles: 445 ok, 68 ambiguous_locus, 0 low_identity, 53 no_coordinates
-verdicts: 300 supported, 115 inconclusive, 55 needs_confirmation, 43 matches_reference, 53 not_placed
+verdicts: 371 supported, 87 inconclusive, 12 needs_confirmation, 43 matches_reference, 53 not_placed
 read my_run.report.md first
 ```
 

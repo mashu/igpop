@@ -37,6 +37,9 @@ jobs:
         run: mdbook build docs
       - name: Web app
         run: wasm-pack build web --target web --release --no-typescript --out-dir pkg
+        env:
+          # Vector instructions: supported by every current browser.
+          RUSTFLAGS: -C target-feature=+simd128
       - name: Assemble the site
         run: |
           mkdir -p site/app/pkg

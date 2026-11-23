@@ -19,10 +19,10 @@ notes. This is the working list.
 ## Haplotype check
 
 How many alleles had their whole combination of variants found on one
-chromosome of the phased panel. Explained in
-[The haplotype check](haplotypes.md). A verdict of `needs_confirmation`
-together with `found_exact` is worth opening `alleles.tsv` for: the
-`hap_exact` column says on how many chromosomes.
+chromosome of the phased panel, the calibration table (how often an
+arbitrary change is found as often), and from how many chromosomes an
+allele counts as supported by its haplotype. Explained in
+[The haplotype check](haplotypes.md).
 
 ## 3. Was every allele placed on its gene?
 
@@ -64,7 +64,7 @@ below 1 to well above 10.
 
 **Trusted alleles, judged like candidates.** Trusted alleles get verdicts
 too. Most of those that differ from the reference should be `supported`.
-In the IGHV example, 108 of 117 are. If only a minority is, something is
+In the IGHV example, 110 of 117 are. If only a minority is, something is
 wrong upstream: coordinates on the wrong build, a strand problem, or a
 trusted set that is not trustworthy. Individual trusted alleles that are
 not `supported` are worth a look in their own right.

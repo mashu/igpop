@@ -11,11 +11,15 @@
 - **Absent is not disproof.** A variant with no record may sit where
   genotyping fails. igpop does not yet read per-site coverage, so it cannot
   separate "confidently not there" from "not callable".
-- **The verdict is per variant.** Two common variants that never occur on
-  the same chromosome are both `common`. The
-  [haplotype check](haplotypes.md) addresses this, but only where the
-  phased panel contains all of an allele's variants, which in IGHV is
-  under half of the alleles.
+- **By frequency, the verdict is per variant.** Two common variants that
+  never occur on the same chromosome are both `common`, so a chimera of
+  two real alleles passes by frequency. The
+  [haplotype check](haplotypes.md) can confirm an allele as a whole, but
+  it cannot refute one where the phased panel lacks some of its variants,
+  which in IGHV is over half of the alleles.
+- **A single rare difference is the hardest case.** Its frequency cannot
+  separate it from an error that happens to hit a real variant, and the
+  haplotype check adds little for one difference.
 - **dbSNP-relayed datasets have no counts.** Their sizes are estimated and
   per-site coverage is unknown ([Datasets](datasets.md)).
 - **Superpopulations only.** The 1000 Genomes source provides counts for

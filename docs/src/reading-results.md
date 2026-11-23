@@ -7,7 +7,9 @@ difference that many people carry is an established variant; a difference
 nobody carries among several hundred thousand sequenced genomes behaves like
 a sequencing or PCR error. igpop measures, for every difference, which of
 the two it resembles, and an allele is as believable as its least
-believable difference.
+believable difference. Second, independently: if chromosomes with exactly
+the allele's sequence exist in phased genomes, the allele is real whatever
+its single differences look like.
 
 ## Verdicts
 
@@ -16,7 +18,7 @@ Every allele (in `alleles.tsv` and in the report) and every variant (in
 
 | Verdict | What it means | What to do |
 |---|---|---|
-| `supported` | Every difference is an established population variant. | Nothing. Population data back this allele. |
+| `supported` | Every difference is an established population variant (`supported_by` = `frequency`), or the exact sequence of the allele is established on phased chromosomes (`haplotype`), or both. | Nothing. Population data back this allele. |
 | `inconclusive` | At least one difference is seen in people, but so rarely that real rare variants and errors look alike. | Decide with your own evidence: seen in several unrelated individuals, in both chains of a haplotype analysis, in genomic DNA? |
 | `needs_confirmation` | At least one difference is absent, or nearly absent, from all population data: it looks like an arbitrary base change. | Do not accept on repertoire data alone. Confirm independently (genomic sequencing, more individuals), then it may well be a real private allele. |
 | `not_assessed` | No population data could be read for at least one difference. | See the reason; usually the gene is on GRCh37 only. |
@@ -33,10 +35,12 @@ one family has no population support either.
 - **`filters`** says in fixed keywords why an allele did not pass, e.g.
   `rare_in_every_population:1,low_score:1`. See
   [Why an allele did not pass](filters.md).
+- **`supported_by`** says which evidence made an allele `supported`:
+  `frequency`, `haplotype` or `frequency+haplotype`.
 - **`hap_status`** says whether the whole combination of variants was
-  found on one chromosome in phased genomes. It is separate, stricter
-  evidence and often has no answer. See
-  [The haplotype check](haplotypes.md).
+  found on one chromosome in phased genomes. It often has no answer;
+  when it finds the allele on enough chromosomes, the allele is
+  `supported`. See [The haplotype check](haplotypes.md).
 
 ## The `reason` and `notes` columns
 
@@ -69,8 +73,8 @@ For each variant, `variants.tsv` holds what the verdict is made of:
 |---|---|
 | `class` | `common`: shown to reach 1% in at least one population. `uncommon`: seen, but not shown to reach 1%. `absent`: never seen. |
 | `support` | The frequency the data *guarantee* in the best population (a lower confidence bound, so small studies cannot inflate it). |
-| `score` | How many times more often this level of support occurs among trusted variants than among arbitrary base changes. Around 100 = typical of real variants; 1 = no information; 0.01 = typical of arbitrary changes. |
-| `verdict` | `supported` if `class` is `common` or the score is at least 10; `needs_confirmation` if the score is at most 0.1; otherwise `inconclusive`. |
+| `score` | A likelihood ratio: how many times more often this level of support occurs among variants of real alleles than among arbitrary base changes. Around 70 = typical of real variants; 1 = no information either way; 0.01 = typical of arbitrary changes. |
+| `verdict` | The verdict of the variant by frequency: `supported` if `class` is `common` or the score is at least 10; `needs_confirmation` if the score is at most 0.1; otherwise `inconclusive`. |
 
 A score of 10 or 0.1 means the data favour one explanation ten to one, the
 usual mark for strong evidence. Both limits can be changed
@@ -88,7 +92,7 @@ score separates them, and the verdict follows the score. See
 ## Worked examples
 
 **`IGHV1-18*01`: supported.** One difference, rs72695948, frequent in every
-population. Score 82.7.
+population. Score 72.
 
 **`IGHV1-18*01_S2706`: needs_confirmation.** Two differences. One is the
 frequent rs72695948 above; the other, rs368426916, has an rsID but was found in only a handful of
@@ -98,21 +102,30 @@ dbSNP records every submitted change. The allele needs independent
 confirmation of that one base.
 
 **`IGHV1-2*04_S3434`: inconclusive.** A single difference, seen in people
-at roughly 0.1 to 1%. Real rare variants and recurrent errors both occur
-at this level, so population data cannot decide.
+at roughly 0.1 to 1%. Real rare variants and errors that happen to hit a
+real variant both occur at this level (score 2), and its site is not in the
+phased panel, so the haplotype check has no answer.
 
-**`IGHV1-18*03`: a trusted allele that needs confirmation.** One of its
-two differences (rs373407210) is rare in every population. Trusted alleles
-are judged like all others, which is how database entries with a doubtful
-or very rare base come to light.
+**`IGHV1-24*01_S7069`: supported by haplotype.** By frequency its one
+difference is equally weak. But chromosomes with exactly this sequence
+exist in 9 people of the phased panel, which fewer than 1 in 300 arbitrary
+changes achieve.
 
-**`IGHV1-24*01_S1381`: supported, and found as a haplotype.** Its exact
-sequence is on 72 phased chromosomes, 70 of them African: a real,
-population-specific allele.
+**`IGHV1-24*01_S1381`: supported by frequency and haplotype.** Its exact
+sequence is on 72 phased chromosomes of 64 people, 70 of them African: a
+real, population-specific allele.
+
+**`IGHV1-18*03`: a trusted allele that is inconclusive.** One of its two
+differences (rs373407210) is rare in every population, and the haplotype
+check cannot test the allele. Trusted alleles are judged like all others,
+which is how database entries with a doubtful or very rare base come to
+light.
 
 ## Probabilities
 
-A score is not a probability. To turn it into one you must say how many of
+A score is a likelihood ratio, not a probability, and not odds either:
+odds that a variant is real = your odds beforehand x score. To turn it into
+a probability you must say how many of
 your candidates you expect to be real before looking at population data. If
 you can, pass it (`--prior 0.5` for "half of them"), and `variants.tsv`
 gains a `probability_real` column. The report always shows the conversion

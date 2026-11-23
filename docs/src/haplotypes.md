@@ -1,13 +1,11 @@
 # The haplotype check
 
-The verdict judges every difference of an allele on its own. Two
+The frequency evidence judges every difference of an allele on its own. Two
 differences can each be frequent and still never occur on the same
-chromosome. The haplotype check asks the stricter question: **is the whole
-combination carried together on one chromosome, and in whom?**
-
-It is extra evidence. It does not change the verdict; it is reported next
-to it (`hap_*` columns of `alleles.tsv`, a column in the report lists) so
-that you can weigh it yourself.
+chromosome, as in a chimera of two real alleles. And a single rare
+difference cannot be told from an error by its frequency alone. The
+haplotype check asks the direct question: **do chromosomes with exactly
+this sequence exist, and in whom?**
 
 ## What is done
 
@@ -22,7 +20,7 @@ For each allele it counts
 - **`hap_carrying`**: chromosomes that carry all of the allele's variants;
 - **`hap_exact`**: of those, chromosomes with no other variant anywhere
   inside the stretch the allele covers, i.e. the same sequence as the
-  allele;
+  allele; and the number of people carrying them (`hap_exact_donors`);
 
 in total and per superpopulation (AFR, AMR, EAS, EUR, SAS).
 
@@ -30,7 +28,7 @@ in total and per superpopulation (AFR, AMR, EAS, EUR, SAS).
 
 | Status | Meaning | How to read it |
 |---|---|---|
-| `found_exact` | At least one chromosome has exactly the allele's sequence. | Support for the allele as a whole. Look at `hap_exact`: dozens of chromosomes are strong evidence; one or two can also arise from an imputed genotype. |
+| `found_exact` | At least one chromosome has exactly the allele's sequence. | Support for the allele as a whole; see below for how many chromosomes count. |
 | `found_with_extra` | The combination exists, but every carrier chromosome has further variants inside the allele. | The variants are real together; the allele as written may be incomplete, or the extra variants are panel artefacts. Compare with the alignment. |
 | `not_found` | Every variant is in the panel, but no chromosome carries them all. | Evidence against this combination among 5,196 chromosomes. With a truly rare allele this is expected. |
 | `incomplete` | Some variants are not sites of the panel (`hap_untested_str`). `hap_carrying` refers to the remaining ones; there is no `hap_exact`. | No answer for the full combination. |
@@ -40,25 +38,71 @@ in total and per superpopulation (AFR, AMR, EAS, EUR, SAS).
 For an allele identical to the reference (`matches_reference`),
 `hap_exact` counts chromosomes with no variant inside the allele.
 
-## Why so many alleles are `incomplete` or `untestable`
+## How much is a "found" worth? The calibration
 
-The phased panel is deliberately strict. It contains only sites that pass
-the consortium's filters (missing genotypes below 5%, Hardy-Weinberg,
-Mendelian errors at most 5%) and leaves out variants seen in a single
-chromosome. In IGHV many real, frequent variants sit at sites that fail
-these filters, because duplicated genes and gene deletions disturb
-short-read genotyping. In the IGHV example, 209 of 513 placed alleles get
-`found_exact`, 3 `found_with_extra`, none `not_found`, and 301 cannot be
-fully tested.
+A sequencing or PCR error turns a real allele into a sequence one base
+away. Sometimes that sequence exists too, by coincidence. igpop measures
+how often: it takes every founder chromosome of the panel, changes one base
+at a time, at every position of every gene of the run, and looks the
+changed sequence up among the founder chromosomes.
 
-So:
+In the IGHV example:
 
-- `found_exact` with a good count is positive evidence you can lean on.
-- `incomplete` and `untestable` say nothing about the allele. They say the
-  panel has no opinion.
-- `not_found` is the only negative outcome, and it is bounded: nothing in
-  5,196 chromosomes still allows a frequency up to about 0.07%
-  (`hap_exact_AF_upper95`).
+| The changed sequence is found on at least | Share of arbitrary changes |
+|---:|---:|
+| 1 chromosome | 3.8% |
+| 2 chromosomes | 1.7% |
+| 3 chromosomes | 0.9% |
+| 5 chromosomes | 0.5% |
+| 10 chromosomes | 0.3% |
+| 50 chromosomes | 0.1% |
+
+This share is the column `hap_coincidence` of an allele: how often an
+arbitrary change does as well as this allele did.
+
+**An allele is supported by its haplotype** when
+
+- its exact sequence is found (`found_exact`),
+- on at least two founder chromosomes (a single one can be a genotyping
+  error), and
+- fewer than 5% of arbitrary changes are found that often
+  (`--coincidence 0.05`).
+
+In the IGHV example that means two chromosomes or more. The table is
+recomputed in every run and written to `<prefix>.haplotype_calibration.tsv`.
+
+Such an allele gets the verdict `supported`, with `supported_by` =
+`haplotype` (or `frequency+haplotype`), even when its single differences
+are too rare to pass by frequency. Of the 566 IGHV alleles, 71 are
+supported by haplotype only and 91 by both.
+
+Alleles with two or more differences that pass this test serve a second
+purpose: they join the named trusted alleles as the yardstick of the
+[score](calibration.md), because they are real alleles found by the data,
+rare ones included.
+
+## What the haplotype check cannot do
+
+- **It often has no answer.** The phased panel contains only sites that
+  pass the consortium's filters (missing genotypes below 5%,
+  Hardy-Weinberg, Mendelian errors at most 5%) and leaves out variants
+  seen in a single chromosome. In IGHV many real, frequent variants sit at
+  sites that fail these filters. In the example, 209 of 513 placed alleles
+  get `found_exact`, 3 `found_with_extra`, none `not_found`, and 301 cannot
+  be fully tested. `incomplete` and `untestable` say nothing about the
+  allele.
+- **For one difference it is not new evidence.** For an allele with a
+  single difference, "exact haplotype found" and "the variant has this
+  frequency in 1000 Genomes" are largely the same fact. The check adds the
+  most for alleles with several differences.
+- **The comparison is with single-base errors.** Other artefacts are not
+  arbitrary: reads of a duplicated gene assigned to the wrong gene produce
+  the same pseudo-variant in repertoire data and in short-read population
+  data. Look at `notes` (ambiguous or shared locus) for such alleles.
+- **Same people as the 1000 Genomes counts.** The panel is not a second
+  cohort; it answers a different question on the same genomes.
+- `not_found` is bounded: nothing in 5,196 chromosomes still allows a
+  frequency up to about 0.07% (`hap_exact_AF_upper95`).
 
 ## Population specificity
 
@@ -66,24 +110,16 @@ So:
 |---|---|
 | `hap_exact_AFR` ... `hap_exact_SAS` | Carrier chromosomes / founder chromosomes in each superpopulation. |
 | `hap_exact_max_pop` | Superpopulation with the highest guaranteed frequency. |
-| `hap_exact_pop_heterogeneity_p` | Test of "same frequency in all five superpopulations". A small value means the haplotype is population-specific. |
+| `hap_exact_pop_heterogeneity_p` | Test of "same frequency in all five superpopulations". A small value means the haplotype is population-specific. With fewer than about ten carriers the test is approximate. |
 
-Example: `IGHV1-24*01_S1381` is found on 72 chromosomes, 70 of them African
-(70/1380 AFR, 1/706 AMR, 0 EAS, 1/1052 EUR, 0 SAS; heterogeneity
-p = 1e-36). A candidate seen in a donor of matching ancestry fits; the same
-candidate "discovered" only in donors of other ancestry would be worth a
-second look.
+Example: `IGHV1-24*01_S1381` is found on 72 chromosomes of 64 people, 70 of
+the chromosomes African (70/1380 AFR, 1/706 AMR, 0 EAS, 1/1052 EUR, 0 SAS;
+heterogeneity p = 1e-36).
 
-A population-specific haplotype is normal biology, not a warning.
-
-## How independent is this evidence?
-
-Partly. The phased panel comes from the same 3,202 genomes as the 1000
-Genomes counts used for the verdict, so it is not a second cohort. What is
-new is the question: per-variant frequencies cannot tell whether variants
-travel together; phased chromosomes can. gnomAD and the datasets relayed by
-dbSNP publish no individual genotypes, so the check cannot be repeated
-there.
+Population specificity is reported, not used for the verdict. It shows
+that the signal is biological and not a technical artefact, which would
+appear in all populations alike; but old, real variants are spread evenly
+too.
 
 ## Caveats
 
@@ -100,6 +136,7 @@ there.
 
 | Option | Meaning |
 |---|---|
+| `--coincidence` | Share of arbitrary changes that may do as well as an allele supported by haplotype (default 0.05). Lower is stricter. |
 | `--no-haplotypes` | Skip the check (saves about 30 MB of download for a full IGHV set). |
 | `--phased-vcf` | Another phased VCF with genotypes; `{contig}` is replaced. |
 | `--pedigree` | Sample table for it: family, sample, father, mother, sex, population, superpopulation. |

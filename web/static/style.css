@@ -147,6 +147,7 @@ button { font: inherit; cursor: pointer; }
 .card summary:hover { background: color-mix(in srgb, var(--v) 6%, transparent); }
 .name { font-family: var(--mono); font-weight: 650; }
 .badge { display: inline-flex; align-items: center; padding: 0.12rem 0.6rem; border-radius: 999px; font-size: 0.82rem; font-weight: 650; white-space: nowrap; color: var(--v); background: color-mix(in srgb, var(--v) var(--tint), transparent); border: 1px solid color-mix(in srgb, var(--v) 40%, transparent); }
+.route { font-size: 0.8rem; color: var(--supported); }
 .tag { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 0.4rem; }
 .chips { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; }
 .chip, .pill { font-size: 0.8rem; padding: 0.08rem 0.55rem; border-radius: 6px; background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); white-space: nowrap; }

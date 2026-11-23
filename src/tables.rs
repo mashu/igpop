@@ -2,7 +2,7 @@
 //! each a name with the function that fills it, so a header and its rows
 //! cannot drift apart. The meaning of every column is in docs/src/outputs.md.
 
-use crate::assess::{AlleleResult, Class, ScoreModel, VariantResult};
+use crate::assess::{AlleleResult, Class, HaplotypeCheck, ScoreModel, VariantResult, Yardstick};
 use crate::evidence::{absent_upper, Evidence};
 use crate::freq::{self, PopCount, GNOMAD_GROUPS, POPS};
 use crate::hap;
@@ -338,6 +338,7 @@ pub fn alleles_table<'a>() -> Table<AlleleResult<'a>> {
         .col("allele_name", |r: &R| r.placed.allele.clone())
         .col("gene", |r: &R| r.placed.gene.clone())
         .col("verdict", |r: &R| r.verdict.as_str().to_string())
+        .col("supported_by", |r: &R| r.supported_by().to_string())
         .col("filters", |r: &R| r.filters())
         .col("reason", |r: &R| r.reason.clone())
         .col(
@@ -347,7 +348,10 @@ pub fn alleles_table<'a>() -> Table<AlleleResult<'a>> {
         .col("hap_status", |r: &R| r.hap_status().to_string())
         .col("locus_status", |r: &R| r.placed.status.as_str().to_string())
         .col("shares_locus_with", |r: &R| r.placed.shared())
-        .col("trusted", |r: &R| if r.calibrates() { "yes" } else { "no" }.to_string())
+        .col("trusted", |r: &R| {
+            if r.yardstick == Yardstick::Named { "yes" } else { "no" }.to_string()
+        })
+        .col("yardstick", |r: &R| r.yardstick.as_str().to_string())
         .col("missing_5prime", move |r: &R| missing(r, 0))
         .col("missing_3prime", move |r: &R| missing(r, 1))
         .col("n_variants", |r: &R| r.variants.len().to_string())
@@ -373,6 +377,8 @@ fn haplotype_names() -> Vec<String> {
         "hap_untested_str",
         "hap_total",
         "hap_exact",
+        "hap_exact_donors",
+        "hap_coincidence",
         "hap_exact_AF",
         "hap_exact_AF_lower95",
         "hap_exact_AF_upper95",
@@ -401,7 +407,14 @@ fn haplotype_cells(r: &AlleleResult) -> Vec<String> {
     match &h.exact {
         Some(exact) => {
             let t = hap::total(exact);
-            out.extend([t.ac.to_string(), num(t.af()), num(t.lower95()), num(t.upper95())]);
+            out.extend([
+                t.ac.to_string(),
+                h.exact_donors.map_or(".".to_string(), |d| d.to_string()),
+                r.haplotype_coincidence.map_or(".".to_string(), num),
+                num(t.af()),
+                num(t.lower95()),
+                num(t.upper95()),
+            ]);
             out.extend(counts(exact));
             out.push(if t.ac > 0 {
                 POPS[freq::strongest(exact)].to_string()
@@ -410,7 +423,7 @@ fn haplotype_cells(r: &AlleleResult) -> Vec<String> {
             });
             out.push(num(freq::heterogeneity_p(exact)));
         }
-        None => out.extend(dots(11)),
+        None => out.extend(dots(13)),
     }
     if total > 0 && untested.len() == total {
         out.extend(dots(7));
@@ -544,6 +557,21 @@ pub fn calibration_table(model: &ScoreModel) -> Result<String> {
             fraction(model.trusted[i], nt),
             model.source.as_str()
         )?;
+    }
+    Ok(out)
+}
+
+/// `haplotype_calibration.tsv`: how often an arbitrary single-base change
+/// of a real chromosome is itself found on at least so many chromosomes.
+pub fn haplotype_table(check: &HaplotypeCheck, limit: f64) -> Result<String> {
+    let mut out = String::new();
+    writeln!(out, "chromosomes\tcoincidence\tsupports")?;
+    if let Some(coincidence) = &check.coincidence {
+        for count in [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100, 200, 500, 1000] {
+            let rate = coincidence.rate(count);
+            let supports = if count >= 2 && rate <= limit { "yes" } else { "no" };
+            writeln!(out, "{count}\t{}\t{supports}", num(rate))?;
+        }
     }
     Ok(out)
 }

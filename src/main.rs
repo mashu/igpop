@@ -64,6 +64,11 @@ struct Args {
     /// A variant with at most this score is `needs_confirmation`.
     #[arg(long, default_value_t = 0.1)]
     confirm_score: f64,
+    /// The exact sequence of an allele, found on phased chromosomes, makes
+    /// it `supported` if fewer than this share of arbitrary single-base
+    /// changes of real chromosomes are found as often.
+    #[arg(long, default_value_t = 0.05)]
+    coincidence: f64,
     /// Share of variants like yours expected to be real before looking at
     /// population data (between 0 and 1); fills the probability_real column.
     #[arg(long)]
@@ -154,6 +159,7 @@ impl Args {
         config.limits.common = self.common;
         config.limits.supported = self.supported_score;
         config.limits.confirm = self.confirm_score;
+        config.limits.coincidence = self.coincidence;
         config.prior = self.prior;
         config.reference = self.reference.clone();
         config.kgp = choice(&self.vcf, false);

@@ -33,11 +33,12 @@ The page can also display results of the command-line program: drop the
   permit it. The 1000 Genomes and dbSNP servers do; the gnomAD server does
   not. gnomAD's overall frequencies still arrive through dbSNP, but the
   nine ancestry groups do not, so support is a little lower for variants
-  that are frequent in one gnomAD group only. In the IGHV example, 31 of
-  566 alleles get a stricter verdict in the web app (16 inconclusive
-  become needs_confirmation, 15 supported become inconclusive); none gets
-  a more lenient one. For final results use the command line.
-- **Slower.** One download at a time and one processor core. D and J sets
+  that are frequent in one gnomAD group only. In the IGHV example, 15 of
+  566 alleles get a stricter verdict in the web app (14 supported become
+  inconclusive, 1 inconclusive becomes needs_confirmation); none gets a
+  more lenient one. For final results use the command line.
+- **Slower.** One download at a time and one processor core; the
+  downloads are most of the waiting. D and J sets
   take well under a minute; a full V set downloads roughly 100 MB and takes
   several minutes.
 - **No cache.** Each run downloads its data again.

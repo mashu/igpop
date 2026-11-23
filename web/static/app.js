@@ -28,7 +28,7 @@ const svg = (tag, attrs = {}, ...children) => {
 // ---- vocabulary: the fixed words of the tables, in plain language --------
 
 const VERDICTS = {
-  supported: { label: 'Supported', icon: '✓', help: 'Every difference from the reference is an established population variant.' },
+  supported: { label: 'Supported', icon: '✓', help: 'Every difference from the reference is an established population variant, or the exact sequence of the allele is established on phased chromosomes.' },
   inconclusive: { label: 'Inconclusive', icon: '?', help: 'At least one difference is seen in people, but too rarely to tell a real variant from an error.' },
   needs_confirmation: { label: 'Needs confirmation', icon: '!', help: 'At least one difference looks like an arbitrary base change. Confirm it independently.' },
   not_assessed: { label: 'Not assessed', icon: '–', help: 'No population data could be read for at least one difference.' },
@@ -57,7 +57,12 @@ const HAPLOTYPES = {
 };
 const POPS = ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'];
 const POP_NAMES = { AFR: 'African', AMR: 'American', EAS: 'East Asian', EUR: 'European', SAS: 'South Asian' };
-const OUTPUTS = ['report.md', 'final.tsv', 'alleles.tsv', 'variants.tsv', 'alignments.tsv', 'alignments.txt', 'score_calibration.tsv', 'dbsnp_datasets.tsv'];
+const OUTPUTS = ['report.md', 'final.tsv', 'alleles.tsv', 'variants.tsv', 'alignments.tsv', 'alignments.txt', 'score_calibration.tsv', 'haplotype_calibration.tsv', 'dbsnp_datasets.tsv'];
+const ROUTES = {
+  frequency: { label: 'by frequency', help: 'Each difference is an established population variant.' },
+  haplotype: { label: 'by haplotype', help: 'The exact sequence is established on phased chromosomes; by frequency alone it would not pass.' },
+  'frequency+haplotype': { label: 'by frequency and haplotype', help: 'Each difference is an established variant, and the exact sequence is established on phased chromosomes.' },
+};
 const FILE_NOTES = {
   'report.md': 'Results and checks in words',
   'final.tsv': 'Alleles that passed',
@@ -66,6 +71,7 @@ const FILE_NOTES = {
   'alignments.tsv': 'Where each allele was placed',
   'alignments.txt': 'Alignments to read by eye',
   'score_calibration.tsv': 'The table behind the score',
+  'haplotype_calibration.tsv': 'How often an arbitrary change is found on phased chromosomes',
   'dbsnp_datasets.tsv': 'dbSNP datasets and whether each was used',
 };
 
@@ -308,14 +314,20 @@ function hapPill(allele) {
   return el('span', { class: `pill h-${allele.hap_status}`, title: info.help, text });
 }
 
+function routeTag(allele) {
+  const route = ROUTES[allele.supported_by];
+  return route && allele.verdict === 'supported' ? el('span', { class: 'route', title: route.help, text: route.label }) : null;
+}
+
 function alleleCard(allele) {
   const body = el('div', { class: 'card-body' });
   const card = el('details', { class: `card v-${allele.verdict}` },
     el('summary', {},
       el('span', { class: 'name', text: allele.allele_name }),
       badge(allele.verdict),
+      routeTag(allele),
       isCandidate(allele) ? el('span', { class: 'tag', text: 'candidate' }) : null,
-      el('span', { class: 'chips' }, chips(allele.filters), hapPill(allele))),
+      el('span', { class: 'chips' }, allele.verdict === 'supported' ? [] : chips(allele.filters), hapPill(allele))),
     body);
   // Details are built when first opened: a full V set has hundreds of cards.
   card.addEventListener('toggle', () => {
@@ -404,7 +416,7 @@ function variantTable(variants) {
   return el('div', { class: 'scroll' }, el('table', { class: 'variants' },
     el('caption', { text: 'Differences from the reference genome' }),
     el('thead', {}, el('tr', {},
-      ...['Variant', 'Position in allele', 'Verdict', 'Why', 'Score', 'Frequency, 1 per million to 100% (log scale)'].map((h) => el('th', { scope: 'col', text: h })))),
+      ...['Variant', 'Position in allele', 'Verdict by frequency', 'Why', 'Score (likelihood ratio)', 'Frequency, 1 per million to 100% (log scale)'].map((h) => el('th', { scope: 'col', text: h })))),
     el('tbody', {}, variants.map((v) => el('tr', {},
       el('th', { scope: 'row' }, rsLink(v), el('small', { text: ` ${change(v)}, ${v.contig}:${v.genome_pos}` })),
       el('td', { text: v.aln_pos }),
@@ -426,8 +438,9 @@ function haplotypePanel(allele) {
   }
   if (!which) return panel;
   const total = number(allele[`hap_${which}`]);
+  const donors = given(allele.hap_exact_donors) ? `, in ${allele.hap_exact_donors} ${allele.hap_exact_donors === '1' ? 'person' : 'people'}` : '';
   const caption = which === 'exact'
-    ? `${total} of ${allele.hap_total} founder chromosomes have exactly this sequence.`
+    ? `${total} of ${allele.hap_total} founder chromosomes have exactly this sequence${donors}.`
     : `${total} of ${allele.hap_total} founder chromosomes carry all tested variants.`;
   const shares = POPS.map((pop) => {
     const [count, size] = (allele[`hap_${which}_${pop}`] || '0/0').split('/').map(Number);
@@ -440,6 +453,11 @@ function haplotypePanel(allele) {
         el('th', { scope: 'row', text: POP_NAMES[s.pop] }),
         el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * s.share) / top}%` })),
         el('td', { class: 'num', text: `${s.count} / ${s.size} (${(100 * s.share).toFixed(s.share < 0.01 ? 2 : 1)}%)` }))))));
+  const coincidence = number(allele.hap_coincidence);
+  if (which === 'exact' && total > 0 && coincidence >= 0) {
+    const share = coincidence < 0.0005 ? 'fewer than 1 in 2000' : `${(100 * coincidence).toFixed(coincidence < 0.01 ? 2 : 1)}% of`;
+    panel.append(el('p', { class: 'muted', text: `For comparison: ${share} arbitrary single-base changes of a real chromosome are found on this many chromosomes.` }));
+  }
   const p = number(allele.hap_exact_pop_heterogeneity_p);
   if (which === 'exact' && p < 0.001) panel.append(el('p', { class: 'muted', text: 'The frequency differs clearly between populations: this haplotype is population-specific.' }));
   return panel;
@@ -484,17 +502,30 @@ function renderMethod() {
   const source = { run: 'calibrated on this run', 'built-in': 'the built-in human IGHV table (this run has too few trusted variants of its own)', file: 'a table from an earlier run' }[rows[0].score_source] || rows[0].score_source;
   view.append(
     el('h3', { text: 'How the score was made' }),
-    el('p', { text: 'The score of a difference says how many times more often its level of population support is found among the variants of trusted alleles than among arbitrary single-base changes in the same genes. Above 1 the data speak for a real variant, below 1 against.' }),
+    el('p', { text: 'The score of a difference is a likelihood ratio: how many times more often its level of population support is found among the variants of real alleles than among arbitrary single-base changes in the same genes. Above 1 the data speak for a real variant, below 1 against; near 1 they say nothing either way. Real alleles are the named trusted ones and those confirmed as haplotypes (two or more differences found together on phased chromosomes).' }),
     el('p', {}, 'Scores in use: ', el('b', { text: source }), '.'),
     el('div', { class: 'scroll' }, el('table', { class: 'calibration' },
       el('caption', { text: 'Share of arbitrary changes and of trusted variants at each level of support (counts of this run)' }),
-      el('thead', {}, el('tr', {}, ...['Support: frequency guaranteed in the best population', 'Arbitrary changes', 'Trusted variants', 'Score'].map((h) => el('th', { scope: 'col', text: h })))),
+      el('thead', {}, el('tr', {}, ...['Support: frequency guaranteed in the best population', 'Arbitrary changes', 'Variants of real alleles', 'Score'].map((h) => el('th', { scope: 'col', text: h })))),
       el('tbody', {}, rows.map((r) => el('tr', {},
         el('th', { scope: 'row', text: r.support }),
         shareCell(r.arbitrary_fraction, r.arbitrary_changes, 'arbitrary'),
         shareCell(r.trusted_fraction, r.trusted_variants, 'trusted'),
         el('td', { class: 'num', text: r.score })))))),
-    el('p', { class: 'muted' }, 'A difference is ', badge('supported'), ' from a score of 10 or when it is shown to reach 1% in a population, ', badge('needs_confirmation'), ' up to 0.1, and ', badge('inconclusive'), ' in between.'));
+    el('p', { class: 'muted' }, 'By frequency, a difference is ', badge('supported'), ' from a score of 10 or when it is shown to reach 1% in a population, ', badge('needs_confirmation'), ' up to 0.1, and ', badge('inconclusive'), ' in between.'));
+  const hapText = state.files['haplotype_calibration.tsv'];
+  if (hapText) {
+    const hapRows = parseTSV(hapText).filter((r) => ['1', '2', '3', '5', '10', '20', '50'].includes(r.chromosomes));
+    view.append(
+      el('h3', { text: 'How much is a found haplotype worth?' }),
+      el('p', { text: 'Every founder chromosome of the phased panel was changed one base at a time, and the changed sequence looked up among the chromosomes. This is what an error on a real allele would look like. An allele is supported by its haplotype when its exact sequence is found more often than all but 5% of such changes, and on at least two chromosomes.' }),
+      el('div', { class: 'scroll' }, el('table', { class: 'calibration' },
+        el('thead', {}, el('tr', {}, ...['Found on at least', 'Share of arbitrary changes', 'Counts as support'].map((h) => el('th', { scope: 'col', text: h })))),
+        el('tbody', {}, hapRows.map((r) => el('tr', {},
+          el('th', { scope: 'row', text: `${r.chromosomes} chromosome${r.chromosomes === '1' ? '' : 's'}` }),
+          shareCell(r.coincidence, null, 'arbitrary'),
+          el('td', { text: r.supports })))))));
+  }
   const trusted = state.alleles.filter((a) => !isCandidate(a) && Number(a.n_variants) > 0);
   if (trusted.length) {
     const supported = trusted.filter((a) => a.verdict === 'supported').length;
@@ -505,8 +536,8 @@ function renderMethod() {
 
 function shareCell(fraction, count, kind) {
   const share = given(fraction) ? Number(fraction) : 0;
-  return el('td', {}, el('span', { class: `bar-fill ${kind}`, style: `--share:${100 * share}%` }),
-    el('span', { class: 'num', text: ` ${(100 * share).toFixed(1)}% (${count})` }));
+  const text = count == null ? ` ${(100 * share).toFixed(2)}%` : ` ${(100 * share).toFixed(1)}% (${count})`;
+  return el('td', {}, el('span', { class: `bar-fill ${kind}`, style: `--share:${100 * share}%` }), el('span', { class: 'num', text }));
 }
 
 // ---- report (a small Markdown subset: the one igpop writes) -----------------

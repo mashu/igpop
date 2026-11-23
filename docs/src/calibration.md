@@ -1,14 +1,15 @@
 # Automatic calibration
 
 The [score](score.md) compares a variant with two reference groups: variants
-of trusted alleles, and all possible single-base changes in the same genes.
+of real alleles (the yardstick), and all possible single-base changes in the
+same genes.
 Building that comparison is called calibration. You never have to run it:
 igpop does it in every run and picks the source in this order.
 
 | Order | Source | Used when |
 |---|---|---|
 | 1 | A table you pass with `--calibration` | You ask for it. |
-| 2 | **This run** | The trusted alleles of the run carry at least 30 distinct single-base variants. |
+| 2 | **This run** | The yardstick alleles of the run carry at least 30 distinct single-base variants. |
 | 3 | **The built-in table** | Otherwise. |
 
 The report (section 5) and the last column of
@@ -19,6 +20,18 @@ The report (section 5) and the last column of
 
 This is the preferred case, and what happens for a full V set. It adapts the
 scale to the genes, the datasets and the `--common` level of this run.
+
+The yardstick has two parts:
+
+- **Named trusted alleles** (below). These are mostly common alleles.
+- **Alleles confirmed as haplotypes**, found automatically: alleles with
+  two or more differences whose exact sequence is established on phased
+  chromosomes ([The haplotype check](haplotypes.md)). They include rare
+  real alleles, which named databases under-represent; without them the
+  score would learn that "real" means "frequent". Column `yardstick` of
+  `alleles.tsv` says `named` or `haplotype`. One caveat: every variant in
+  the phased panel has at least two copies in 1000 Genomes, so these
+  alleles say nothing about the lowest support levels.
 
 Requirements:
 
@@ -36,19 +49,19 @@ Put candidates and trusted alleles in the same FASTA and the same run.
 ## The built-in table
 
 Small sets (D and J genes, or a handful of alleles) cannot calibrate
-themselves. They are scored with a table computed once from 559 human IGHV
-alleles on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and the
+themselves. They are scored with a table computed once from 566 human IGHV
+alleles (147 named trusted, 45 confirmed as haplotypes) on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and the
 datasets relayed by dbSNP:
 
-| Support | Arbitrary changes | Trusted variants | Score |
+| Support | Arbitrary changes | Variants of yardstick alleles | Score |
 |---|---:|---:|---:|
-| none | 18,812 | 0 | 0.006 |
-| below 0.001% | 5,488 | 0 | 0.017 |
-| 0.001 to 0.01% | 7,809 | 0 | 0.017 |
-| 0.01 to 0.1% | 3,899 | 1 | 0.084 |
-| 0.1 to 1% | 1,614 | 8 | 1.156 |
-| 1 to 10% | 332 | 26 | 17.502 |
-| 10% and more | 362 | 136 | 82.689 |
+| none | 18,812 | 0 | 0.005 |
+| below 0.001% | 5,488 | 0 | 0.013 |
+| 0.001 to 0.01% | 7,809 | 0 | 0.013 |
+| 0.01 to 0.1% | 3,899 | 7 | 0.340 |
+| 0.1 to 1% | 1,614 | 18 | 2.028 |
+| 1 to 10% | 332 | 41 | 22.091 |
+| 10% and more | 362 | 147 | 72.019 |
 
 It is appropriate for human IGH with the default datasets. For another
 locus, or other datasets, the report warns; the better route is a run of
@@ -76,7 +89,8 @@ a trusted list that contains the candidates.
 
 ## Changing the verdict limits
 
-`supported` starts at a score of 10, `needs_confirmation` at 0.1 and below.
+By frequency, `supported` starts at a score of 10, `needs_confirmation` at
+0.1 and below. (The haplotype route has its own limit, `--coincidence`.)
 To be stricter, raise the first or raise the second:
 
 ```bash

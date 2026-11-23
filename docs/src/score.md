@@ -28,14 +28,14 @@ same.** These five alleles each have exactly one uncommon variant
 
 | Allele | The uncommon variant | Seen in 1000 Genomes | Seen in gnomAD | Score |
 |---|---|---|---|---|
-| IGHV5-51\*01_S3648 | no rsID | 0 of 5,008 | 0 of 152,378 | 0.006 |
-| IGHV1-18\*01_S2706 | rs368426916 | 0 of 5,008 | 1 of 150,172 | 0.017 |
-| IGHV1-18\*03 | rs373407210 | 2 of 4,936 | 39 of 150,064 | 0.084 |
-| IGHV1-18\*01_S1946 | rs370240779 | 5 of 4,938 | 264 of 149,388 | 1.2 |
-| IGHV3-13\*01_S2991 | rs535166996 | 24 of 4,918 | 83 of 149,588 | 17.5 |
+| IGHV5-51\*01_S3648 | no rsID | 0 of 5,008 | 0 of 152,378 | 0.005 |
+| IGHV1-18\*01_S2706 | rs368426916 | 0 of 5,008 | 1 of 150,172 | 0.013 |
+| IGHV1-18\*03 | rs373407210 | 2 of 4,936 | 39 of 150,064 | 0.34 |
+| IGHV1-18\*01_S1946 | rs370240779 | 5 of 4,938 | 264 of 149,388 | 2.0 |
+| IGHV3-13\*01_S2991 | rs535166996 | 24 of 4,918 | 83 of 149,588 | 22 |
 
 By count they are identical: one uncommon variant each. By score they span
-a 3,000-fold range, from "looks like an error" to "well supported, just short
+a 4,000-fold range, from "looks like an error" to "well supported, just short
 of the formal 1% test". The count and the score agree in direction (alleles
 with more uncommon variants have lower scores), which is why both are
 reported; the score adds *how* uncommon.
@@ -66,17 +66,17 @@ For the KI IGHV set this gives (`<prefix>.score_calibration.tsv`):
 
 | Support (lowest compatible frequency) | Arbitrary changes | Trusted variants | Score |
 |---|---|---|---|
-| none | 49.1% | 0% | 0.006 |
-| below 0.001% | 14.3% | 0% | 0.017 |
-| 0.001–0.01% | 20.4% | 0% | 0.017 |
-| 0.01–0.1% | 10.2% | 0.6% | 0.084 |
-| 0.1–1% | 4.2% | 4.7% | 1.2 |
-| 1–10% | 0.9% | 15.2% | 17.5 |
-| 10% or more | 0.9% | 79.5% | 83 |
+| none | 49.1% | 0% | 0.005 |
+| below 0.001% | 14.3% | 0% | 0.013 |
+| 0.001–0.01% | 20.4% | 0% | 0.013 |
+| 0.01–0.1% | 10.2% | 3.3% | 0.34 |
+| 0.1–1% | 4.2% | 8.5% | 2.0 |
+| 1–10% | 0.9% | 19.2% | 22 |
+| 10% or more | 0.9% | 69.0% | 72 |
 
-Read the last line as: 80% of trusted variants, but only 0.9% of arbitrary
-changes, have this much support, so a variant at this level is about 80
-times more likely to belong to the first group. (A level with no trusted
+Read the last line as: 69% of the variants of real alleles, but only 0.9%
+of arbitrary changes, have this much support, so a variant at this level
+is about 70 times more likely to belong to the first group. (A level with no trusted
 variant still gets a small score above zero, because half a count is added
 everywhere.)
 

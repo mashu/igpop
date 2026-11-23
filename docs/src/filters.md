@@ -4,7 +4,7 @@ igpop writes two allele tables with the same columns:
 
 | File | Content |
 |---|---|
-| `<prefix>.final.tsv` | Alleles that passed: verdict `supported` or `matches_reference`. |
+| `<prefix>.final.tsv` | Alleles that passed: verdict `supported` (by frequency or by haplotype) or `matches_reference`. |
 | `<prefix>.alleles.tsv` | Every allele, passed or not, with the reasons in `filters`. |
 
 Nothing is ever dropped silently: an allele missing from `final.tsv` is in
@@ -13,7 +13,7 @@ Nothing is ever dropped silently: an allele missing from `final.tsv` is in
 
 ## Reasons for a variant
 
-A variant that is not `supported` gets two reasons, separated by a comma:
+A variant that is not `supported` by frequency gets two reasons, separated by a comma:
 first **what the data show**, then **how that scores**. A `supported`
 variant has `.`.
 
@@ -66,8 +66,10 @@ the reliability of the data, not the allele:
   [Site quality filters](site-qc.md));
 - gnomAD's own flags (`gnomad_filter`, `gnomad_flags`);
 - an ambiguous or shared locus (`notes`);
-- the [haplotype check](haplotypes.md) (`hap_status`), which is strict and
-  often has no answer.
+- a haplotype check without an answer (`incomplete`, `untestable`). The
+  check can only help an allele: found on enough chromosomes, it makes
+  the allele `supported` ([The haplotype check](haplotypes.md)).
 
-To apply any of them as a hard filter, filter `alleles.tsv` on that column
-yourself, e.g. keep `verdict == supported` and `hap_status == found_exact`.
+To be stricter, filter `alleles.tsv` yourself, e.g. keep only
+`supported_by == frequency+haplotype`, or drop alleles with a `notes`
+entry.

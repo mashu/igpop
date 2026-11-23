@@ -66,6 +66,25 @@ program instead of writing a shifted table. To add a column, add one
 | `log`, `par` | Progress messages; parallel map. |
 | `render` | Alignments as text. |
 
+## Where the time goes
+
+Comparing every allele with every locus (to notice an allele that fits
+another gene as well) is most of the computation. Two things keep it fast
+without changing any result:
+
+- `align::score_only` computes a row of the alignment in passes over plain
+  slices, which the compiler turns into vector instructions; only the gap
+  running along the row is carried from cell to cell.
+- `locus::place_all` compares the first allele of each gene with every
+  locus. A later allele of the gene differs from it by a few edits, and
+  each edit can change a score by a bounded amount, so loci that cannot
+  reach the best competitor found so far are skipped. The bound is exact;
+  a unit test and whole-run comparisons check that results are identical.
+
+The command line aligns on all cores and downloads over three connections.
+The web app has one core and one download at a time; there the downloads
+dominate.
+
 ## Checking a change
 
 ```bash

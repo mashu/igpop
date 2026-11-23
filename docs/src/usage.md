@@ -8,7 +8,7 @@ With no further options igpop uses the shipped human IGH coordinates and
 gene aliases, genome build GRCh38, and the default remote datasets. See
 [Quick start](quickstart.md).
 
-A run writes eight files, described in [Output files](outputs.md):
+A run writes nine files, described in [Output files](outputs.md):
 
 ```
 results/ighv.report.md               read this first: results and checks in words
@@ -18,6 +18,7 @@ results/ighv.variants.tsv            one row per allele variant, all evidence
 results/ighv.alignments.txt          alignments to read by eye, one block per gene
 results/ighv.alignments.tsv          where each allele was placed
 results/ighv.score_calibration.tsv   the table behind the score
+results/ighv.haplotype_calibration.tsv  what a found haplotype is worth
 results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 ```
 
@@ -37,12 +38,13 @@ results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--candidate-marker` | `_S` | Alleles whose name contains this text are candidates, all others are trusted. |
+| `--candidate-marker` | `_S` | Alleles whose name contains this text are candidates, all others are named trusted. |
 | `--trusted` | none | File of trusted allele names, one per line; replaces the marker rule. |
 | `--calibration` | automatic | Use the `score_calibration.tsv` of an earlier run. See [Automatic calibration](calibration.md). |
 | `--common` | `0.01` | Allele frequency a variant must demonstrably reach in some population to be classed `common`. |
 | `--supported-score` | `10` | A variant with at least this score is `supported`. |
 | `--confirm-score` | `0.1` | A variant with at most this score is `needs_confirmation`. |
+| `--coincidence` | `0.05` | An allele found as an exact haplotype is `supported` if fewer than this share of arbitrary changes are found as often. |
 | `--prior` | none | Share of variants like yours expected to be real (between 0 and 1); fills `probability_real`. |
 
 ### Data sources

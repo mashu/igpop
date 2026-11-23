@@ -33,7 +33,7 @@ identical to the reference has no rows here (it still appears in
 
 | Column | Meaning |
 |---|---|
-| `verdict` | `supported`, `inconclusive`, `needs_confirmation` or `not_assessed`. `supported`: `class` is `common`, or `score` is at least `--supported-score` (10). `needs_confirmation`: `score` at most `--confirm-score` (0.1), or an unscored variant that is `absent`. See [Reading the results](reading-results.md). |
+| `verdict` | The verdict of this variant by frequency: `supported`, `inconclusive`, `needs_confirmation` or `not_assessed`. `supported`: `class` is `common`, or `score` is at least `--supported-score` (10). `needs_confirmation`: `score` at most `--confirm-score` (0.1), or an unscored variant that is `absent`. See [Reading the results](reading-results.md). |
 | `score` | The main result: how many times more often this level of support occurs among trusted variants than among arbitrary base changes. Above 1 supports the variant, below 1 speaks against it. Single-base changes only. See [The score](score.md). |
 | `filters` | Why the variant is not `supported`: what the data show, then how that scores, e.g. `rare_in_every_population,low_score`. `.` for a supported variant. See [Why an allele did not pass](filters.md). |
 | `probability_real` | With `--prior`: prior x score / (prior x score + 1 - prior). `.` otherwise. |
@@ -112,19 +112,22 @@ size. See [Datasets and combining evidence](datasets.md).
 ## `<prefix>.alleles.tsv` and `<prefix>.final.tsv`
 
 One row per allele. `alleles.tsv` holds every allele; `final.tsv` holds
-the rows with verdict `supported` or `matches_reference`, same columns.
+the rows with verdict `supported` (by frequency or by haplotype) or
+`matches_reference`, same columns.
 
 | Column | Meaning |
 |---|---|
 | `allele_name`, `gene` | As above. |
-| `verdict` | Verdict of the allele's weakest variant; or `matches_reference` (no variants) or `not_placed`. |
-| `filters` | Reasons of the failing variants with counts, e.g. `never_observed:1,low_score:1`; `no_coordinates` or `low_identity` if not placed; `.` if passed. |
+| `verdict` | By frequency, the verdict of the allele's weakest variant; raised to `supported` when the haplotype check supports the allele. Or `matches_reference` (no variants), or `not_placed`. |
+| `supported_by` | `frequency`, `haplotype` or `frequency+haplotype` for a supported allele; `.` otherwise. |
+| `filters` | Reasons of the variants that fail by frequency, with counts, e.g. `never_observed:1,low_score:1`; `no_coordinates` or `low_identity` if not placed; `.` if none. An allele supported by haplotype keeps them: they say why frequency alone did not suffice. |
 | `hap_status` | Outcome of the [haplotype check](haplotypes.md): `found_exact`, `found_with_extra`, `not_found`, `incomplete`, `untestable`, `not_checked`. |
 | `reason` | The variants behind the verdict, or why the allele was not placed. |
 | `notes` | Circumstances to keep in mind: ambiguous or shared locus, truncated allele, variants at sites failing site QC. |
 | `locus_status` | `ok`, `ambiguous_locus`, `low_identity`, or `no_coordinates`. |
 | `shares_locus_with` | As above. |
-| `trusted` | Whether the allele is a trusted example of real variation (by name or `--trusted`) and was placed cleanly, so that it calibrates the score. |
+| `trusted` | Whether the allele is named as a trusted example of real variation (by name or `--trusted`) and was placed cleanly. |
+| `yardstick` | Why the allele calibrates the score: `named` (trusted), `haplotype` (two or more differences confirmed together on phased chromosomes), or `.`. |
 | `missing_5prime`, `missing_3prime` | Bases of the gene interval that the allele does not reach at its 5' and 3' ends. A truncated allele is reported here, not as extra variants. |
 | `n_variants` | Number of differences from the reference. |
 | `min_score`, `min_score_variant` | The lowest score among the allele's single-base variants, and which variant it is. An allele is only as well supported as its weakest variant. |
@@ -137,6 +140,8 @@ the rows with verdict `supported` or `matches_reference`, same columns.
 | `hap_untested_str` | The variants that are not. |
 | `hap_total` | Founder chromosomes in the panel. |
 | `hap_exact` | Chromosomes carrying all variants and no other panel variant inside the allele. `.` unless every variant was tested. |
+| `hap_exact_donors` | The people carrying those chromosomes. |
+| `hap_coincidence` | Share of arbitrary single-base changes of real chromosomes whose sequence is found on at least `hap_exact` chromosomes. Below `--coincidence` (0.05), with at least two chromosomes, the allele is supported by haplotype. |
 | `hap_exact_AF`, `hap_exact_AF_lower95`, `hap_exact_AF_upper95` | Its frequency with exact 95% bounds. |
 | `hap_exact_AFR` ... `hap_exact_SAS` | Carriers / founder chromosomes per superpopulation. |
 | `hap_exact_max_pop` | Superpopulation with the highest lower bound. |
@@ -162,6 +167,17 @@ The table behind the score, one row per level of support.
 | `score` | Ratio of the two shares, after smoothing and pooling. |
 | `pooled_group` | Levels with the same number were pooled to keep the score from decreasing with support. |
 | `score_source` | `run`: computed from the counts in this table. `built-in`: the counts are those of this run, the scores those of the built-in table. `file`: scores from `--calibration`. See [Automatic calibration](calibration.md). |
+
+## `<prefix>.haplotype_calibration.tsv`
+
+How much a found haplotype is worth in this run
+([The haplotype check](haplotypes.md)).
+
+| Column | Meaning |
+|---|---|
+| `chromosomes` | A number of founder chromosomes. |
+| `coincidence` | Share of arbitrary single-base changes of real chromosomes whose sequence is found on at least that many chromosomes. |
+| `supports` | Whether an allele found on that many chromosomes is supported by its haplotype. |
 
 ## `<prefix>.dbsnp_datasets.tsv`
 

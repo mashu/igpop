@@ -36,7 +36,7 @@ pub mod tables;
 pub mod variant;
 
 use anyhow::{bail, Result};
-use assess::{AlleleResult, Limits, ScoreModel};
+use assess::{AlleleHaplotype, AlleleResult, HaplotypeCheck, Limits, ScoreModel, Yardstick};
 use evidence::{Evidence, Sources};
 use locus::{Placed, Status};
 use std::collections::{HashMap, HashSet};
@@ -160,6 +160,7 @@ impl Config {
                 common: 0.01,
                 supported: 10.0,
                 confirm: 0.1,
+                coincidence: 0.05,
             },
             prior: None,
             reference: None,
@@ -274,24 +275,49 @@ pub fn run(config: &Config) -> Result<Output> {
         Some(names) => names.contains(p.allele.as_str()),
         None => !p.allele.contains(&config.candidate_marker),
     };
-    // Only cleanly placed trusted alleles calibrate the score.
-    let calibrating: Vec<&Placed> = placed.iter().filter(|p| p.status == Status::Ok && is_trusted(p)).collect();
+    // The haplotype check comes first: it also tells which alleles are
+    // real beyond the named trusted ones.
+    let haplotypes = HaplotypeCheck::new(&ev, &windows, &placed);
+    let checked: Vec<AlleleHaplotype> = placed
+        .iter()
+        .enumerate()
+        .map(|(i, p)| haplotypes.of(i, p.variants.len(), config.limits.coincidence))
+        .collect();
+    // The yardstick for the score: cleanly placed alleles that are named
+    // as trusted, or whose two or more differences are established
+    // together as a haplotype.
+    let yardstick: Vec<Yardstick> = placed
+        .iter()
+        .zip(&checked)
+        .map(|(p, haplotype)| match p.status {
+            Status::Ok if is_trusted(p) => Yardstick::Named,
+            Status::Ok if haplotype.support.is_some() && p.variants.len() >= 2 => Yardstick::Haplotype,
+            _ => Yardstick::No,
+        })
+        .collect();
+    let calibrating: Vec<(&Placed, Yardstick)> = placed
+        .iter()
+        .zip(&yardstick)
+        .filter(|(_, y)| **y != Yardstick::No)
+        .map(|(p, y)| (p, *y))
+        .collect();
     let calibration = config.calibration.as_ref().map(|t| (t.content.as_str(), t.name.as_str()));
     let model = ScoreModel::new(&ev, &windows, &calibrating, calibration)?;
     if model.calibration.is_some() {
         note!("score: calibrated from {}", model.description.replace('`', ""));
     }
+    let judge = assess::Judge {
+        ev: &ev,
+        model: &model,
+        limits: &config.limits,
+    };
     let results: Vec<AlleleResult> = placed
         .iter()
-        .map(|p| {
-            assess::assess_allele(
-                &ev,
-                p,
-                is_trusted(p),
-                elsewhere.get(&p.gene).map(String::as_str),
-                &model,
-                &config.limits,
-            )
+        .zip(checked)
+        .enumerate()
+        .map(|(i, (p, haplotype))| {
+            let other_build = elsewhere.get(&p.gene).map(String::as_str);
+            assess::assess_allele(&judge, p, is_trusted(p), yardstick[i], haplotype, other_build)
         })
         .collect();
 
@@ -323,6 +349,7 @@ pub fn run(config: &Config) -> Result<Output> {
         results: &results,
         ev: &ev,
         model: &model,
+        haplotypes: &haplotypes,
         requests,
         bytes,
     };
@@ -340,6 +367,12 @@ pub fn run(config: &Config) -> Result<Output> {
     }
     if !ev.dbsnp.datasets.is_empty() {
         files.push(("dbsnp_datasets.tsv", tables::datasets_table(&ev)?));
+    }
+    if haplotypes.coincidence.is_some() {
+        files.push((
+            "haplotype_calibration.tsv",
+            tables::haplotype_table(&haplotypes, config.limits.coincidence)?,
+        ));
     }
 
     let mut summary = Vec::new();

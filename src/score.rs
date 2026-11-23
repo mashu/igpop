@@ -65,12 +65,13 @@ pub fn calibrate(arbitrary: [u64; BINS], trusted: [u64; BINS]) -> Option<Calibra
     Some(Calibration { score, group })
 }
 
-/// Counts behind the built-in calibration: 559 human IGHV alleles (171
-/// single-base variants of the trusted ones, 38,316 possible changes) on
+/// Counts behind the built-in calibration: 566 human IGHV alleles (213
+/// single-base variants of the 147 named trusted ones and of 45 confirmed
+/// as haplotypes; 38,316 possible changes) on
 /// GRCh38 against 1000 Genomes 30x, gnomAD v4.1 genomes and the datasets
 /// relayed by dbSNP, --common 0.01.
 pub const BUILTIN_ARBITRARY: [u64; BINS] = [18812, 5488, 7809, 3899, 1614, 332, 362];
-pub const BUILTIN_TRUSTED: [u64; BINS] = [0, 0, 0, 1, 8, 26, 136];
+pub const BUILTIN_TRUSTED: [u64; BINS] = [0, 0, 0, 7, 18, 41, 147];
 
 /// The calibration used when a run has too few trusted variants of its own.
 pub fn builtin() -> Calibration {
@@ -120,7 +121,7 @@ mod tests {
     #[test]
     fn builtin_and_posterior() {
         let c = builtin();
-        assert!((c.score[0] - 0.006).abs() < 1e-3 && (c.score[6] - 82.689).abs() < 1e-2);
+        assert!((c.score[0] - 0.005).abs() < 1e-3 && (c.score[6] - 72.019).abs() < 1e-2);
         assert!((posterior(0.5, 1.0) - 0.5).abs() < 1e-12);
         assert!((posterior(0.5, 9.0) - 0.9).abs() < 1e-12);
     }

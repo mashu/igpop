@@ -2,7 +2,7 @@
 //! which alleles to look at, how the score was calibrated in this run and
 //! whether the run itself looks healthy.
 
-use crate::assess::{self, AlleleResult, Class, Limits, ScoreModel, ScoreSource, Verdict};
+use crate::assess::{self, AlleleResult, Class, HaplotypeCheck, Limits, ScoreModel, ScoreSource, Verdict};
 use crate::evidence::Evidence;
 use crate::locus::Status;
 use crate::score::{self, Calibration};
@@ -29,6 +29,7 @@ pub struct Input<'a> {
     pub results: &'a [AlleleResult<'a>],
     pub ev: &'a Evidence,
     pub model: &'a ScoreModel,
+    pub haplotypes: &'a HaplotypeCheck,
     pub requests: u64,
     pub bytes: u64,
 }
@@ -67,6 +68,13 @@ struct View<'a> {
     counts: Option<([u64; score::BINS], [u64; score::BINS])>,
     /// Single-base variants carried only by candidate alleles, per support level.
     candidate_only: [u64; score::BINS],
+    /// Alleles supported by frequency only, by haplotype only, by both.
+    routes: [usize; 3],
+    /// Haplotype calibration: the limit, the chromosomes it requires, and
+    /// (chromosomes, share of arbitrary changes found that often).
+    coincidence_limit: f64,
+    required: Option<u32>,
+    coincidence: Vec<(u32, f64)>,
     warnings: Vec<String>,
 }
 
@@ -216,6 +224,14 @@ pub fn render(input: &Input) -> String {
         } else {
             [0; score::BINS]
         },
+        routes: ["frequency", "haplotype", "frequency+haplotype"]
+            .map(|route| input.results.iter().filter(|r| r.supported_by() == route).count()),
+        coincidence_limit: input.limits.coincidence,
+        required: input.haplotypes.required(input.limits.coincidence),
+        coincidence: match &input.haplotypes.coincidence {
+            Some(c) => [1, 2, 3, 5, 10, 20, 50].map(|k| (k, c.rate(k))).to_vec(),
+            None => Vec::new(),
+        },
         warnings: warnings(input),
     };
     write_report(&view)
@@ -237,6 +253,7 @@ fn band(score: f64, supported: f64, confirm: f64) -> &'static str {
         common: f64::NAN,
         supported,
         confirm,
+        coincidence: f64::NAN,
     };
     assess::variant_verdict(Class::Uncommon, Some(score), &limits).as_str()
 }
@@ -282,8 +299,12 @@ fn write_report(r: &View) -> String {
     }
     let _ = writeln!(
         o,
-        "\nAn allele takes the verdict of its weakest difference. \"Trusted\" alleles are the ones \
-         igpop used as examples of real variation; \"candidates\" are the ones being judged.\n"
+        "\nBy frequency, an allele takes the verdict of its weakest difference. An allele whose exact sequence \
+         is established on phased chromosomes is `supported` whatever its single differences say. \
+         Of the supported alleles, {} are supported by frequency only, {} by haplotype only and {} by both \
+         (column `supported_by`). \"Trusted\" alleles are the ones named as examples of real variation; \
+         \"candidates\" are the ones being judged.\n",
+        r.routes[0], r.routes[1], r.routes[2]
     );
 
     let _ = writeln!(o, "## 2. Alleles to look at\n");
@@ -364,9 +385,38 @@ fn write_report(r: &View) -> String {
         }
         let _ = writeln!(
             o,
-            "\n`found_exact` on more than a few chromosomes is strong support. The other outcomes are weak evidence against an allele: the panel leaves out \
+            "\n**How much is a \"found\" worth?** igpop takes every founder chromosome of the panel, changes one base at a time, \
+             and looks the changed sequence up among the chromosomes. This is what an error on a real allele would look like:\n"
+        );
+        let _ = writeln!(o, "| found on at least | share of arbitrary changes |");
+        let _ = writeln!(o, "|---:|---:|");
+        for (chromosomes, rate) in &r.coincidence {
+            let _ = writeln!(o, "| {chromosomes} chromosome(s) | {:.2}% |", 100.0 * rate);
+        }
+        match r.required {
+            Some(required) => {
+                let _ = writeln!(
+                    o,
+                    "\nAn allele is supported by its haplotype when its exact sequence is on at least {required} founder chromosomes: \
+                     fewer than {}% of arbitrary changes are found that often (`--coincidence`), and never on a single chromosome, \
+                     which can be a genotyping error.",
+                    100.0 * r.coincidence_limit
+                );
+            }
+            None => {
+                let _ = writeln!(
+                    o,
+                    "\nNo number of chromosomes reaches the limit of {}% in this run.",
+                    100.0 * r.coincidence_limit
+                );
+            }
+        }
+        let _ = writeln!(
+            o,
+            "\nThe outcomes other than `found_exact` say little against an allele: the panel leaves out \
              variants seen once and sites that fail quality filters, holds a few thousand chromosomes, and rests on short reads. \
-             Counts and frequencies per superpopulation are in the `hap_*` columns of `{}.alleles.tsv`.\n",
+             For an allele with a single difference, the haplotype check and the frequency of that difference are largely the same evidence. \
+             Counts per superpopulation are in the `hap_*` columns of `{}.alleles.tsv`.\n",
             r.prefix
         );
     }
@@ -542,6 +592,10 @@ fn write_report(r: &View) -> String {
         (
             "dbsnp_datasets.tsv",
             "frequency datasets relayed by dbSNP and whether each was used",
+        ),
+        (
+            "haplotype_calibration.tsv",
+            "how often an arbitrary change is found on phased chromosomes",
         ),
     ] {
         let _ = writeln!(o, "- `{}.{file}`: {text}", r.prefix);
