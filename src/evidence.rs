@@ -20,6 +20,17 @@ pub const GNOMAD: &str = "gnomAD_v4.1";
 /// A variant as (contig, (position, REF, ALT)).
 pub type Lookup = (String, Key);
 
+/// One population of one dataset, by its position in that dataset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stratum {
+    /// Superpopulation of 1000 Genomes (index into `POPS`).
+    Kgp(usize),
+    /// Genetic-ancestry group of gnomAD (index into `GNOMAD_GROUPS`).
+    Gnomad(usize),
+    /// Dataset relayed by dbSNP (index into the datasets in use).
+    Dbsnp(usize),
+}
+
 /// Where each source is read from; `None` = not used in this run.
 pub struct Sources {
     pub kgp: Option<String>,
@@ -75,6 +86,8 @@ pub struct Dbsnp {
     seen: HashMap<String, (u64, f64)>,
     /// Decided once all lines are read, largest dataset first.
     pub datasets: Vec<Dataset>,
+    /// The datasets in use, by name: positions in `datasets`.
+    used: Vec<usize>,
 }
 
 impl Dbsnp {
@@ -159,10 +172,13 @@ impl Dbsnp {
             .collect();
         self.datasets
             .sort_by(|a, b| a.smallest_af.total_cmp(&b.smallest_af).then(a.name.cmp(&b.name)));
+        self.used = (0..self.datasets.len()).filter(|i| self.datasets[*i].used).collect();
+        self.used.sort_by(|a, b| self.datasets[*a].name.cmp(&self.datasets[*b].name));
     }
 
-    fn used(&self) -> impl Iterator<Item = &Dataset> {
-        self.datasets.iter().filter(|d| d.used)
+    /// The datasets in use, in the order `Stratum::Dbsnp` numbers them.
+    pub fn used(&self) -> impl Iterator<Item = &Dataset> {
+        self.used.iter().map(|i| &self.datasets[*i])
     }
 
     /// Non-zero frequencies of the used datasets for one allele, highest first.
@@ -183,28 +199,19 @@ impl Dbsnp {
 
     /// One stratum per used dataset that reports this allele. dbSNP relays
     /// a frequency without counts; the count is frequency x estimated size.
-    fn strata(&self, lookup: &Lookup) -> Vec<(String, PopCount)> {
-        let Some(reported) = self.freqs.get(lookup) else {
-            return Vec::new();
-        };
-        let mut out: Vec<(String, PopCount)> = self
-            .used()
-            .filter_map(|d| {
-                let (_, af) = reported.iter().find(|(name, _)| name == &d.name)?;
-                let ac = (af * d.chromosomes as f64).round() as u32;
-                Some((
-                    format!("dbSNP:{}", d.name),
-                    PopCount {
-                        ac,
-                        an: d.chromosomes,
-                        het: 0,
-                        hom: 0,
-                    },
-                ))
-            })
-            .collect();
-        out.sort_by(|a, b| a.0.cmp(&b.0));
-        out
+    fn strata<'a>(&'a self, lookup: &Lookup) -> impl Iterator<Item = (Stratum, PopCount)> + 'a {
+        let reported = self.freqs.get(lookup);
+        self.used().enumerate().filter_map(move |(k, d)| {
+            let (_, af) = reported?.iter().find(|(name, _)| name == &d.name)?;
+            let ac = (af * d.chromosomes as f64).round() as u32;
+            let count = PopCount {
+                ac,
+                an: d.chromosomes,
+                het: 0,
+                hom: 0,
+            };
+            Some((Stratum::Dbsnp(k), count))
+        })
     }
 }
 
@@ -344,28 +351,32 @@ impl Evidence {
     }
 
     /// Every stratum that genotyped the variant's position, with its counts.
-    pub fn strata(&self, lookup: &Lookup) -> Vec<(String, PopCount)> {
+    pub fn strata(&self, lookup: &Lookup) -> Vec<(Stratum, PopCount)> {
         let mut out = Vec::new();
         if let Some(site) = self.kgp.get(lookup) {
-            out.extend(POPS.iter().zip(&site.pops).map(|(name, c)| (format!("{KGP}:{name}"), *c)));
+            out.extend(site.pops.iter().enumerate().map(|(i, c)| (Stratum::Kgp(i), *c)));
         }
         if let Some(site) = self.gnomad.get(lookup) {
-            out.extend(
-                GNOMAD_GROUPS
-                    .iter()
-                    .zip(&site.groups)
-                    .map(|(name, c)| (format!("{GNOMAD}:{name}"), *c)),
-            );
+            out.extend(site.groups.iter().enumerate().map(|(i, c)| (Stratum::Gnomad(i), *c)));
         }
         out.extend(self.dbsnp.strata(lookup));
         out.retain(|(_, c)| c.an > 0);
         out
     }
+
+    /// A stratum as `dataset:population`.
+    pub fn stratum_name(&self, stratum: Stratum) -> String {
+        match stratum {
+            Stratum::Kgp(i) => format!("{KGP}:{}", POPS[i]),
+            Stratum::Gnomad(i) => format!("{GNOMAD}:{}", GNOMAD_GROUPS[i]),
+            Stratum::Dbsnp(k) => format!("dbSNP:{}", self.dbsnp.used().nth(k).map_or("?", |d| d.name.as_str())),
+        }
+    }
 }
 
 /// Support of a variant: the largest lower confidence bound of its
 /// frequency over all strata; 0 if it was never seen.
-pub fn support(strata: &[(String, PopCount)]) -> f64 {
+pub fn support(strata: &[(Stratum, PopCount)]) -> f64 {
     strata.iter().map(|(_, c)| c.lower95()).fold(0.0, f64::max)
 }
 

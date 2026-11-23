@@ -101,15 +101,20 @@ impl Panel {
 
     /// Add one data line of the phased VCF.
     pub fn add_line(&mut self, contig: &str, line: &str) {
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 10 {
-            return;
-        }
+        // The nine fixed columns, then one genotype per sample. A line
+        // holds thousands of genotypes, nearly all "0|0": those are
+        // recognised without parsing.
+        let mut columns = line.splitn(10, '\t');
+        let f: Vec<&str> = columns.by_ref().take(9).collect();
+        let Some(genotypes) = columns.next() else { return };
         let Ok(pos) = f[1].parse::<u64>() else { return };
         let alts: Vec<&str> = f[4].split(',').collect();
         let mut bits: Vec<Vec<u64>> = vec![vec![0u64; self.words]; alts.len()];
-        for (i, gt) in f[9..].iter().enumerate() {
-            let gt = gt.split(':').next().unwrap_or("");
+        for (i, field) in genotypes.split('\t').enumerate() {
+            if field == "0|0" || 2 * i + 1 >= 64 * self.words {
+                continue;
+            }
+            let gt = field.split(':').next().unwrap_or("");
             for (side, code) in gt.split(['|', '/']).take(2).enumerate() {
                 if let Ok(a) = code.parse::<usize>() {
                     if a >= 1 && a <= alts.len() {

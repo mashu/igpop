@@ -6,7 +6,7 @@ use crate::fetch::merge_regions;
 use crate::freq::Key;
 use crate::io::{Coord, Reference, Strand};
 use crate::variant::Kind;
-use crate::{render, variant};
+use crate::{par, render, variant};
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 
@@ -199,18 +199,153 @@ pub struct PlaceOptions {
     pub scoring: Scoring,
 }
 
+/// Best score of a sequence at one window, over the orientations it allows.
+fn score_at(seq: &[u8], window: &Window, scoring: &Scoring) -> i32 {
+    window
+        .orientations(seq)
+        .iter()
+        .map(|(_, q)| score_only(q, &window.seq, scoring))
+        .max()
+        .expect("at least one orientation")
+}
+
+/// An allele already compared with every locus, used to spare a similar
+/// allele most of that work.
+struct Guide<'a> {
+    seq: &'a [u8],
+    /// Its score at every window; `None` at its own locus.
+    scores: &'a [Option<i32>],
+}
+
+/// How much higher `seq` can score than `guide`, at any window: every
+/// substituted base changes the best score by at most one match-mismatch
+/// difference, every inserted or deleted base by at most a match plus a
+/// new gap.
+fn slack(seq: &[u8], guide: &[u8], s: &Scoring) -> i32 {
+    let a = align(seq, guide, s);
+    let substituted = a
+        .ops
+        .iter()
+        .filter(|op| matches!(op, Op::Pair { q, r } if seq[*q] != guide[*r]))
+        .count();
+    let gapped = a.ops.iter().filter(|op| !matches!(op, Op::Pair { .. })).count() + guide.len() - (a.ref_end - a.ref_start);
+    let (high, low) = (s.matched.max(s.mismatch).max(0), s.matched.min(s.mismatch).min(0));
+    (high - low) * substituted as i32 + (high - s.gap_open - s.gap_extend) * gapped as i32
+}
+
+/// The best competing locus of an allele: its score at every window that
+/// is not its own locus; of equal scores, the first window wins. With a
+/// guide, windows are tried from the most promising down, and the search
+/// stops when no remaining window can reach the best score found: the
+/// result is the same as trying them all. Returns the winner and, without
+/// a guide, all scores.
+fn rival(
+    seq: &[u8],
+    own: &Window,
+    windows: &[Window],
+    scoring: &Scoring,
+    guide: Option<&Guide>,
+) -> (Option<(usize, i32)>, Vec<Option<i32>>) {
+    let better = |best: Option<(usize, i32)>, i: usize, score: i32| match best {
+        Some((at, top)) if score < top || (score == top && at < i) => Some((at, top)),
+        _ => Some((i, score)),
+    };
+    let mut best = None;
+    match guide {
+        None => {
+            let scores: Vec<Option<i32>> = windows
+                .iter()
+                .map(|w| (!w.same_locus(own)).then(|| score_at(seq, w, scoring)))
+                .collect();
+            for (i, score) in scores.iter().enumerate() {
+                if let Some(score) = score {
+                    best = better(best, i, *score);
+                }
+            }
+            (best, scores)
+        }
+        Some(guide) => {
+            let slack = slack(seq, guide.seq, scoring);
+            let mut order: Vec<(i32, usize)> = guide
+                .scores
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| s.map(|s| (s + slack, i)))
+                .collect();
+            order.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+            for (bound, i) in order {
+                if best.is_some_and(|(_, top)| bound < top) {
+                    break;
+                }
+                best = better(best, i, score_at(seq, &windows[i], scoring));
+            }
+            (best, Vec::new())
+        }
+    }
+}
+
+/// Place every allele. The first allele of each gene is compared with all
+/// loci; the others use it as their guide.
+pub fn place_all(
+    alleles: &[(String, Vec<u8>)],
+    windows: &[Window],
+    aliases: &HashMap<String, String>,
+    options: &PlaceOptions,
+) -> Result<Vec<Placed>> {
+    let window_of = |name: &str| {
+        let gene = aliases.get(name).map(String::as_str).unwrap_or_else(|| gene_of(name));
+        windows.iter().position(|w| w.coord.gene == gene)
+    };
+    let mut first: HashMap<usize, usize> = HashMap::new();
+    let (mut leaders, mut followers) = (Vec::new(), Vec::new());
+    for (i, (name, _)) in alleles.iter().enumerate() {
+        match window_of(name) {
+            Some(w) if first.contains_key(&w) => followers.push((i, first[&w])),
+            Some(w) => {
+                first.insert(w, leaders.len());
+                leaders.push(i);
+            }
+            None => leaders.push(i),
+        }
+    }
+    let led: Vec<(Placed, Vec<Option<i32>>)> = par::map(&leaders, None, |i| {
+        place(&alleles[*i].0, &alleles[*i].1, windows, aliases, options, None)
+    })
+    .into_iter()
+    .collect::<Result<_>>()?;
+    let followed: Vec<Placed> = par::map(&followers, None, |(i, leader)| {
+        let guide = Guide {
+            seq: &alleles[leaders[*leader]].1,
+            scores: &led[*leader].1,
+        };
+        place(&alleles[*i].0, &alleles[*i].1, windows, aliases, options, Some(&guide)).map(|(placed, _)| placed)
+    })
+    .into_iter()
+    .collect::<Result<_>>()?;
+    Ok(led.into_iter().map(|(placed, _)| placed).chain(followed).collect())
+}
+
 /// Align one allele to the window of its gene (in the orientation that
 /// scores best), compare with every other locus, and call its variants.
-pub fn place(name: &str, seq: &[u8], windows: &[Window], aliases: &HashMap<String, String>, options: &PlaceOptions) -> Result<Placed> {
+/// Also returns its score at every window when no guide was given.
+fn place(
+    name: &str,
+    seq: &[u8],
+    windows: &[Window],
+    aliases: &HashMap<String, String>,
+    options: &PlaceOptions,
+    guide: Option<&Guide>,
+) -> Result<(Placed, Vec<Option<i32>>)> {
     let gene = aliases.get(name).map(String::as_str).unwrap_or_else(|| gene_of(name));
     let Some(index) = windows.iter().position(|w| w.coord.gene == gene) else {
-        return Ok(Placed {
+        let placed = Placed {
             allele: name.into(),
             gene: gene.into(),
             status: Status::NoCoordinates,
             placement: None,
             variants: vec![],
-        });
+        };
+        return Ok((placed, Vec::new()));
     };
     let own = &windows[index];
     let (reverse, query, aln): (bool, Vec<u8>, Alignment) = own
@@ -230,18 +365,11 @@ pub fn place(name: &str, seq: &[u8], windows: &[Window], aliases: &HashMap<Strin
         .map(|w| w.coord.gene.clone())
         .collect();
 
-    // Best competing locus: the same allele scored at every other window.
-    let mut rival: Option<(String, i32)> = None;
-    if options.paralog_check {
-        for w in windows.iter().filter(|w| !w.same_locus(own)) {
-            for (_, q) in w.orientations(seq) {
-                let s = score_only(&q, &w.seq, &options.scoring);
-                if rival.as_ref().is_none_or(|(_, best)| s > *best) {
-                    rival = Some((w.coord.gene.clone(), s));
-                }
-            }
-        }
-    }
+    let (rival, scores) = match options.paralog_check {
+        true => rival(seq, own, windows, &options.scoring, guide),
+        false => (None, Vec::new()),
+    };
+    let rival = rival.map(|(i, score)| (windows[i].coord.gene.clone(), score));
 
     let status = if aln.identity() < options.min_identity {
         Status::LowIdentity
@@ -266,7 +394,7 @@ pub fn place(name: &str, seq: &[u8], windows: &[Window], aliases: &HashMap<Strin
             });
         }
     }
-    Ok(Placed {
+    let placed = Placed {
         allele: name.into(),
         gene: gene.into(),
         status,
@@ -284,5 +412,6 @@ pub fn place(name: &str, seq: &[u8], windows: &[Window], aliases: &HashMap<Strin
             insertions: insertions(&aln, &query, own.start),
         }),
         variants,
-    })
+    };
+    Ok((placed, scores))
 }

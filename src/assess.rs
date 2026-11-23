@@ -18,7 +18,7 @@
 //! 4. **Filters.** For a variant that is not supported: what the data show
 //!    and how that scored, as fixed keywords.
 
-use crate::evidence::{self, informative, Evidence, Lookup};
+use crate::evidence::{self, informative, Evidence, Lookup, Stratum};
 use crate::freq::PopCount;
 use crate::hap;
 use crate::locus::{Called, Placed, Status, Window};
@@ -138,7 +138,7 @@ pub fn variant_verdict(class: Class, score: Option<f64>, limits: &Limits) -> Ver
 
 /// True if every stratum large enough to tell bounds the frequency below
 /// `common`, and there is at least one such stratum.
-fn rare_everywhere(strata: &[(String, PopCount)], common: f64) -> bool {
+fn rare_everywhere(strata: &[(Stratum, PopCount)], common: f64) -> bool {
     let mut large = strata.iter().filter(|(_, c)| informative(c.an, common)).peekable();
     large.peek().is_some() && large.all(|(_, c)| c.upper95() < common)
 }
@@ -307,8 +307,8 @@ pub fn assess_variant(ev: &Evidence, placed: &Placed, called: &Called, model: &S
         .map(|(name, c)| (c.tail_p(limits.common), c.lower95(), name))
         // Smallest p-value; among equals, the highest guaranteed frequency.
         .min_by(|x, y| x.0.total_cmp(&y.0).then(y.1.total_cmp(&x.1)))
-        .map(|(p, _, name)| (p, name));
-    let corrected = best.map(|(p, name)| ((p * strata.len() as f64).min(1.0), name.clone()));
+        .map(|(p, _, stratum)| (p, *stratum));
+    let corrected = best.map(|(p, stratum)| ((p * strata.len() as f64).min(1.0), ev.stratum_name(stratum)));
     let (class, basis) = match &corrected {
         Some((p, name)) if *p <= 0.05 => (Class::Common, Some(name.clone())),
         _ if ev.dbsnp.common.contains(&lookup) => (Class::Common, Some("dbSNP:COMMON".to_string())),
@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn rare_needs_a_stratum_large_enough_to_tell() {
-        let s = |ac, an| ("x".to_string(), PopCount { ac, an, het: 0, hom: 0 });
+        let s = |ac, an| (Stratum::Kgp(0), PopCount { ac, an, het: 0, hom: 0 });
         assert!(rare_everywhere(&[s(3, 100_000), s(0, 50)], 0.01));
         assert!(!rare_everywhere(&[s(3, 100_000), s(40, 5_000)], 0.01));
         assert!(!rare_everywhere(&[s(2, 50)], 0.01));

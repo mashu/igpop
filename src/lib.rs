@@ -247,9 +247,7 @@ pub fn run(config: &Config) -> Result<Output> {
         bail!("{} holds no FASTA records", config.alleles.name);
     }
     note!("aligning {} alleles", alleles.len());
-    let mut placed: Vec<Placed> = par::map(&alleles, None, |(name, seq)| locus::place(name, seq, &windows, &aliases, &options))
-        .into_iter()
-        .collect::<Result<_>>()?;
+    let mut placed = locus::place_all(&alleles, &windows, &aliases, &options)?;
     placed.sort_by(|a, b| a.allele.cmp(&b.allele));
 
     // Step 2: population evidence.
