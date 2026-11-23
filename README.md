@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/mashu/igpop/actions/workflows/ci.yml/badge.svg)](https://github.com/mashu/igpop/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-mashu.github.io%2Figpop-blue)](https://mashu.github.io/igpop/)
+[![Web app](https://img.shields.io/badge/web%20app-run%20in%20the%20browser-0b6e69)](https://mashu.github.io/igpop/app/)
 [![Release](https://img.shields.io/github/v/release/mashu/igpop?include_prereleases&sort=semver)](https://github.com/mashu/igpop/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -17,6 +18,9 @@ occurs on one chromosome in phased genomes. Only the regions needed are
 downloaded.
 
 ## Quick start (human IGH)
+
+No installation: the web app (badge above) runs the analysis in the browser,
+without gnomAD ancestry groups. For the full analysis, install the program:
 
 1. Install Rust with [rustup](https://rustup.rs/) (Linux and macOS; on
    Windows run the installer from that page):

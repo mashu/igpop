@@ -26,7 +26,6 @@ use crate::score::{self, Calibration, BINS};
 use crate::variant::Kind;
 use anyhow::Result;
 use std::collections::HashSet;
-use std::path::Path;
 
 pub struct Limits {
     /// Frequency a `common` variant must demonstrably reach.
@@ -181,9 +180,10 @@ pub struct ScoreModel {
 }
 
 impl ScoreModel {
-    /// Tabulate this run and choose the scores: a file if given; otherwise
+    /// Tabulate this run and choose the scores: a file (its text and name)
+    /// if given; otherwise
     /// this run; otherwise, with too few trusted variants, the built-in table.
-    pub fn new(ev: &Evidence, windows: &[Window], trusted_alleles: &[&Placed], file: Option<&Path>) -> Result<Self> {
+    pub fn new(ev: &Evidence, windows: &[Window], trusted_alleles: &[&Placed], file: Option<(&str, &str)>) -> Result<Self> {
         let (mut arbitrary, mut trusted) = ([0u64; BINS], [0u64; BINS]);
         if ev.counted() {
             let mut positions: HashSet<(&str, u64)> = HashSet::new();
@@ -211,10 +211,10 @@ impl ScoreModel {
         }
         let (na, nt): (u64, u64) = (arbitrary.iter().sum(), trusted.iter().sum());
         let (calibration, source, description) = match (file, ev.counted()) {
-            (Some(path), _) => (
-                Some(score::read(path)?),
+            (Some((text, name)), _) => (
+                Some(score::parse(text, name)?),
                 ScoreSource::File,
-                format!("the file `{}` (`--calibration`)", path.display()),
+                format!("the file `{name}` (`--calibration`)"),
             ),
             (None, false) => (None, ScoreSource::None, String::new()),
             (None, true) => match score::calibrate(arbitrary, trusted) {

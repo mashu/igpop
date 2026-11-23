@@ -16,7 +16,8 @@ For every allele it
    `needs_confirmation`,
 6. writes a report that lists the alleles to look at and checks the run.
 
-New here? Go to the [Quick start](quickstart.md).
+New here? Go to the [Quick start](quickstart.md), or try the
+[web app](app/index.html): nothing to install.
 
 The locus is supplied by the user because short-read aligners cannot place
 sequences reliably in immunoglobulin and T-cell receptor loci: the genes are

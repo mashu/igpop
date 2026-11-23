@@ -3,17 +3,12 @@
 //! file or an http(s) URL, plain or bgzip-compressed (`.gz` with `.gzi`);
 //! only the requested bytes are read or downloaded.
 
+use crate::net;
 use anyhow::{anyhow, bail, Context, Result};
 use flate2::read::MultiGzDecoder;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::path::Path;
-
-pub const DEFAULT_GRCH38: &str =
-    "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa";
-pub const DEFAULT_GRCH37: &str =
-    "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/phase2_reference_assembly_sequence/hs37d5.fa.gz";
+use std::io::{Read, Seek, SeekFrom};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Strand {
@@ -44,14 +39,9 @@ pub fn normalise_build(s: &str) -> String {
     }
 }
 
-/// Tab-separated: gene, build, contig, start, end, strand (+, - or . for
-/// "try both"). `#` lines and a header line starting with `gene` are skipped.
-pub fn read_coords(path: &Path) -> Result<Vec<Coord>> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("opening {}", path.display()))?;
-    parse_coords(&text, &path.display().to_string())
-}
-
-/// Coordinates from text; `label` names the source in error messages.
+/// Coordinates from tab-separated text: gene, build, contig, start, end,
+/// strand (+, - or . for "try both"). `#` lines and a header line starting
+/// with `gene` are skipped. `label` names the source in error messages.
 pub fn parse_coords(text: &str, label: &str) -> Result<Vec<Coord>> {
     let mut out = Vec::new();
     for (n, line) in text.lines().enumerate() {
@@ -89,11 +79,11 @@ pub fn parse_coords(text: &str, label: &str) -> Result<Vec<Coord>> {
     Ok(out)
 }
 
-pub fn read_fasta(path: &Path) -> Result<Vec<(String, Vec<u8>)>> {
-    let reader = BufReader::new(File::open(path).with_context(|| format!("opening {}", path.display()))?);
+/// (name, sequence) per record; names end at the first blank, sequences
+/// are upper-cased and stripped of everything but letters (IMGT gap dots).
+pub fn parse_fasta(text: &str) -> Vec<(String, Vec<u8>)> {
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
-    for line in reader.lines() {
-        let line = line?;
+    for line in text.lines() {
         if let Some(h) = line.strip_prefix('>') {
             out.push((h.split_whitespace().next().unwrap_or("").to_string(), Vec::new()));
         } else if let Some(last) = out.last_mut() {
@@ -101,7 +91,7 @@ pub fn read_fasta(path: &Path) -> Result<Vec<(String, Vec<u8>)>> {
                 .extend(line.bytes().filter(|b| b.is_ascii_alphabetic()).map(|b| b.to_ascii_uppercase()));
         }
     }
-    Ok(out)
+    out
 }
 
 struct FaiEntry {
@@ -111,139 +101,47 @@ struct FaiEntry {
     line_width: u64,
 }
 
+/// A file read by byte range: local, or remote over HTTP.
 pub enum Source {
     Local(File),
-    Remote { agent: ureq::Agent, url: String },
+    Remote(String),
 }
 
 impl Source {
     /// A local path or an http(s) URL.
     pub fn open(spec: &str) -> Result<Self> {
-        if is_url(spec) {
-            Ok(Source::Remote {
-                agent: agent(),
-                url: spec.to_string(),
-            })
+        if net::is_url(spec) {
+            Ok(Source::Remote(spec.to_string()))
         } else {
             Ok(Source::Local(File::open(spec).with_context(|| format!("opening {spec}"))?))
         }
     }
 
-    /// Bytes `from..=to` of the underlying file; `to = None` reads to the
-    /// end. A range that runs past the end of the file is returned short.
+    /// Bytes `from..=to` of the file; `to = None` reads to the end. A
+    /// range that runs past the end of the file is returned short.
     pub fn read(&mut self, from: u64, to: Option<u64>) -> Result<Vec<u8>> {
         match self {
             Source::Local(file) => {
                 file.seek(SeekFrom::Start(from))?;
                 let mut buf = Vec::new();
                 match to {
-                    Some(to) => {
-                        file.take(to - from + 1).read_to_end(&mut buf)?;
-                    }
-                    None => {
-                        file.read_to_end(&mut buf)?;
-                    }
-                }
+                    Some(to) => file.take(to - from + 1).read_to_end(&mut buf)?,
+                    None => file.read_to_end(&mut buf)?,
+                };
                 Ok(buf)
             }
-            Source::Remote { agent, url } => {
-                let started = std::time::Instant::now();
-                let range = match to {
-                    Some(to) => format!("bytes={from}-{to}"),
-                    None => format!("bytes={from}-"),
-                };
-                let response = match call_with_retry(|| agent.get(url).set("Range", &range)) {
-                    Ok(r) => r,
-                    Err(e) if matches!(*e, ureq::Error::Status(416, _)) => return Ok(Vec::new()),
-                    Err(e) => return Err(*e).with_context(|| format!("GET {url}")),
-                };
-                if response.status() != 206 {
-                    bail!("{url}: server ignored the byte-range request (HTTP {})", response.status());
-                }
-                let mut buf = Vec::new();
-                response.into_reader().read_to_end(&mut buf)?;
-                account(url, buf.len(), started);
-                Ok(buf)
-            }
+            Source::Remote(url) => net::get_range(url, from, to),
         }
     }
-}
-
-static REQUESTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// (number of HTTP requests, bytes downloaded) so far in this run.
-pub fn download_totals() -> (u64, u64) {
-    use std::sync::atomic::Ordering::Relaxed;
-    (REQUESTS.load(Relaxed), BYTES.load(Relaxed))
-}
-
-fn account(url: &str, bytes: usize, started: std::time::Instant) {
-    use std::sync::atomic::Ordering::Relaxed;
-    REQUESTS.fetch_add(1, Relaxed);
-    BYTES.fetch_add(bytes as u64, Relaxed);
-    if std::env::var_os("IGPOP_TRACE").is_some() {
-        let name = url.rsplit('/').next().unwrap_or(url);
-        eprintln!("  GET {name}: {bytes} bytes in {:.1}s", started.elapsed().as_secs_f64());
-    }
-}
-
-pub fn is_url(spec: &str) -> bool {
-    spec.starts_with("http://") || spec.starts_with("https://")
-}
-
-/// One shared agent, so connections to a host are reused across requests.
-fn agent() -> ureq::Agent {
-    static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
-    AGENT
-        .get_or_init(|| ureq::AgentBuilder::new().try_proxy_from_env(true).build())
-        .clone()
 }
 
 /// A whole (small) file, e.g. an index: local path or URL.
 pub fn read_whole(spec: &str) -> Result<Vec<u8>> {
-    if is_url(spec) {
-        http_get(&agent(), spec)
+    if net::is_url(spec) {
+        net::get(spec)
     } else {
         std::fs::read(spec).with_context(|| format!("reading {spec}"))
     }
-}
-
-/// Send a request, retrying on server overload (429, 5xx) and transport
-/// errors with exponential backoff: 1, 2, 4, 8, 16 s.
-fn call_with_retry(request: impl Fn() -> ureq::Request) -> std::result::Result<ureq::Response, Box<ureq::Error>> {
-    const ATTEMPTS: u32 = 6;
-    let mut attempt = 0;
-    loop {
-        let error = match request().call() {
-            Ok(response) => return Ok(response),
-            Err(e) => e,
-        };
-        let transient = match &error {
-            ureq::Error::Status(code, _) => *code == 429 || (500..600).contains(code),
-            ureq::Error::Transport(_) => true,
-        };
-        attempt += 1;
-        if !transient || attempt == ATTEMPTS {
-            return Err(Box::new(error));
-        }
-        let wait = 1u64 << (attempt - 1);
-        if std::env::var_os("IGPOP_TRACE").is_some() {
-            eprintln!("  retry {attempt} in {wait}s: {error}");
-        }
-        std::thread::sleep(std::time::Duration::from_secs(wait));
-    }
-}
-
-fn http_get(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>> {
-    let started = std::time::Instant::now();
-    let mut buf = Vec::new();
-    call_with_retry(|| agent.get(url))
-        .with_context(|| format!("GET {url}"))?
-        .into_reader()
-        .read_to_end(&mut buf)?;
-    account(url, buf.len(), started);
-    Ok(buf)
 }
 
 pub struct Reference {

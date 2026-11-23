@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 env:
@@ -17,7 +16,24 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
+      - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
+      # The library without the command-line feature, as the web app uses it.
+      - run: cargo clippy --no-default-features --lib -- -D warnings
       # Unit tests only: nothing in the test suite touches the network.
       - run: cargo test
+
+  web:
+    # The browser build must compile; it is published by pages.yml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+      - run: cargo clippy -p igpop-web --target wasm32-unknown-unknown -- -D warnings
+      - run: node --check web/static/app.js && node --check web/static/worker.js

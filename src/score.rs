@@ -83,9 +83,9 @@ pub fn posterior(prior: f64, score: f64) -> f64 {
     prior * score / (prior * score + 1.0 - prior)
 }
 
-/// Scores from a `<prefix>.score_calibration.tsv` written by an earlier run.
-pub fn read(path: &std::path::Path) -> anyhow::Result<Calibration> {
-    let text = std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
+/// Scores from the text of a `<prefix>.score_calibration.tsv` written by an
+/// earlier run; `label` names it in error messages.
+pub fn parse(text: &str, label: &str) -> anyhow::Result<Calibration> {
     let (mut score, mut group) = ([f64::NAN; BINS], [0; BINS]);
     for line in text.lines().skip(1) {
         let f: Vec<&str> = line.split('\t').collect();
@@ -98,7 +98,7 @@ pub fn read(path: &std::path::Path) -> anyhow::Result<Calibration> {
         }
     }
     if score.iter().any(|x| x.is_nan()) {
-        anyhow::bail!("{} does not hold a score for every support bin", path.display());
+        anyhow::bail!("{label} does not hold a score for every support bin");
     }
     Ok(Calibration { score, group })
 }

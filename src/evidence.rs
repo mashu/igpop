@@ -10,7 +10,7 @@ use crate::fetch::{fetch_vcf, merge_regions, Cache, Region};
 use crate::freq::{self, GnomadSite, Key, PopCount, Site, GNOMAD_GROUPS, POPS};
 use crate::hap::Panel;
 use crate::locus::{Placed, Status, Window};
-use crate::{io, tabix};
+use crate::{io, note, tabix};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
@@ -252,7 +252,7 @@ impl Evidence {
         }
 
         if let Some(spec) = &ev.sources.kgp {
-            eprintln!("{KGP}: {spec}");
+            note!("{KGP}: {spec}");
             for (contig, line) in fetch_vcf(spec, &ev.regions, cache)? {
                 for (key, site) in freq::parse_line(&line) {
                     ev.kgp.insert((contig.clone(), key), site);
@@ -265,7 +265,7 @@ impl Evidence {
             }
         }
         if let Some(spec) = &ev.sources.gnomad {
-            eprintln!("{GNOMAD}: {spec}");
+            note!("{GNOMAD}: {spec}");
             for (contig, line) in fetch_vcf(spec, &ev.regions, cache)? {
                 for (key, site) in freq::parse_gnomad_line(&line) {
                     ev.gnomad.insert((contig.clone(), key), site);
@@ -279,10 +279,10 @@ impl Evidence {
             }
         }
         if let Some(spec) = &ev.sources.dbsnp {
-            eprintln!("dbSNP: {spec}");
+            note!("dbSNP: {spec}");
             // If dbSNP is unavailable the run continues without it.
             let lines = fetch_vcf(spec, &ev.regions, cache).unwrap_or_else(|e| {
-                eprintln!("warning: dbSNP could not be read; no rsIDs, no relayed frequencies: {e:#}");
+                note!("warning: dbSNP could not be read; no rsIDs, no relayed frequencies: {e:#}");
                 Vec::new()
             });
             for (contig, line) in lines {
@@ -303,15 +303,15 @@ impl Evidence {
             ev.sources.phased = None;
         }
         if let Some(spec) = &ev.sources.phased {
-            eprintln!("phased panel: {spec}");
+            note!("phased panel: {spec}");
             // Additional evidence: if the panel is unavailable the run
             // continues without the haplotype check.
             match load_panel(spec, &ev.sources.pedigree, &hap_regions, cache) {
                 Ok(panel) => {
-                    eprintln!("  {} founders, {} haplotypes", panel.founders, 2 * panel.founders);
+                    note!("  {} founders, {} haplotypes", panel.founders, 2 * panel.founders);
                     ev.panel = Some(panel);
                 }
-                Err(e) => eprintln!("warning: haplotype check skipped: {e:#}"),
+                Err(e) => note!("warning: haplotype check skipped: {e:#}"),
             }
         }
         Ok(ev)

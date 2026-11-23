@@ -1,6 +1,6 @@
 [package]
 name = "igpop"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 description = "Population evidence for germline alleles (IG/TR) at user-supplied loci"
 license = "MIT"
@@ -10,15 +10,29 @@ documentation = "https://mashu.github.io/igpop/"
 readme = "README.md"
 keywords = ["bioinformatics", "immunogenetics", "germline", "population-genetics"]
 categories = ["science", "command-line-utilities"]
-exclude = ["docs/book", ".github"]
+exclude = ["docs/book", ".github", "web"]
+
+[workspace]
+members = ["web"]
+
+[features]
+default = ["cli"]
+# The command-line program: blocking HTTP, threads, option parsing. Without
+# it the library has no network or thread dependency (the web app).
+cli = ["dep:clap", "dep:rayon", "dep:ureq"]
+
+[[bin]]
+name = "igpop"
+path = "src/main.rs"
+required-features = ["cli"]
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 flate2 = "1"
-rayon = "1"
+rayon = { version = "1", optional = true }
 statrs = { version = "0.18", default-features = false }
-ureq = { version = "2", features = ["native-certs"] }
+ureq = { version = "2", features = ["native-certs"], optional = true }
 
 [profile.release]
 lto = true

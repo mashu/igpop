@@ -9,3 +9,5 @@
 *.dbsnp_datasets.tsv
 *.score_calibration.tsv
 docs/book/
+web/pkg/
+site/

@@ -4,9 +4,9 @@ The repository has three GitHub Actions workflows.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push to `main`, pull requests | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`. Tests do not use the network. |
+| `ci.yml` | every push, pull requests | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (no network), and a check that the web app compiles to WebAssembly. |
 | `release.yml` | pushing a tag `v*` | Builds release binaries for Linux x86_64, macOS arm64 and x86_64, and Windows x86_64, and attaches them to a GitHub release with generated notes. |
-| `docs.yml` | push to `main` touching `docs/` | Builds this book with mdBook and publishes it to GitHub Pages. |
+| `pages.yml` | push to `main` touching the docs, the web app or the library | Builds this book with mdBook and the web app with wasm-pack, and publishes both to GitHub Pages (book at the root, app under `app/`). |
 
 ## One-time setup
 

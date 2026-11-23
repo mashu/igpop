@@ -10,7 +10,18 @@ previous one, and has no other way of influencing the outcome.
 | 3. Assess | `assess` | `Placed` + `Evidence` | `ScoreModel` (calibration), then `VariantResult` and `AlleleResult` |
 | 4. Write | `tables`, `report` | the results | the eight output files |
 
-`main.rs` contains the command line and the four calls, nothing else.
+The four calls are in `igpop::run` (`lib.rs`), which takes its inputs as
+text and returns its outputs as text. Two programs use it:
+
+| Program | Where | Adds |
+|---|---|---|
+| Command line | `src/main.rs` (feature `cli`) | options, reading and writing files, blocking HTTP (`ureq`), threads (`rayon`) |
+| Web app | `web/` (crate `igpop-web`, WebAssembly) and `web/static/` (the page) | HTTP through the browser, progress messages to the page |
+
+The library itself has no network or thread dependency: the transport is
+registered through `net::set_transport`, progress goes through
+`log::set_sink`, and `par::map` runs in parallel only with the `cli`
+feature.
 
 ## One interface between data and decisions
 
@@ -51,7 +62,8 @@ program instead of writing a shifted table. To add a column, add one
 | `freq` | Allele counts, exact (Clopper-Pearson) bounds, exact binomial test, heterogeneity test; parsers for the 1000 Genomes and gnomAD records. |
 | `score` | Support levels, the likelihood-ratio table, the built-in table. |
 | `hap` | Phased panel as bit sets per variant; counting carrier chromosomes of founders. |
-| `io`, `tabix`, `fetch` | FASTA and coordinates; remote range reads; tabix index; region cache. |
+| `io`, `tabix`, `fetch`, `net` | FASTA and coordinates; tabix index; region cache; the pluggable transport. |
+| `log`, `par` | Progress messages; parallel map. |
 | `render` | Alignments as text. |
 
 ## Checking a change

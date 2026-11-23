@@ -5,6 +5,7 @@
 # For users
 
 - [Quick start](quickstart.md)
+- [The web app](web-app.md)
 - [Reading the results](reading-results.md)
 - [Why an allele did not pass](filters.md)
 - [The haplotype check](haplotypes.md)

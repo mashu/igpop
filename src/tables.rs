@@ -9,8 +9,7 @@ use crate::hap;
 use crate::locus::{Called, Placed, Placement, Window};
 use crate::{render, score};
 use anyhow::Result;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::fmt::Write;
 
 type Cells<T> = Box<dyn Fn(&T) -> Vec<String>>;
 
@@ -20,12 +19,18 @@ pub struct Table<T> {
     blocks: Vec<(usize, Cells<T>)>,
 }
 
-impl<T> Table<T> {
-    pub fn new() -> Self {
+impl<T> Default for Table<T> {
+    fn default() -> Self {
         Table {
             names: Vec::new(),
             blocks: Vec::new(),
         }
+    }
+}
+
+impl<T> Table<T> {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// One column.
@@ -56,16 +61,18 @@ impl<T> Table<T> {
         out.join("\t")
     }
 
-    pub fn write<'a>(&self, path: &str, rows: impl IntoIterator<Item = &'a T>) -> Result<()>
+    /// The whole table as text: a header line, then one line per row.
+    pub fn render<'a>(&self, rows: impl IntoIterator<Item = &'a T>) -> String
     where
         T: 'a,
     {
-        let mut out = BufWriter::new(File::create(path)?);
-        writeln!(out, "{}", self.header())?;
+        let mut out = self.header();
+        out.push('\n');
         for row in rows {
-            writeln!(out, "{}", self.row(row))?;
+            out.push_str(&self.row(row));
+            out.push('\n');
         }
-        Ok(())
+        out
     }
 }
 
@@ -444,8 +451,8 @@ pub fn alignments_table(build: &str) -> Table<Placed> {
 }
 
 /// `alignments.txt`: stacked alignments, one block per gene, to read by eye.
-pub fn write_alignments(path: &str, build: &str, windows: &[Window], placed: &[Placed]) -> Result<()> {
-    let mut out = BufWriter::new(File::create(path)?);
+pub fn alignments_text(build: &str, windows: &[Window], placed: &[Placed]) -> Result<String> {
+    let mut out = String::new();
     writeln!(out, "# igpop alignments, one block per gene, shown 5'->3' in gene orientation.")?;
     writeln!(
         out,
@@ -504,12 +511,12 @@ pub fn write_alignments(path: &str, build: &str, windows: &[Window], placed: &[P
             .collect();
         write!(out, "{}", render::gene_block(&title, &w.seq, w.start, reverse, &entries, 100))?;
     }
-    Ok(())
+    Ok(out)
 }
 
 /// `score_calibration.tsv`: the counts of this run and the scores in use.
-pub fn write_calibration(path: &str, model: &ScoreModel) -> Result<()> {
-    let mut out = BufWriter::new(File::create(path)?);
+pub fn calibration_table(model: &ScoreModel) -> Result<String> {
+    let mut out = String::new();
     writeln!(
         out,
         "support\tarbitrary_changes\tarbitrary_fraction\ttrusted_variants\ttrusted_fraction\tscore\tpooled_group\tscore_source"
@@ -538,12 +545,12 @@ pub fn write_calibration(path: &str, model: &ScoreModel) -> Result<()> {
             model.source.as_str()
         )?;
     }
-    Ok(())
+    Ok(out)
 }
 
 /// `dbsnp_datasets.tsv`: the datasets relayed by dbSNP and their use.
-pub fn write_datasets(path: &str, ev: &Evidence) -> Result<()> {
-    let mut out = BufWriter::new(File::create(path)?);
+pub fn datasets_table(ev: &Evidence) -> Result<String> {
+    let mut out = String::new();
     writeln!(out, "dataset\trecords\tsmallest_nonzero_AF\timplied_chromosomes\tused\treason")?;
     for d in &ev.dbsnp.datasets {
         writeln!(
@@ -557,7 +564,7 @@ pub fn write_datasets(path: &str, ev: &Evidence) -> Result<()> {
             d.reason
         )?;
     }
-    Ok(())
+    Ok(out)
 }
 
 #[cfg(test)]

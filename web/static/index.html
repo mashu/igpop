@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>igpop: are your germline alleles seen in human populations?</title>
+  <meta name="description" content="Check immunoglobulin germline alleles against 1000 Genomes and dbSNP, in your browser. Your sequences never leave your computer.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6e69'/%3E%3Cpath d='M9 22V10m7 12V10m7 12V10' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23f6f4ef'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <a class="brand" href="./" aria-label="igpop, start page">ig<span>pop</span></a>
+    <nav aria-label="Site">
+      <a href="../">Documentation</a>
+      <a href="https://github.com/mashu/igpop">Source</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section id="start" class="hero">
+      <h1>Are your germline alleles seen in human populations?</h1>
+      <p class="lead">Drop a FASTA of human IGH alleles. Each one is aligned to its gene, and every
+        difference from the reference genome is looked up in 1000 Genomes and in the datasets
+        collected by dbSNP. You get a verdict per allele, the reasons, and the evidence.</p>
+
+      <div id="drop" class="drop" tabindex="0" role="button" aria-describedby="drop-hint">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+        <strong>Drop a FASTA file here</strong>
+        <span id="drop-hint">or press Enter to choose one. Names like <code>IGHV1-69*01</code>;
+          names containing <code>_S</code> are judged as novel candidates.</span>
+        <input id="file" type="file" accept=".fa,.fasta,.fna,.txt,.tsv,.md" multiple hidden>
+      </div>
+
+      <details class="options">
+        <summary>Options</summary>
+        <div class="grid">
+          <label>Genome build
+            <select id="opt-build">
+              <option value="38" selected>GRCh38 (all sources)</option>
+              <option value="37">GRCh37 (only the five genes missing from GRCh38)</option>
+            </select>
+          </label>
+          <label>Candidate marker
+            <input id="opt-marker" type="text" value="_S" size="6">
+          </label>
+          <label class="check"><input id="opt-hap" type="checkbox" checked> Haplotype check in phased genomes</label>
+          <label class="check"><input id="opt-paralog" type="checkbox" checked> Compare each allele with every other gene (slower)</label>
+        </div>
+      </details>
+
+      <ul class="facts">
+        <li><b>Private.</b> The analysis runs in this browser tab. Your sequences are not uploaded.</li>
+        <li><b>Data on demand.</b> Only the regions of your genes are downloaded: a few MB for J or D genes, roughly 100 MB and several minutes for a full V set.</li>
+        <li><b>Without gnomAD ancestry groups.</b> The gnomAD server does not allow access from web pages; its overall frequencies still arrive through dbSNP. The <a href="../installation.html">command-line program</a> reads gnomAD in full and is faster.</li>
+        <li><b>Already ran igpop?</b> Drop its <code>.tsv</code> output files here to browse them.</li>
+      </ul>
+    </section>
+
+    <section id="progress" class="panel" hidden aria-live="polite">
+      <h2>Working on <span id="progress-name"></span></h2>
+      <div class="bar" role="progressbar" aria-label="Analysis in progress"><i></i></div>
+      <ol id="log" class="log"></ol>
+    </section>
+
+    <section id="error" class="panel error" hidden role="alert">
+      <h2>That did not work</h2>
+      <p id="error-text"></p>
+      <button type="button" class="ghost" data-restart>Try another file</button>
+    </section>
+
+    <section id="results" hidden>
+      <div class="results-head">
+        <h2 id="results-title" tabindex="-1">Results</h2>
+        <button type="button" class="ghost" data-restart>Analyse another file</button>
+      </div>
+      <p id="results-sub" class="muted"></p>
+      <div id="tiles" class="tiles" role="group" aria-label="Filter by verdict"></div>
+      <div id="warnings"></div>
+
+      <div class="tabs" role="tablist" aria-label="Result views">
+        <button role="tab" id="tab-alleles" aria-controls="view-alleles" aria-selected="true">Alleles</button>
+        <button role="tab" id="tab-method" aria-controls="view-method" aria-selected="false" tabindex="-1">Score and checks</button>
+        <button role="tab" id="tab-report" aria-controls="view-report" aria-selected="false" tabindex="-1">Report</button>
+        <button role="tab" id="tab-files" aria-controls="view-files" aria-selected="false" tabindex="-1">Files</button>
+      </div>
+
+      <div id="view-alleles" role="tabpanel" aria-labelledby="tab-alleles">
+        <div class="toolbar">
+          <label class="search">Search
+            <input id="f-search" type="search" placeholder="allele, gene or rsID">
+          </label>
+          <label>Gene
+            <select id="f-gene"><option value="">all genes</option></select>
+          </label>
+          <label>Alleles
+            <select id="f-kind">
+              <option value="">trusted and candidates</option>
+              <option value="candidate">candidates only</option>
+              <option value="trusted">trusted only</option>
+            </select>
+          </label>
+          <label>Haplotype
+            <select id="f-hap"><option value="">any</option></select>
+          </label>
+        </div>
+        <p id="count" class="muted" aria-live="polite"></p>
+        <div id="legend" class="legend"></div>
+        <div id="alleles"></div>
+      </div>
+      <div id="view-method" role="tabpanel" aria-labelledby="tab-method" hidden></div>
+      <div id="view-report" role="tabpanel" aria-labelledby="tab-report" hidden class="prose"></div>
+      <div id="view-files" role="tabpanel" aria-labelledby="tab-files" hidden></div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="version">igpop</span> ·
+    <a href="../reading-results.html">How to read the results</a> ·
+    <a href="../limitations.html">Limitations</a>
+  </footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+name: Pages
+
+# Publishes the site to GitHub Pages: the documentation (mdBook, docs/) at
+# the root and the web app (web/, igpop compiled to WebAssembly) under app/.
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "web/**", "src/**", "data/**", "Cargo.*", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: "0.5.4"
+      - name: Documentation
+        run: mdbook build docs
+      - name: Web app
+        run: wasm-pack build web --target web --release --no-typescript --out-dir pkg
+      - name: Assemble the site
+        run: |
+          mkdir -p site/app/pkg
+          cp -r docs/book/. site/
+          cp web/static/* site/app/
+          cp web/pkg/*.js web/pkg/*.wasm site/app/pkg/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

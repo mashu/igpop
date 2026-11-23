@@ -2,9 +2,9 @@
 //! cache so that a region is downloaded once.
 
 use crate::tabix::Tabix;
+use crate::{note, par};
 use anyhow::{Context, Result};
 use flate2::{read::MultiGzDecoder, write::GzEncoder, Compression};
-use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -103,33 +103,28 @@ pub fn fetch_vcf(spec: &str, regions: &[Region], cache: Cache) -> Result<Vec<(St
                 Some(name) => {
                     indexes.insert(contig, (index, name));
                 }
-                None => eprintln!("warning: contig {contig} is not in {file}"),
+                None => note!("warning: contig {contig} is not in {file}"),
             }
         }
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(MAX_CONNECTIONS).build()?;
-        let fetched: Vec<(usize, Vec<String>)> = pool.install(|| {
-            missing
-                .par_iter()
-                .map(|i| -> Result<(usize, Vec<String>)> {
-                    let (contig, start, end) = &regions[*i];
-                    let Some((index, name)) = indexes.get(contig) else {
-                        return Ok((*i, Vec::new()));
-                    };
-                    let lines = index
-                        .query(name, *start, *end)
-                        .with_context(|| format!("reading {contig}:{start}-{end}"))?;
-                    if let Some(path) = path_of(&regions[*i]) {
-                        Cache::write(&path, &lines)?;
-                    }
-                    Ok((*i, lines))
-                })
-                .collect::<Result<_>>()
-        })?;
-        for (i, lines) in fetched {
+        let fetched = par::map(&missing, Some(MAX_CONNECTIONS), |i| -> Result<(usize, Vec<String>)> {
+            let (contig, start, end) = &regions[*i];
+            let Some((index, name)) = indexes.get(contig) else {
+                return Ok((*i, Vec::new()));
+            };
+            let lines = index
+                .query(name, *start, *end)
+                .with_context(|| format!("reading {contig}:{start}-{end}"))?;
+            if let Some(path) = path_of(&regions[*i]) {
+                Cache::write(&path, &lines)?;
+            }
+            Ok((*i, lines))
+        });
+        for result in fetched {
+            let (i, lines) = result?;
             results[i] = Some(lines);
         }
     }
-    eprintln!("  {} regions, {} from cache", regions.len(), regions.len() - missing.len());
+    note!("  {} regions, {} from cache", regions.len(), regions.len() - missing.len());
     Ok(regions
         .iter()
         .zip(results)
