@@ -37,14 +37,30 @@ The page can also display results of the command-line program: drop the
   566 alleles get a stricter verdict in the web app (14 supported become
   inconclusive, 1 inconclusive becomes needs_confirmation); none gets a
   more lenient one. For final results use the command line.
-- **Slower.** One download at a time and one processor core; the
-  downloads are most of the waiting. D and J sets
+- **Slower the first time.** One download at a time and one processor
+  core; the downloads are most of the waiting. Later runs on the same
+  genes use the stored data. D and J sets
   take well under a minute; a full V set downloads roughly 100 MB and takes
   several minutes.
-- **No cache.** Each run downloads its data again.
 - **Fewer options.** Genome build, candidate marker, haplotype check on or
   off. Own coordinates, trusted lists and the other options need the
   command line.
+
+## Downloaded data is kept in the browser
+
+The pieces of the public data files that a run downloads are stored in the
+browser (its private file storage for this site), so the next run on the
+same genes downloads almost nothing, also after closing the browser. Only
+public data is stored, never your sequences or results.
+
+- The start page shows how much is stored, with a link to delete it.
+- At each run the page asks every data file's server once whether the
+  file has changed (its date). Pieces of a changed file are not reused,
+  so a new dbSNP release is picked up by itself.
+- The store starts afresh when it passes 1.5 GB or six months.
+- A browser may still remove stored data when the disk runs short; the
+  page asks it not to. Private windows keep nothing.
+- With the page open in two tabs, only the first uses the store.
 
 ## Requirements
 

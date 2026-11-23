@@ -99,6 +99,7 @@ select, input[type=text], input[type=search] {
 .log small { color: var(--muted); }
 
 button { font: inherit; cursor: pointer; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; }
 .ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0.45rem 1rem; }
 .ghost:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .results-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 2rem; }

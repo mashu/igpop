@@ -120,11 +120,26 @@ function startWorker() {
   worker.onmessage = (event) => {
     const message = event.data;
     if (message.type === 'ready') $('version').textContent = `igpop ${message.version}`;
-    else if (message.type === 'log') logLine(message.message);
+    if ('stored' in message) showStored(message.stored);
+    if (message.type === 'log') logLine(message.message);
     else if (message.type === 'error') fail(message.message);
-    else if (message.type === 'done') display(message.output.files, message.output.warnings);
+    else if (message.type === 'done') display(message.output.files, message.output.warnings, message.output.summary);
   };
   worker.onerror = (event) => fail(`The analysis module could not be started (${event.message || 'unknown error'}). A recent Chrome, Edge, Firefox or Safari is needed.`);
+}
+
+/** How much downloaded data this browser keeps, with a way to delete it. */
+function showStored(bytes) {
+  const box = $('stored');
+  if (bytes == null) {
+    box.textContent = 'This browser does not keep downloaded data between visits (or igpop is open in another tab), so each run downloads again.';
+    return;
+  }
+  const size = bytes < 1e6 ? `${Math.round(bytes / 1e3)} kB` : `${(bytes / 1e6).toFixed(0)} MB`;
+  box.replaceChildren(
+    `Downloaded data kept in this browser: ${bytes ? size : 'none yet'}. `,
+    bytes ? el('button', { type: 'button', class: 'link', text: 'Delete it', onclick: () => worker.postMessage({ type: 'clear' }) }) : '',
+  );
 }
 
 function logLine(message) {
@@ -162,7 +177,8 @@ async function handleFiles(fileList) {
   $('progress-name').textContent = file.name;
   $('log').replaceChildren();
   show('progress');
-  if (!worker) startWorker();
+  // Ask the browser not to evict the stored data when disk space is short.
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   worker.postMessage({
     fasta,
     name: file.name,
@@ -175,7 +191,7 @@ async function handleFiles(fileList) {
 
 // ---- results ---------------------------------------------------------------
 
-function display(files, warnings) {
+function display(files, warnings, summary = []) {
   state.files = files;
   state.alleles = parseTSV(files['alleles.tsv']);
   state.variants = new Map();
@@ -189,7 +205,8 @@ function display(files, warnings) {
 
   const candidates = state.alleles.filter(isCandidate).length;
   $('results-title').textContent = `Results for ${state.prefix}`;
-  $('results-sub').textContent = `${state.alleles.length} alleles: ${candidates} candidates and ${state.alleles.length - candidates} trusted alleles.`;
+  const fromStore = summary.find((line) => line.includes("browser's store"));
+  $('results-sub').textContent = `${state.alleles.length} alleles: ${candidates} candidates and ${state.alleles.length - candidates} trusted alleles.${fromStore ? ` ${fromStore[0].toUpperCase()}${fromStore.slice(1)}.` : ''}`;
   renderTiles();
   renderWarnings(warnings);
   renderFilters();
@@ -651,3 +668,6 @@ function wire() {
 }
 
 wire();
+// The worker is started with the page, so the analysis module is loaded
+// and the stored data counted before the first file is dropped.
+startWorker();
