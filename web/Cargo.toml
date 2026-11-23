@@ -16,3 +16,8 @@ igpop = { path = "..", default-features = false }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["XmlHttpRequest", "XmlHttpRequestResponseType"] }
+
+# The wasm-opt that wasm-pack downloads cannot read the module current Rust
+# produces (reference types); the release profile already optimises.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
