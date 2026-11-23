@@ -1,0 +1,24 @@
+[package]
+name = "igpop"
+version = "0.10.0"
+edition = "2021"
+description = "Population evidence for germline alleles (IG/TR) at user-supplied loci"
+license = "MIT"
+repository = "https://github.com/mashu/igpop"
+homepage = "https://mashu.github.io/igpop/"
+documentation = "https://mashu.github.io/igpop/"
+readme = "README.md"
+keywords = ["bioinformatics", "immunogenetics", "germline", "population-genetics"]
+categories = ["science", "command-line-utilities"]
+exclude = ["docs/book", ".github"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+flate2 = "1"
+rayon = "1"
+statrs = { version = "0.18", default-features = false }
+ureq = { version = "2", features = ["native-certs"] }
+
+[profile.release]
+lto = true

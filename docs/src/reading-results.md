@@ -1,0 +1,120 @@
+# Reading the results
+
+## The idea in three sentences
+
+An allele is described by its differences from the reference genome. A
+difference that many people carry is an established variant; a difference
+nobody carries among several hundred thousand sequenced genomes behaves like
+a sequencing or PCR error. igpop measures, for every difference, which of
+the two it resembles, and an allele is as believable as its least
+believable difference.
+
+## Verdicts
+
+Every allele (in `alleles.tsv` and in the report) and every variant (in
+`variants.tsv`) gets one of these:
+
+| Verdict | What it means | What to do |
+|---|---|---|
+| `supported` | Every difference is an established population variant. | Nothing. Population data back this allele. |
+| `inconclusive` | At least one difference is seen in people, but so rarely that real rare variants and errors look alike. | Decide with your own evidence: seen in several unrelated individuals, in both chains of a haplotype analysis, in genomic DNA? |
+| `needs_confirmation` | At least one difference is absent, or nearly absent, from all population data: it looks like an arbitrary base change. | Do not accept on repertoire data alone. Confirm independently (genomic sequencing, more individuals), then it may well be a real private allele. |
+| `not_assessed` | No population data could be read for at least one difference. | See the reason; usually the gene is on GRCh37 only. |
+| `matches_reference` | No difference from the reference genome. | Nothing to assess. |
+| `not_placed` | The allele could not be aligned to a locus. | See the reason: gene missing from the coordinates, or the sequence is too different from its gene. |
+
+The verdict is about **population support, not truth**. `supported` does not
+prove an allele exists as one piece (each difference is checked on its own),
+and `needs_confirmation` does not prove an error: a real allele private to
+one family has no population support either.
+
+## Two more columns to read with the verdict
+
+- **`filters`** says in fixed keywords why an allele did not pass, e.g.
+  `rare_in_every_population:1,low_score:1`. See
+  [Why an allele did not pass](filters.md).
+- **`hap_status`** says whether the whole combination of variants was
+  found on one chromosome in phased genomes. It is separate, stricter
+  evidence and often has no answer. See
+  [The haplotype check](haplotypes.md).
+
+## The `reason` and `notes` columns
+
+`reason` names the variants behind the verdict:
+
+```
+1 of 2 variant(s) without population support: rs368426916(G>A:212,106184983)
+```
+
+Read a variant as `rsID(reference base > allele base : position in your
+allele, position in the genome)`. A `.` instead of an rsID means dbSNP has
+no entry for this change. Bases are written on the reference strand, so for
+IGH genes (minus strand) they are the complement of what your FASTA shows;
+the position in the allele counts along your sequence as supplied.
+
+`notes` lists things that weaken or complicate the reading:
+
+| Note | Meaning |
+|---|---|
+| fits another locus at least as well | The allele is as similar to another gene (a duplicate such as IGHV1-69 / IGHV1-69D). Its variants may belong to the other locus. |
+| locus shared with ... | Two genes have identical coordinates in the table, so population data cannot tell them apart. |
+| shorter than the gene | The allele is truncated. The missing part was not checked. |
+| variant(s) at sites failing 1000 Genomes site QC | The site is hard to genotype in 1000 Genomes (see [Site quality filters](site-qc.md)). Frequencies there are less reliable in either direction. |
+
+## From verdict to numbers
+
+For each variant, `variants.tsv` holds what the verdict is made of:
+
+| Column | In plain words |
+|---|---|
+| `class` | `common`: shown to reach 1% in at least one population. `uncommon`: seen, but not shown to reach 1%. `absent`: never seen. |
+| `support` | The frequency the data *guarantee* in the best population (a lower confidence bound, so small studies cannot inflate it). |
+| `score` | How many times more often this level of support occurs among trusted variants than among arbitrary base changes. Around 100 = typical of real variants; 1 = no information; 0.01 = typical of arbitrary changes. |
+| `verdict` | `supported` if `class` is `common` or the score is at least 10; `needs_confirmation` if the score is at most 0.1; otherwise `inconclusive`. |
+
+A score of 10 or 0.1 means the data favour one explanation ten to one, the
+usual mark for strong evidence. Both limits can be changed
+(`--supported-score`, `--confirm-score`).
+
+## Why not simply count uncommon variants?
+
+`alleles.tsv` keeps the counts (`common`, `uncommon`, `absent`), and they
+agree with the verdict in most cases. They are not enough on their own
+because "uncommon" lumps together two very different things: a variant
+carried by 1 in 300 people, and a base change never observed in anyone. The
+score separates them, and the verdict follows the score. See
+[The score](score.md).
+
+## Worked examples
+
+**`IGHV1-18*01`: supported.** One difference, rs72695948, frequent in every
+population. Score 82.7.
+
+**`IGHV1-18*01_S2706`: needs_confirmation.** Two differences. One is the
+frequent rs72695948 above; the other, rs368426916, has an rsID but was found in only a handful of
+genomes: its guaranteed frequency is a few in a million
+(`rare_in_every_population,low_score`). An rsID is a label, not evidence:
+dbSNP records every submitted change. The allele needs independent
+confirmation of that one base.
+
+**`IGHV1-2*04_S3434`: inconclusive.** A single difference, seen in people
+at roughly 0.1 to 1%. Real rare variants and recurrent errors both occur
+at this level, so population data cannot decide.
+
+**`IGHV1-18*03`: a trusted allele that needs confirmation.** One of its
+two differences (rs373407210) is rare in every population. Trusted alleles
+are judged like all others, which is how database entries with a doubtful
+or very rare base come to light.
+
+**`IGHV1-24*01_S1381`: supported, and found as a haplotype.** Its exact
+sequence is on 72 phased chromosomes, 70 of them African: a real,
+population-specific allele.
+
+## Probabilities
+
+A score is not a probability. To turn it into one you must say how many of
+your candidates you expect to be real before looking at population data. If
+you can, pass it (`--prior 0.5` for "half of them"), and `variants.tsv`
+gains a `probability_real` column. The report always shows the conversion
+for two expectations, one half and nine in ten, so you can see how much
+your expectation matters.

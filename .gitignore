@@ -1,0 +1,11 @@
+/target
+.igpop_cache/
+*.variants.tsv
+*.alleles.tsv
+*.final.tsv
+*.report.md
+*.alignments.tsv
+*.alignments.txt
+*.dbsnp_datasets.tsv
+*.score_calibration.tsv
+docs/book/

@@ -1,0 +1,14 @@
+[book]
+title = "igpop"
+description = "Population evidence for germline-allele variants at user-supplied loci"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "light"
+site-url = "/igpop/"
+git-repository-url = "https://github.com/mashu/igpop"
+edit-url-template = "https://github.com/mashu/igpop/edit/main/docs/{path}"
