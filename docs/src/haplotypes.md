@@ -102,8 +102,8 @@ as supported.
   pass the consortium's filters (missing genotypes below 5%,
   Hardy-Weinberg, Mendelian errors at most 5%) and leaves out variants
   seen in a single chromosome. In IGHV many real, frequent variants sit at
-  sites that fail these filters. In the example, 209 of 513 placed alleles
-  get `found_exact`, 3 `found_with_extra`, none `not_found`, and 301 cannot
+  sites that fail these filters. In the example, 240 of 566 alleles
+  get `found_exact`, 4 `found_with_extra`, none `not_found`, and 322 cannot
   be fully tested. `incomplete` and `untestable` say nothing about the
   allele.
 - **For one difference it is not new evidence.** For an allele with a

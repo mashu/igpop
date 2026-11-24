@@ -75,6 +75,63 @@ frequencies of a variant differ strongly, compare the population columns:
 either the variant is concentrated in a population one dataset samples
 poorly, or one of the two sites is flagged.
 
+## Why not dbSNP alone
+
+dbSNP already passes on frequencies from 1000 Genomes and gnomAD, so why
+read those two directly? Because dbSNP gives one overall frequency per
+dataset and nothing else. Reading the files themselves adds:
+
+| | From dbSNP | Read directly |
+|---|---|---|
+| Populations | One frequency for the whole dataset. | Counts for the five continental groups of 1000 Genomes and the nine ancestry groups of gnomAD. |
+| Counts | A frequency without the number of chromosomes; igpop estimates the size of each study. | Copies and chromosomes examined, which the tests need. |
+| A variant with no record | Nobody submitted it; nothing follows. | It was looked for and not seen: 0 of about 5,000 or 150,000 chromosomes. |
+| Site quality | None. | Filters, missing genotypes, Hardy-Weinberg and Mendelian errors (1000 Genomes); filter and region flags (gnomAD). |
+| Whole sequences | None. | The phased genotypes of 1000 Genomes, for the [haplotype check](haplotypes.md). |
+
+Populations matter most. Many real IGHV variants are common in one
+population and rare overall. rs370240779 in IGHV1-18 is carried by 478 of
+40,476 African/African American chromosomes in gnomAD (1.2%: common, and
+supported), but by only 516 of 149,388 overall (0.35%). From the overall
+figure alone it is `inconclusive`.
+
+In the other direction, dbSNP adds rsIDs and studies igpop does not read
+itself: TOPMed, the gnomAD exomes, ToMMo, Korean and several European
+cohorts. Where igpop reads 1000 Genomes or gnomAD directly, it leaves out
+dbSNP's copy of that dataset, so that the same people are not counted
+twice.
+
+On the 519 IGHV alleles of the example that differ from the reference:
+
+| Sources read | Alleles supported |
+|---|---:|
+| 1000 Genomes, gnomAD and dbSNP | 399 |
+| without gnomAD | 386 |
+| without dbSNP | 384 |
+| 1000 Genomes only | 367 |
+
+No single source is essential, and each contributes. The web app cannot
+read gnomAD (its server does not allow requests from web pages), so its
+results correspond to the second line; gnomAD's overall frequencies still
+reach it through dbSNP.
+
+## If a source cannot be read
+
+Every request is retried (five times with growing pauses on the command
+line, three times in the browser). After that:
+
+| Source | The run | Signalled by |
+|---|---|---|
+| dbSNP | continues without rsIDs, the COMMON flag and relayed frequencies | a warning above the results and in the report |
+| Phased panel | continues without the haplotype check (`hap_status = not_checked`) | a warning above the results and in the report |
+| 1000 Genomes frequencies | stops | an error message |
+| gnomAD (command line) | stops | an error message |
+| Reference sequence | stops: alleles cannot be placed without it | an error message |
+
+A run that continued without a source says so only in its warnings: the
+verdict of a single allele does not show it. Read the warnings before the
+alleles, and run again when a source was missing.
+
 ## Frequencies relayed by dbSNP
 
 Besides rsIDs, a dbSNP record carries a `FREQ` field with allele
