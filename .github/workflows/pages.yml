@@ -46,6 +46,9 @@ jobs:
           cp -r docs/book/. site/
           cp web/static/* site/app/
           cp web/pkg/*.js web/pkg/*.wasm site/app/pkg/
+          # Stamp the page with this build, so that browsers load every
+          # part of the app anew after a deployment (see worker.js).
+          sed -i "s/?v=BUILD/?v=${GITHUB_SHA::8}/g" site/app/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

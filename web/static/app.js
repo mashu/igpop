@@ -118,10 +118,15 @@ function fail(message) {
 // ---- starting a run ------------------------------------------------------
 
 function startWorker() {
-  worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  // Every file of the app carries the same build stamp in its address, so
+  // that a browser never combines a new page with an older, cached worker
+  // or analysis module.
+  const stamp = new URL(import.meta.url).search;
+  worker = new Worker(new URL(`./worker.js${stamp}`, import.meta.url), { type: 'module' });
   worker.onmessage = (event) => {
     const message = event.data;
     if (message.type === 'ready') {
+      if (typeof message.geneList !== 'string') return fail('This page and its analysis module are from different versions. Reload the page (Ctrl+Shift+R, or Cmd+Shift+R on a Mac) and try again.');
       $('version').textContent = `igpop ${message.version}`;
       names.builtin = { coords: message.geneList, aliases: message.aliases };
       renderGeneList();
