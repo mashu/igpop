@@ -30,7 +30,8 @@ results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 |---|---|---|
 | `--alleles` | required | Allele FASTA. |
 | `--coords` | shipped human IGH table | Coordinates table, see [Input files](inputs.md). |
-| `--build` | `38` | `38`/`GRCh38`/`hg38` or `37`/`GRCh37`/`hg19`. Only coordinate rows on this build are processed. |
+| `--build` | `38` | `38`/`GRCh38`/`hg38` or `37`/`GRCh37`/`hg19`. Genes are placed on this build if it has them. |
+| `--single-build` | off | Do not judge genes that are missing from `--build` on another build; they are `not_placed`. |
 | `--gene-aliases` | shipped table (with the shipped coordinates) | `allele<TAB>gene` table for alleles whose locus differs from the gene in their name. |
 | `-o`, `--out` | `igpop` | Output prefix. |
 
@@ -88,8 +89,10 @@ connections are open at once.
 
 ## More than one build
 
-Run igpop once per build. With the shipped coordinates, `--build 37`
-processes only the genes that could not be located on GRCh38. There is no
-30x, gnomAD v4 or phased data on that build; variants are judged on the
-frequencies relayed by dbSNP, with the built-in calibration and without a
-haplotype check.
+A gene that has coordinates only on another build is judged on that build,
+in the same run (see
+[Datasets](datasets.md#genes-that-the-reference-genome-lacks)). Files
+given with `--reference`, `--vcf`, `--gnomad`, `--dbsnp` and `--phased-vcf`
+belong to `--build`; the other build uses its defaults. `--no-gnomad`,
+`--no-dbsnp` and `--no-haplotypes` apply to both. `--single-build` keeps
+the run to `--build`.

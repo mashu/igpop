@@ -303,9 +303,9 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
 
     let kgp_site = ev.kgp.get(&lookup);
     let observed: Vec<&'static str> = [
-        (evidence::KGP, kgp_site.is_some_and(|s| s.total().ac > 0)),
+        (ev.sources.kgp_name, kgp_site.is_some_and(|s| s.total().ac > 0)),
         // AC = 0 after gnomAD's genotype filtering is not an observation.
-        (evidence::GNOMAD, ev.gnomad.get(&lookup).is_some_and(|s| s.total.ac > 0)),
+        (ev.sources.gnomad_name, ev.gnomad.get(&lookup).is_some_and(|s| s.total.ac > 0)),
         ("dbSNP", !ev.dbsnp.relayed(&lookup).is_empty()),
     ]
     .iter()
@@ -328,12 +328,12 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         Some((p, name)) if *p <= 0.05 => (Class::Common, Some(name.clone())),
         _ if ev.dbsnp.common.contains(&lookup) => (Class::Common, Some("dbSNP:COMMON".to_string())),
         _ if !observed.is_empty() => (Class::Uncommon, None),
-        _ if ev.counted() => (Class::Absent, None),
+        _ if ev.reads(&lookup.0) => (Class::Absent, None),
         _ => (Class::NotAssessed, None),
     };
 
     let score = match &model.calibration {
-        Some(cal) if called.kind == Kind::Snv && ev.counted() => Some(cal.score[score::bin(support)]),
+        Some(cal) if called.kind == Kind::Snv && ev.reads(&lookup.0) => Some(cal.score[score::bin(support)]),
         _ => None,
     };
     let verdict = variant_verdict(class, score, limits);
@@ -498,6 +498,8 @@ pub const SEQUENCE_NOT_IN_PANEL: &str = "sequence_not_in_panel";
 
 pub struct AlleleResult<'a> {
     pub placed: &'a Placed,
+    /// The genome build the allele was placed and judged on.
+    pub build: &'a str,
     /// Named as trusted (by `--trusted` or the candidate marker).
     pub trusted: bool,
     /// Whether, and why, its variants calibrate the score.
@@ -592,6 +594,7 @@ impl AlleleResult<'_> {
 pub fn assess_allele<'a>(
     judge: &Judge,
     placed: &'a Placed,
+    build: &'a str,
     trusted: bool,
     yardstick: Yardstick,
     haplotype: AlleleHaplotype,
@@ -673,10 +676,13 @@ pub fn assess_allele<'a>(
     }
     let flagged = variants.iter().filter(|v| !v.site_qc.is_empty()).count();
     if flagged > 0 {
-        notes.push(format!("{flagged} variant(s) at sites failing 1000 Genomes site QC"));
+        notes.push(format!(
+            "{flagged} difference(s) at positions where the 1000 Genomes genotypes are less reliable (column kgp_site_qc says why)"
+        ));
     }
     AlleleResult {
         placed,
+        build,
         trusted,
         yardstick,
         variants,

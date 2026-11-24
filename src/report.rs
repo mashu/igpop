@@ -4,6 +4,7 @@
 
 use crate::assess::{self, AlleleResult, Class, HaplotypeCheck, Limits, ScoreModel, ScoreSource, Verdict};
 use crate::evidence::Evidence;
+use crate::freq::KgpRelease;
 use crate::locus::Status;
 use crate::score::{self, Calibration};
 use std::fmt::Write as _;
@@ -22,6 +23,9 @@ pub const VERDICTS: [Verdict; 6] = [
 pub struct Input<'a> {
     pub prefix: &'a str,
     pub build: &'a str,
+    /// Other builds used for genes the main build lacks: the build, its
+    /// data, and the number of alleles judged on it.
+    pub other_builds: Vec<(&'a str, &'a Evidence, usize)>,
     pub alleles: String,
     pub coords: String,
     pub prior: Option<f64>,
@@ -84,20 +88,40 @@ fn count(input: &Input, status: Status) -> usize {
 
 /// What each source contributed: (dataset, read from, contribution).
 fn datasets(input: &Input) -> Vec<(String, String, String)> {
-    let ev = input.ev;
+    let mut out = datasets_of(input.build, input.ev);
+    for (build, ev, _) in &input.other_builds {
+        out.extend(datasets_of(build, ev));
+    }
+    out
+}
+
+fn datasets_of(build: &str, ev: &Evidence) -> Vec<(String, String, String)> {
     let mut out = Vec::new();
+    let phase3 = ev.sources.kgp_release == KgpRelease::Phase3;
     if let Some(spec) = &ev.sources.kgp {
         out.push((
-            "1000 Genomes 30x, unrelated samples".to_string(),
+            if phase3 {
+                "1000 Genomes phase 3".to_string()
+            } else {
+                "1000 Genomes 30x, unrelated samples".to_string()
+            },
             spec.clone(),
-            format!("allele counts in 5 populations, {} chromosomes; site quality", ev.kgp_full_total()),
+            format!(
+                "allele counts in 5 populations, {} chromosomes{}",
+                ev.kgp_full_total(),
+                if phase3 { "" } else { "; site quality" }
+            ),
         ));
     }
     if let Some(spec) = &ev.sources.gnomad {
         out.push((
-            "gnomAD genomes".to_string(),
+            format!("gnomAD genomes ({})", ev.sources.gnomad_name),
             spec.clone(),
-            format!("allele counts in 9 genetic ancestry groups, {} chromosomes", ev.gnomad_full_total),
+            format!(
+                "allele counts in {} genetic ancestry groups, {} chromosomes",
+                ev.gnomad_full.iter().filter(|an| **an > 0).count(),
+                ev.gnomad_full_total
+            ),
         ));
     }
     if let Some(spec) = &ev.sources.dbsnp {
@@ -108,7 +132,7 @@ fn datasets(input: &Input) -> Vec<(String, String, String)> {
             "dbSNP".to_string(),
             spec.clone(),
             format!(
-                "rsIDs, COMMON flag; frequencies of {} submitted datasets used as evidence ({}), see dbsnp_datasets.tsv",
+                "rsIDs, COMMON flag; frequencies of {} submitted datasets used as evidence ({})",
                 used.len(),
                 by_name.join(", ")
             ),
@@ -116,10 +140,17 @@ fn datasets(input: &Input) -> Vec<(String, String, String)> {
     }
     if let (Some(spec), Some(panel)) = (&ev.sources.phased, &ev.panel) {
         out.push((
-            "1000 Genomes 30x phased panel".to_string(),
+            if phase3 {
+                "1000 Genomes phase 3, phased genotypes".to_string()
+            } else {
+                "1000 Genomes 30x phased panel".to_string()
+            },
             spec.clone(),
             format!("haplotype check on {} founder chromosomes", 2 * panel.founders),
         ));
+    }
+    for row in &mut out {
+        row.0 = format!("{build}: {}", row.0);
     }
     out
 }
@@ -448,6 +479,45 @@ fn write_report(r: &View) -> String {
          The alignments themselves are in `{}.alignments.txt`.\n",
         r.prefix
     );
+
+    // Alleles of genes the main build does not have on a chromosome.
+    let apart = |start: &str| -> Vec<&Row> { r.rows.iter().filter(|x| x.notes.starts_with(start)).collect() };
+    let (other_build, scaffold) = (apart("gene absent from"), apart("gene on "));
+    if !other_build.is_empty() || !scaffold.is_empty() {
+        let _ = writeln!(o, "### Genes that {} does not have on a chromosome\n", r.build);
+        let genes = |rows: &[&Row]| {
+            let mut genes: Vec<&str> = rows.iter().map(|x| x.allele.split('*').next().unwrap_or(&x.allele)).collect();
+            genes.sort();
+            genes.dedup();
+            genes.join(", ")
+        };
+        if !other_build.is_empty() {
+            let _ = writeln!(
+                o,
+                "- {} allele(s) of {}. These genes lie on a stretch of DNA that some people carry and others \
+                 do not, and the {} reference represents a chromosome without it. Their alleles were placed on \
+                 another build and judged with the population data of that build (section 4) and the score of \
+                 section 5; the column `build` and the notes of each allele say which. Those data are older \
+                 and smaller, and people without the gene contribute no reads, so read these verdicts with \
+                 more caution than the others.",
+                other_build.len(),
+                genes(&other_build),
+                r.build
+            );
+        }
+        if !scaffold.is_empty() {
+            let _ = writeln!(
+                o,
+                "- {} allele(s) of {}: the gene is in {} only on a piece of sequence that is not part of a \
+                 chromosome. The alleles are compared with that sequence, but the population call sets are \
+                 not reliable there and are not read: an allele that differs from it is `not_assessed`.",
+                scaffold.len(),
+                genes(&scaffold),
+                r.build
+            );
+        }
+        let _ = writeln!(o);
+    }
 
     let _ = writeln!(o, "## 4. Population data used\n");
     if r.datasets.is_empty() {

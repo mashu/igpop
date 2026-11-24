@@ -15,7 +15,7 @@ first time, almost nothing on later runs), and calibrates its score by itself.
 When it finishes, the last lines on screen look like this:
 
 ```
-566 alleles: 445 ok, 68 ambiguous_locus, 0 low_identity, 53 no_coordinates
+566 alleles: 498 ok, 68 ambiguous_locus, 0 low_identity, 0 no_coordinates
 verdicts: 371 supported, 87 inconclusive, 12 needs_confirmation, 43 matches_reference, 53 not_placed
 read my_run.report.md first
 ```
@@ -50,15 +50,14 @@ If your names follow another convention, either change the marker
 (`--candidate-marker _novel`) or list the trusted names in a file, one per
 line (`--trusted trusted.txt`).
 
-## Genes that exist only on the older genome build
+## Genes that the reference genome lacks
 
-A few IGHV genes are absent from the GRCh38 reference. They are reported as
-`not_placed`, with the reason "its gene has coordinates on GRCh37 only". Run
-them with a second command:
-
-```bash
-igpop variants --alleles my_alleles.fasta --build 37 -o my_run_37
-```
+Four IGHV genes (IGHV1-8, IGHV3-9, IGHV4-31 and the IGHV4-4*07-like gene)
+are absent from the GRCh38 reference. igpop places their alleles on GRCh37
+and judges them with the data of that build, in the same run. They are
+marked in the column `build` and in the notes; see
+[Datasets](datasets.md#genes-that-the-reference-genome-lacks) for what
+this means for the verdict.
 
 On that build the evidence is limited to what dbSNP relays, and there is
 no haplotype check ([Limitations](limitations.md)).

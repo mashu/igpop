@@ -129,6 +129,9 @@ struct Args {
     /// Alignments below this identity are reported but yield no variants.
     #[arg(long, default_value_t = 0.9)]
     min_identity: f64,
+    /// Do not judge genes that are missing from --build on another build.
+    #[arg(long)]
+    single_build: bool,
     /// Skip scoring every allele against every other locus.
     #[arg(long)]
     no_paralog_check: bool,
@@ -152,6 +155,7 @@ impl Args {
         let mut config = Config::new(read(&self.alleles)?);
         config.coords = optional(&self.coords)?;
         config.build = self.build.clone();
+        config.other_builds = !self.single_build;
         config.aliases = optional(&self.gene_aliases)?;
         config.trusted = optional(&self.trusted)?.map(|t| t.content);
         config.candidate_marker = self.candidate_marker.clone();

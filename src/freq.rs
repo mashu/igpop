@@ -332,9 +332,91 @@ pub fn parse_line(line: &str) -> Vec<(Key, Site)> {
     out
 }
 
+/// The two releases of 1000 Genomes that igpop reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum KgpRelease {
+    /// 30x call set on GRCh38 (NYGC): counts per superpopulation and site
+    /// quality in INFO.
+    HighCoverage,
+    /// Phase 3 on GRCh37: 2,504 unrelated samples, every genotype called.
+    Phase3,
+}
+
+impl KgpRelease {
+    pub fn parse(self, line: &str) -> Vec<(Key, Site)> {
+        match self {
+            KgpRelease::HighCoverage => parse_line(line),
+            KgpRelease::Phase3 => parse_phase3_line(line),
+        }
+    }
+}
+
+/// Chromosomes per superpopulation in phase 3, in the order of `POPS`.
+/// Phase 3 has no missing genotypes, so these are the denominators.
+pub const PHASE3_CHROMOSOMES: [u32; 5] = [1322, 694, 1008, 1006, 978];
+
+/// One line of a phase 3 genotype file. INFO gives a frequency per
+/// superpopulation to four decimals, which determines the count exactly
+/// because no superpopulation has more than 1,322 chromosomes. Phase 3
+/// publishes no site-quality measures.
+pub fn parse_phase3_line(line: &str) -> Vec<(Key, Site)> {
+    let f: Vec<&str> = line.splitn(9, '\t').collect();
+    if f.len() < 8 {
+        return Vec::new();
+    }
+    let Ok(pos) = f[1].parse::<u64>() else {
+        return Vec::new();
+    };
+    let info: HashMap<&str, &str> = f[7].split(';').filter_map(|kv| kv.split_once('=')).collect();
+    let mut out = Vec::new();
+    for (i, alt) in f[4].split(',').enumerate() {
+        if alt == "*" || alt.starts_with('<') {
+            continue;
+        }
+        let mut pops = [PopCount::default(); 5];
+        for (k, pop) in POPS.iter().enumerate() {
+            let af = info
+                .get(format!("{pop}_AF").as_str())
+                .and_then(|v| v.split(',').nth(i))
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            pops[k] = PopCount {
+                ac: (af * PHASE3_CHROMOSOMES[k] as f64).round() as u32,
+                an: PHASE3_CHROMOSOMES[k],
+                het: 0,
+                hom: 0,
+            };
+        }
+        let site = Site {
+            filter: f[6].to_string(),
+            vcf_ref: f[3].to_string(),
+            vcf_alt: f[4].to_string(),
+            pops,
+            hwe: [f64::NAN; 5],
+            exc_het: f64::NAN,
+            mendel: f64::NAN,
+            vqslod: f64::NAN,
+        };
+        out.push((trim(pos, f[3].as_bytes(), alt.as_bytes()), site));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phase3_counts_follow_from_frequencies() {
+        let line =
+            "14\t106539088\t.\tG\tA\t100\tPASS\tAC=4;AF=0.000798722;AN=5008;EAS_AF=0;AMR_AF=0;AFR_AF=0.0008;EUR_AF=0.001;SAS_AF=0.002\tGT";
+        let sites = parse_phase3_line(line);
+        let site = &sites[0].1;
+        assert_eq!(site.pops.map(|p| p.ac), [1, 0, 0, 1, 2]);
+        assert_eq!(site.total().ac, 4);
+        assert_eq!(site.total().an, 5008);
+        assert!(site.qc_failures(5008).is_empty());
+    }
 
     #[test]
     fn trimming_matches_normalised_form() {

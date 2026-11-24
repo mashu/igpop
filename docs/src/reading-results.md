@@ -21,7 +21,7 @@ Every allele (in `alleles.tsv` and in the report) and every variant (in
 | `supported` | Every difference is an established population variant (`supported_by` = `frequency`), or the exact sequence of the allele is established on phased chromosomes (`haplotype`), or both. | Nothing. Population data back this allele. |
 | `inconclusive` | At least one difference is seen in people, but so rarely that real rare variants and errors look alike. | Decide with your own evidence: seen in several unrelated individuals, in both chains of a haplotype analysis, in genomic DNA? |
 | `needs_confirmation` | At least one difference is absent, or nearly absent, from all population data: it looks like an arbitrary base change. | Do not accept on repertoire data alone. Confirm independently (genomic sequencing, more individuals), then it may well be a real private allele. |
-| `not_assessed` | No population data could be read for at least one difference. | See the reason; usually the gene is on GRCh37 only. |
+| `not_assessed` | No population data could be read for at least one difference. | See the reason and the notes; usually the gene lies outside the chromosomes of the reference, where no population data are read. |
 | `matches_reference` | No difference from the reference genome. | Nothing to assess. |
 | `not_placed` | The allele could not be aligned to a locus. | See the reason: gene missing from the coordinates, or the sequence is too different from its gene. |
 

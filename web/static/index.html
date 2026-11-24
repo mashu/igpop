@@ -58,10 +58,15 @@
       </ul>
     </section>
 
-    <section id="progress" class="panel" hidden aria-live="polite">
+    <section id="progress" class="panel" hidden>
       <h2>Working on <span id="progress-name"></span></h2>
-      <div class="bar" role="progressbar" aria-label="Analysis in progress"><i></i></div>
-      <ol id="log" class="log"></ol>
+      <ol id="steps" class="steps"></ol>
+      <div class="bar" id="bar" role="progressbar" aria-label="Analysis in progress" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+      <p class="now"><span id="progress-now" aria-live="polite"></span> <span id="progress-time" class="muted"></span></p>
+      <details class="log-details">
+        <summary>Show every step</summary>
+        <ol id="log" class="log"></ol>
+      </details>
     </section>
 
     <section id="error" class="panel error" hidden role="alert">

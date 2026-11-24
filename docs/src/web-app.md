@@ -20,7 +20,7 @@ inside your browser tab:
 |---|---|
 | Tiles | Number of alleles per verdict. Click one to filter the list. |
 | Allele list | One line per allele, grouped by gene: verdict, the reasons it did not pass in plain words, the haplotype check. Search and filters above. |
-| An opened allele | Every difference from the reference with its verdict, score (hover over a score, or the `?` beside the column title, for what it means in this run) and a frequency strip: one mark per population on a scale from one in a million to 100%, with the 1% line. Below: the haplotype check as bars per superpopulation, and the alignment of the gene with this allele highlighted. |
+| An opened allele | Every difference from the reference with its verdict, score and a frequency line: one mark per population, placed by the share of chromosomes that carry the base, from one in a million to all, with the 1% line. The `?` beside a column title explains the column. A difference at a position where the 1000 Genomes genotypes are less dependable carries the label "less reliable position"; pointing at it says which check failed. Below: the haplotype check as bars per superpopulation, and the alignment of the gene. In the alignment, pointing at a column highlights it and shows the position, the reference base, the base of the allele and, for a difference, its rsID, verdict and frequency. With the keyboard, the arrow keys jump between the differences of the allele. |
 | Score and checks | The calibration table as bars, and how the trusted alleles fared. |
 | Report | The run report. |
 
@@ -67,3 +67,10 @@ public data is stored, never your sequences or results.
 
 A current Chrome, Edge, Firefox or Safari, and a connection that reaches
 `ftp.1000genomes.ebi.ac.uk` and `ftp.ncbi.nih.gov`.
+
+## While it runs
+
+The page shows four steps: placing the alleles on their genes, fetching
+the population data (with a bar that counts the regions), reading
+frequencies and haplotypes, and judging the alleles. "Show every step"
+lists each file as it is read.

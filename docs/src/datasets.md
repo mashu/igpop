@@ -136,11 +136,42 @@ The 1000 Genomes 30x phased panel supplies individual chromosomes for the
 [haplotype check](haplotypes.md). It does not enter the score or the
 verdict.
 
-## Other builds
+## Genes that the reference genome lacks
 
-1000 Genomes 30x and gnomAD v4.1 do not exist on GRCh37, and neither does
-the phased panel. With `--build 37` the evidence is what dbSNP relays for
-that build (including its copies of 1000 Genomes and gnomAD), scored with
-the built-in calibration. There is no haplotype check. Both primary sources
-are plain options (`--vcf`, `--gnomad`), so another callset with the same
-INFO fields can be supplied.
+Some IGHV genes lie on stretches of DNA that only some people carry. The
+GRCh38 reference represents a chromosome without IGHV1-8, IGHV3-9, IGHV4-31
+and the IGHV4-4*07-like gene (IGHV4-4A in the shipped table): their
+sequences are nowhere in GRCh38, so their variants cannot be carried over
+from another build either. GRCh37 has these genes. igpop therefore judges
+each gene on the build that has it, in one run:
+
+| | GRCh38 (all other genes) | GRCh37 (genes missing from GRCh38) |
+|---|---|---|
+| 1000 Genomes | 30x call set, 2,504 unrelated samples | phase 3, the same 2,504 people at low coverage |
+| gnomAD genomes | v4.1, 76,215 genomes, 9 groups | v2.1.1, 15,708 genomes, 6 groups |
+| dbSNP | GRCh38 file | GRCh37 file |
+| Haplotype check | phased 30x panel, 5,196 founder chromosomes | phase 3 phased genotypes, 5,008 chromosomes |
+| Site quality | reported | not published for phase 3 |
+
+The score is calibrated on the GRCh38 genes only and applied to both. The
+GRCh37 data are smaller, so the same variant gets at most the same support
+there: the verdicts for these genes err towards `inconclusive`.
+
+Read them with more caution all the same. People who lack the gene
+contribute no reads, and reads of a similar gene can be placed on it by
+mistake. The output marks every such allele: column `build`, and a note
+"gene absent from GRCh38: judged on GRCh37 ...".
+
+`--single-build` switches this off; the genes are then `not_placed`.
+
+IGHV4-38-2 is a third case. GRCh38 has it, but only on
+`chr14_KI270726v1_random`, a piece of sequence that is not part of a
+chromosome. The 1000 Genomes call set reports 227 variant sites in the 296
+bases of the gene there and gives no counts per population; gnomAD and the
+phased panel do not cover it. igpop compares the alleles with that
+sequence (an identical allele is `matches_reference`) and reads no
+population data: an allele that differs is `not_assessed`.
+
+With `--build 37` the whole run uses the GRCh37 sources of the table.
+Both primary sources are plain options (`--vcf`, `--gnomad`), so another
+call set with the same INFO fields can be supplied for the main build.

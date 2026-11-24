@@ -20,6 +20,7 @@ identical to the reference has no rows here (it still appears in
 |---|---|
 | `allele_name` | Allele name from the FASTA. |
 | `gene` | Locus the allele was placed on (after `--gene-aliases`). |
+| `build` | Genome build the allele was placed and judged on: `--build`, or another build for a gene the first one lacks. |
 | `rsid` | dbSNP identifier of exactly this position and base change, or `.`. A label only: having an rsID is not evidence that a variant is real. |
 | `evidence` | Sources in which the variant was observed, e.g. `1kGP_30x;gnomAD_v4.1;dbSNP` (`dbSNP` = a used dataset relayed by dbSNP reports a non-zero frequency), or `-` if none. |
 | `contig` | Reference contig. |
@@ -117,7 +118,7 @@ the rows with verdict `supported` (by frequency or by haplotype) or
 
 | Column | Meaning |
 |---|---|
-| `allele_name`, `gene` | As above. |
+| `allele_name`, `gene`, `build` | As above. |
 | `verdict` | By frequency, the verdict of the allele's weakest variant; raised to `supported` when the haplotype check supports the allele. Or `matches_reference` (no variants), or `not_placed`. |
 | `supported_by` | `frequency`, `haplotype` or `frequency+haplotype` for a supported allele; `.` otherwise. |
 | `filters` | Reasons of the variants that fail by frequency, with counts, e.g. `never_observed:1,low_score:1`; `no_coordinates` or `low_identity` if not placed; `.` if none. An allele supported by haplotype keeps them: they say why frequency alone did not suffice. |

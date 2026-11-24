@@ -7,15 +7,12 @@
 //! the strata of a variant and nothing else.
 
 use crate::fetch::{fetch_vcf, merge_regions, Cache, Region};
-use crate::freq::{self, GnomadSite, Key, PopCount, Site, GNOMAD_GROUPS, POPS};
+use crate::freq::{self, GnomadSite, Key, KgpRelease, PopCount, Site, GNOMAD_GROUPS, POPS};
 use crate::hap::Panel;
 use crate::locus::{Placed, Status, Window};
 use crate::{io, note, tabix};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
-
-pub const KGP: &str = "1kGP_30x";
-pub const GNOMAD: &str = "gnomAD_v4.1";
 
 /// A variant as (contig, (position, REF, ALT)).
 pub type Lookup = (String, Key);
@@ -34,7 +31,11 @@ pub enum Stratum {
 /// Where each source is read from; `None` = not used in this run.
 pub struct Sources {
     pub kgp: Option<String>,
+    /// Which release `kgp` is, and what to call it in the output.
+    pub kgp_release: KgpRelease,
+    pub kgp_name: &'static str,
     pub gnomad: Option<String>,
+    pub gnomad_name: &'static str,
     pub dbsnp: Option<String>,
     pub phased: Option<String>,
     pub pedigree: String,
@@ -215,10 +216,20 @@ impl Dbsnp {
     }
 }
 
+/// True for a whole chromosome (1-22, X, Y, with or without `chr`), false
+/// for an unplaced scaffold or an alternate contig. The population call
+/// sets are made for whole chromosomes: what they report elsewhere is not
+/// used as evidence.
+pub fn whole_chromosome(contig: &str) -> bool {
+    let bare = contig.strip_prefix("chr").unwrap_or(contig);
+    matches!(bare, "X" | "Y") || bare.parse::<u32>().is_ok_and(|n| (1..=22).contains(&n))
+}
+
 /// The loci of the alleles that satisfy `wanted`, merged into regions.
 fn loci(windows: &[Window], placed: &[Placed], wanted: impl Fn(&Placed) -> bool) -> Vec<Region> {
     let regions = windows
         .iter()
+        .filter(|w| whole_chromosome(&w.coord.contig))
         .filter(|w| placed.iter().any(|p| p.gene == w.coord.gene && wanted(p)))
         .map(|w| (w.coord.contig.clone(), w.start, w.end()))
         .collect();
@@ -300,9 +311,9 @@ impl Evidence {
         }
 
         if let Some(spec) = &ev.sources.kgp {
-            note!("{KGP}: {spec}");
+            note!("{}: {spec}", ev.sources.kgp_name);
             for (contig, line) in fetch_vcf(spec, &ev.regions, cache)? {
-                for (key, site) in freq::parse_line(&line) {
+                for (key, site) in ev.sources.kgp_release.parse(&line) {
                     ev.kgp.insert((contig.clone(), key), site);
                 }
             }
@@ -313,7 +324,7 @@ impl Evidence {
             }
         }
         if let Some(spec) = &ev.sources.gnomad {
-            note!("{GNOMAD}: {spec}");
+            note!("{}: {spec}", ev.sources.gnomad_name);
             for (contig, line) in fetch_vcf(spec, &ev.regions, cache)? {
                 for (key, site) in freq::parse_gnomad_line(&line) {
                     ev.gnomad.insert((contig.clone(), key), site);
@@ -384,6 +395,12 @@ impl Evidence {
         self.kgp_read() || self.gnomad_read() || self.dbsnp.used().next().is_some()
     }
 
+    /// True if the population data of this run cover the contig: a variant
+    /// without a record there was looked for and is absent.
+    pub fn reads(&self, contig: &str) -> bool {
+        self.counted() && self.regions.iter().any(|region| region.0 == contig)
+    }
+
     /// True if population data was read for the whole window.
     pub fn covers(&self, window: &Window) -> bool {
         self.regions
@@ -408,8 +425,8 @@ impl Evidence {
     /// A stratum as `dataset:population`.
     pub fn stratum_name(&self, stratum: Stratum) -> String {
         match stratum {
-            Stratum::Kgp(i) => format!("{KGP}:{}", POPS[i]),
-            Stratum::Gnomad(i) => format!("{GNOMAD}:{}", GNOMAD_GROUPS[i]),
+            Stratum::Kgp(i) => format!("{}:{}", self.sources.kgp_name, POPS[i]),
+            Stratum::Gnomad(i) => format!("{}:{}", self.sources.gnomad_name, GNOMAD_GROUPS[i]),
             Stratum::Dbsnp(k) => format!("dbSNP:{}", self.dbsnp.used().nth(k).map_or("?", |d| d.name.as_str())),
         }
     }

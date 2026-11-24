@@ -101,11 +101,12 @@ function parseAlignments(text) {
 
 // ---- state ---------------------------------------------------------------
 
-const state = { prefix: 'igpop', marker: '_S', files: {}, alleles: [], variants: new Map(), alignments: new Map(), verdict: '' };
+const state = { prefix: 'igpop', marker: '_S', build: '', files: {}, alleles: [], variants: new Map(), alignments: new Map(), verdict: '' };
 let worker = null;
 
 function show(section) {
   for (const id of ['start', 'progress', 'error', 'results']) $(id).hidden = id !== section;
+  if (section !== 'progress') clearInterval(run.timer);
 }
 
 function fail(message) {
@@ -143,8 +144,77 @@ function showStored(bytes) {
   );
 }
 
+// The stages of a run, in the order they happen, and the progress lines
+// of the analysis module that announce each of them.
+const STEPS = [
+  { id: 'place', label: 'Placing alleles on their genes', now: 'Reading the reference sequence of each gene and aligning your alleles to it.', starts: /reference:|^aligning/ },
+  { id: 'download', label: 'Fetching population data', now: 'Downloading the regions of your genes from 1000 Genomes and dbSNP.', starts: /^downloading|^progress:/ },
+  { id: 'read', label: 'Reading frequencies and haplotypes', now: 'Looking up every difference in the population data.', starts: /^(1kGP|gnomAD|dbSNP|phased panel)/ },
+  { id: 'judge', label: 'Judging the alleles', now: 'Scoring every difference and writing the results.', starts: /^score:/ },
+];
+const run = { step: -1, started: 0, timer: null };
+
+function startProgress() {
+  run.step = -1;
+  run.started = Date.now();
+  $('steps').replaceChildren(...STEPS.map((step, i) => el('li', { id: `step-${step.id}` },
+    el('span', { class: 'step-mark', 'aria-hidden': 'true', text: String(i + 1) }), el('span', { text: step.label }))));
+  $('log').replaceChildren();
+  setBar(null);
+  setStep(0);
+  clearInterval(run.timer);
+  const tick = () => {
+    const seconds = Math.round((Date.now() - run.started) / 1000);
+    $('progress-time').textContent = seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  };
+  tick();
+  run.timer = setInterval(tick, 1000);
+}
+
+/** Steps only move forward: a later line of an earlier kind changes nothing. */
+function setStep(index) {
+  if (index <= run.step) return;
+  run.step = index;
+  STEPS.forEach((step, i) => {
+    const item = $(`step-${step.id}`);
+    item.className = i < index ? 'done' : i === index ? 'current' : '';
+    if (i === index) item.setAttribute('aria-current', 'step');
+    else item.removeAttribute('aria-current');
+  });
+  $('progress-now').textContent = STEPS[index].now;
+  setBar(null);
+}
+
+/** `share` between 0 and 1, or null while the length of a step is unknown. */
+function setBar(share) {
+  const bar = $('bar');
+  bar.classList.toggle('known', share != null);
+  if (share == null) bar.removeAttribute('aria-valuenow');
+  else {
+    bar.setAttribute('aria-valuenow', String(Math.round(100 * share)));
+    bar.firstElementChild.style.width = `${Math.max(2, 100 * share)}%`;
+  }
+  if (share == null) bar.firstElementChild.style.width = '';
+}
+
 function logLine(message) {
   const text = message.replace(/https?:\/\/\S+\/([^/\s]+)/g, '$1');
+  const step = STEPS.findIndex((s) => s.starts.test(text.trim()));
+  if (step >= 0) setStep(step);
+  const counted = text.match(/^progress: (\d+) of (\d+)/);
+  if (counted) {
+    // One line per downloaded region: shown as the bar, not as text.
+    const [done, total] = [Number(counted[1]), Number(counted[2])];
+    if (run.step === 1) {
+      setBar(done / total);
+      $('progress-now').textContent = `Downloaded ${done} of ${total} regions. Regions kept in this browser from an earlier run are not downloaded again.`;
+    }
+    return;
+  }
+  const dataset = text.match(/^(1kGP\w*|gnomAD\S*|dbSNP|phased panel):/);
+  if (dataset && run.step === 2) $('progress-now').textContent = `Reading ${dataset[1].replace('1kGP', '1000 Genomes ').replace('_', ' ')}.`;
+  const aligning = text.match(/^aligning (\d+) alleles to (\d+) loci on (\S+)/);
+  if (aligning && run.step === 0) $('progress-now').textContent = `Aligning ${aligning[1]} alleles to ${aligning[2]} genes on ${aligning[3]}.`;
   const log = $('log');
   const last = log.lastElementChild;
   if (text.startsWith('  ') && last) {
@@ -176,7 +246,7 @@ async function handleFiles(fileList) {
   if (!fasta.trimStart().startsWith('>')) return fail(`${file.name} does not look like a FASTA file (it should start with ">").`);
   state.prefix = file.name.replace(/\.[^.]+$/, '');
   $('progress-name').textContent = file.name;
-  $('log').replaceChildren();
+  startProgress();
   show('progress');
   // Ask the browser not to evict the stored data when disk space is short.
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
@@ -195,6 +265,10 @@ async function handleFiles(fileList) {
 function display(files, warnings, summary = []) {
   state.files = files;
   state.alleles = parseTSV(files['alleles.tsv']);
+  // The build most alleles were judged on is the build of the run.
+  const builds = new Map();
+  for (const a of state.alleles) if (given(a.build)) builds.set(a.build, (builds.get(a.build) || 0) + 1);
+  state.build = [...builds].sort((x, y) => y[1] - x[1]).map(([build]) => build)[0] || '';
   state.variants = new Map();
   for (const row of files['variants.tsv'] ? parseTSV(files['variants.tsv']) : []) {
     if (!state.variants.has(row.allele_name)) state.variants.set(row.allele_name, []);
@@ -345,6 +419,7 @@ function alleleCard(allele) {
       badge(allele.verdict),
       routeTag(allele),
       isCandidate(allele) ? el('span', { class: 'tag', text: 'candidate' }) : null,
+      given(allele.build) && allele.build !== state.build ? el('span', { class: 'tag', title: `This gene is not on ${state.build}: the allele was judged with the data of ${allele.build}.`, text: allele.build }) : null,
       el('span', { class: 'chips' }, allele.verdict === 'supported' ? [] : chips(allele.filters), hapPill(allele))),
     body);
   // Details are built when first opened: a full V set has hundreds of cards.
@@ -434,7 +509,18 @@ function scoreHint() {
 // ---- variants: one row each, with a frequency strip -------------------------
 
 const LOG_MIN = -6; // strip runs from 1 in a million to 100%
-const STRIP = { width: 260, height: 26, pad: 8 };
+const STRIP = { width: 260, height: 38, pad: 14, line: 12 };
+// Labelled points of the scale, as shares of the chromosomes examined.
+const SCALE = [[1e-6, '1 in a million'], [1e-4, '0.01%'], [1e-2, '1%'], [1, 'all']];
+
+/** How to read a frequency strip. */
+function stripHint() {
+  return el('span', {},
+    el('b', { text: 'How to read the line' }),
+    el('span', { text: 'Each mark is one population or dataset in which this exact base was seen. Its place on the line shows how many of the chromosomes examined there carry it.' }),
+    el('span', { text: 'The line runs from 1 in a million at the left end to every chromosome at the right end. Each tick is a step of a hundred, because real variants range from very rare to very frequent.' }),
+    el('span', { text: 'The dashed line marks 1%. A variant to the right of it in some population is called common, which is strong evidence that it is real. No mark at all means the base was never seen.' }));
+}
 const xOf = (af) => STRIP.pad + ((Math.max(Math.log10(af), LOG_MIN) - LOG_MIN) / -LOG_MIN) * (STRIP.width - 2 * STRIP.pad);
 
 function mark(kind, x, y) {
@@ -472,13 +558,18 @@ function strip(v) {
   const label = marks.length
     ? `Seen in ${marks.length} population${marks.length > 1 ? 's' : ''}; highest ${percent(best.af)} in ${best.name}.`
     : 'Not seen in any population.';
-  const mid = STRIP.height / 2;
+  const mid = STRIP.line;
   const picture = svg('svg', { viewBox: `0 0 ${STRIP.width} ${STRIP.height}`, class: 'strip', role: 'img', 'aria-label': label });
+  for (const [share, name] of SCALE) {
+    const anchor = share === 1e-6 ? 'start' : share === 1 ? 'end' : 'middle';
+    const x = share === 1e-6 ? 0 : share === 1 ? STRIP.width : xOf(share);
+    picture.append(svg('text', { x, y: STRIP.height - 3, 'text-anchor': anchor, class: 'scale' }, name));
+  }
   picture.append(svg('line', { x1: STRIP.pad, x2: STRIP.width - STRIP.pad, y1: mid, y2: mid, class: 'axis' }));
   for (let power = LOG_MIN; power <= 0; power += 2) {
     picture.append(svg('line', { x1: xOf(10 ** power), x2: xOf(10 ** power), y1: mid - 3, y2: mid + 3, class: 'axis' }));
   }
-  picture.append(svg('line', { x1: xOf(0.01), x2: xOf(0.01), y1: 2, y2: STRIP.height - 2, class: 'one-percent' }));
+  picture.append(svg('line', { x1: xOf(0.01), x2: xOf(0.01), y1: 1, y2: 2 * mid - 1, class: 'one-percent' }));
   for (const m of marks) {
     const x = xOf(m.af);
     const shape = m.kind === 'kgp' ? svg('circle', { cx: x, cy: mid, r: 4, class: 'm-kgp' })
@@ -501,14 +592,37 @@ function variantTable(variants) {
     el('thead', {}, el('tr', {},
       ...['Variant', 'Position in allele', 'Verdict by frequency', 'Why'].map((h) => el('th', { scope: 'col', text: h })),
       el('th', { scope: 'col' }, 'Score ', hint('What the score means', scoreHint())),
-      el('th', { scope: 'col', text: 'Frequency, 1 per million to 100% (log scale)' }))),
+      el('th', { scope: 'col' }, 'How common in people ', hint('How to read the frequency line', stripHint())))),
     el('tbody', {}, variants.map((v) => el('tr', {},
       el('th', { scope: 'row' }, rsLink(v), el('small', { text: ` ${change(v)}, ${v.contig}:${v.genome_pos}` })),
       el('td', { text: v.aln_pos }),
       el('td', {}, badge(v.verdict)),
-      el('td', {}, chips(v.filters)),
+      el('td', {}, chips(v.filters), siteQuality(v)),
       scoreCell(v),
       el('td', {}, strip(v)))))));
+}
+
+// Why the 1000 Genomes genotypes at a position are less reliable: the
+// project's own criteria for a site, in plain words.
+const SITE_QC = [
+  [/^FILTER=/, 'the project\u2019s variant filter did not pass this call: the reads that support it look less like a true variant than usual'],
+  [/^missingness/, 'more than 5% of the people have no genotype here, usually because too few reads could be placed'],
+  [/^HWE/, 'the numbers of carriers of one and of two copies do not fit together in any population, as happens when reads of a second copy of the gene are mixed in'],
+  [/^mendelian/, 'in more than 5% of the families the child\u2019s genotype does not fit the parents\u2019'],
+];
+
+/** A note under the reasons when the position fails 1000 Genomes site checks. */
+function siteQuality(v) {
+  if (!given(v.kgp_site_qc) || v.kgp_site_qc === 'PASS') return null;
+  const failed = v.kgp_site_qc.split(/[;,]/).filter(Boolean);
+  const words = failed.map((item) => (SITE_QC.find(([pattern]) => pattern.test(item)) || [null, item])[1]);
+  return el('span', { class: 'qc' }, explain(
+    el('span', { class: 'chip chip-qc hint-value', tabindex: '0', text: 'less reliable position' }),
+    el('span', {},
+      el('b', { text: 'The 1000 Genomes genotypes are less reliable here' }),
+      el('span', { text: 'The project checks every position of the genome. This one fails:' }),
+      el('span', { class: 'hint-list' }, words.map((w) => el('span', { text: `\u2022 ${w}` }))),
+      el('span', { text: 'This is common in antibody genes, which exist in several similar copies. It does not mean the variant is wrong. It means its frequency in 1000 Genomes is less certain, and that the haplotype check cannot use this position.' }))));
 }
 
 function scoreCell(v) {
@@ -559,27 +673,145 @@ function haplotypePanel(allele) {
 
 // ---- alignment -------------------------------------------------------------
 
-function alignmentPanel(block, alleleName) {
-  const pre = el('pre', { class: 'alignment', tabindex: '0', 'aria-label': 'Alignment of all alleles of this gene' });
-  for (const line of block.split('\n')) {
-    const match = line.match(/^(\S+)(\s+)(.*)$/);
-    const isRow = match && !line.startsWith('>') && !line.startsWith(' ') && /^[A-Za-z.\- ]+$/.test(match[3]);
-    if (!isRow) {
-      pre.append(el('span', { class: line.startsWith('>') ? 'aln-title' : 'aln-note', text: `${line}\n` }));
+/** One gene block of alignments.txt as columns: the positions on the
+ *  genome, and one string per row (reference first). */
+function parseBlock(block) {
+  const lines = block.split('\n');
+  const where = lines[0].match(/^>(\S+)\s+(\S+)\s+(\S+):(\d+)-(\d+)/) || [];
+  const out = { title: lines[0].slice(1), build: where[2] || '', contig: where[3] || '', positions: [], rows: new Map(), notes: new Map() };
+  let [width, first] = [0, 0];
+  for (const line of lines.slice(1)) {
+    const chunk = line.match(/^\s+(\d+) \.\. (\d+)\s*$/);
+    if (chunk) {
+      const [from, to] = [Number(chunk[1]), Number(chunk[2])];
+      width = Math.abs(to - from) + 1;
+      for (let k = 0; k < width; k += 1) out.positions.push(from + (to >= from ? k : -k));
       continue;
     }
-    const row = el('span', { class: match[1] === alleleName ? 'aln-row current' : 'aln-row' }, match[1] + match[2]);
-    if (match[1] === 'reference') row.append(match[3]);
-    else {
-      for (const piece of match[3].split(/([A-Za-z-]+)/)) {
-        if (piece) row.append(/^[A-Za-z-]+$/.test(piece) ? el('b', { text: piece }) : piece);
-      }
+    const note = line.match(/^ {2}(\S+)\s+(identity .*)$/);
+    if (note) {
+      out.notes.set(note[1], note[2]);
+      continue;
     }
-    row.append('\n');
-    pre.append(row);
+    const row = line.match(/^(\S+)(\s+)/);
+    if (!row || !width || line.startsWith(' ')) continue;
+    // The reference row comes first and has no blanks: it shows in which
+    // column of the text the sequences begin.
+    if (row[1] === 'reference') first = row[0].length;
+    const before = out.positions.length - width;
+    const seq = (out.rows.get(row[1]) || '').padEnd(before, ' ') + line.slice(first).padEnd(width, ' ').slice(0, width);
+    out.rows.set(row[1], seq);
   }
+  return out;
+}
+
+const BASE_WORDS = { '.': 'same as the reference', '-': 'base missing (deletion)', ' ': 'not covered by this allele' };
+
+/** The alignment of one gene: every allele under the reference, one column
+ *  per base. Pointing at a column highlights it and says what is there. */
+function alignmentPanel(block, alleleName) {
+  const aln = parseBlock(block);
+  const columns = aln.positions.length;
+  const names = ['reference', ...(aln.rows.has(alleleName) ? [alleleName] : []), ...[...aln.rows.keys()].filter((n) => n !== 'reference' && n !== alleleName)];
+  const ruler = Array.from({ length: columns }, (_, c) => ((c + 1) % 10 === 0 ? '|' : (c + 1) % 5 === 0 ? ':' : '·')).join('');
+  const numbers = Array.from({ length: Math.floor(columns / 10) }, (_, k) => String(10 * (k + 1)).padStart(10, ' ')).join('');
+  const line = (name, cls, content) => el('div', { class: `aln-line ${cls}`, 'data-name': name }, content);
+  const coloured = (seq) => {
+    const parts = [];
+    for (const piece of seq.split(/([A-Za-z-])/)) {
+      if (!piece) continue;
+      parts.push(/^[A-Za-z-]$/.test(piece) ? el('b', { class: `nt nt-${piece === '-' ? 'gap' : piece.toUpperCase()}`, text: piece }) : piece.replace(/\./g, '·'));
+    }
+    return parts;
+  };
+  const marker = el('div', { class: 'aln-column', hidden: true });
+  const seqs = el('div', { class: 'aln-seqs', style: `width:${columns}ch` }, marker,
+    line('', 'aln-ruler', numbers), line('', 'aln-ruler', ruler),
+    names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '',
+      name === 'reference' ? aln.rows.get(name) : coloured(aln.rows.get(name) || ''))));
+  const labels = el('div', { class: 'aln-names' },
+    line('', 'aln-ruler', 'position in gene'), line('', 'aln-ruler', ' '),
+    names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '', name)));
+  const tip = el('div', { class: 'aln-tip', role: 'status', hidden: true });
+  const grid = el('div', { class: 'aln-grid', tabindex: '0', role: 'group', 'aria-label': `Alignment of ${names.length - 1} alleles of this gene. Use the left and right arrow keys to move along it.` }, labels, seqs);
+  const at = { col: -1, name: alleleName };
+
+  const describe = (col, name) => {
+    const pos = aln.positions[col];
+    const reference = aln.rows.get('reference')[col];
+    const row = name && name !== 'reference' && aln.rows.has(name) ? name : alleleName;
+    const base = (aln.rows.get(row) || '')[col] || ' ';
+    const differing = [...aln.rows].filter(([n, seq]) => n !== 'reference' && /[A-Za-z-]/.test(seq[col] || '')).length;
+    const parts = [
+      el('b', { text: `Base ${col + 1} of the gene` }),
+      el('span', { class: 'muted', text: `${aln.build} ${aln.contig}:${pos.toLocaleString('en')}` }),
+      el('span', {}, 'Reference: ', el('b', { class: `nt nt-${reference}`, text: reference })),
+      el('span', {}, `${row}: `, BASE_WORDS[base] ? BASE_WORDS[base] : el('b', { class: `nt nt-${base.toUpperCase()}`, text: base })),
+    ];
+    // The difference of this allele at this position, if it has one.
+    const variant = (state.variants.get(row) || []).find((v) => (v.type === 'SNV'
+      ? Number(v.genome_pos) === pos
+      : Math.abs(Number(v.genome_pos) - pos) <= Math.max(v.vcf_ref.length, v.vcf_alt.length)));
+    if (variant && !BASE_WORDS[base] || (variant && base === '-')) {
+      const seen = frequencies(variant);
+      const best = seen.reduce((top, m) => (m.af > top.af ? m : top), { af: 0 });
+      parts.push(
+        el('span', {}, given(variant.rsid) ? variant.rsid : 'no rsID', ' ', badge(variant.verdict)),
+        el('span', { text: seen.length ? `Seen in ${seen.length} population${seen.length > 1 ? 's' : ''}, most often ${percent(best.af)} in ${best.name}.` : 'Not seen in any population.' }),
+        given(variant.score) ? el('span', { text: `Score ${Number(variant.score) < 1 ? Number(variant.score).toFixed(3) : Number(variant.score).toFixed(1)}: ${scoreWords(Number(variant.score))}.` }) : null);
+    }
+    parts.push(el('span', { class: 'muted', text: differing ? `${differing} of ${aln.rows.size - 1} alleles differ from the reference here.` : 'No allele differs from the reference here.' }));
+    return parts;
+  };
+  const point = (col, name, scroll) => {
+    if (col < 0 || col >= columns) return;
+    if (col === at.col && name === at.name) return;
+    Object.assign(at, { col, name });
+    marker.hidden = false;
+    marker.style.left = `${col}ch`;
+    for (const row of grid.querySelectorAll('.aln-line.over')) row.classList.remove('over');
+    if (name) for (const row of grid.querySelectorAll(`.aln-line[data-name="${CSS.escape(name)}"]`)) row.classList.add('over');
+    tip.replaceChildren(...describe(col, name).filter(Boolean));
+    tip.hidden = false;
+    if (scroll) marker.scrollIntoView({ block: 'nearest', inline: 'center' });
+    const box = marker.getBoundingClientRect();
+    const frame = grid.getBoundingClientRect();
+    const left = Math.min(Math.max(8, box.left + box.width / 2 - tip.offsetWidth / 2), window.innerWidth - tip.offsetWidth - 8);
+    tip.style.left = `${left}px`;
+    tip.style.top = frame.bottom + 8 + tip.offsetHeight < window.innerHeight ? `${frame.bottom + 8}px` : `${Math.max(8, frame.top - 8 - tip.offsetHeight)}px`;
+  };
+  const leave = () => {
+    Object.assign(at, { col: -1 });
+    marker.hidden = true;
+    tip.hidden = true;
+    for (const row of grid.querySelectorAll('.aln-line.over')) row.classList.remove('over');
+  };
+  seqs.addEventListener('mousemove', (event) => {
+    const box = seqs.getBoundingClientRect();
+    const row = event.target.closest('.aln-line');
+    point(Math.floor(((event.clientX - box.left) / box.width) * columns), row ? row.dataset.name : alleleName, false);
+  });
+  seqs.addEventListener('mouseleave', () => { if (document.activeElement !== grid) leave(); });
+  grid.addEventListener('blur', leave);
+  grid.addEventListener('scroll', () => { if (document.activeElement !== grid) leave(); });
+  grid.addEventListener('keydown', (event) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    if (event.key === 'Escape') leave();
+    if (!step) return;
+    event.preventDefault();
+    // The arrow keys walk through the differences of this allele first.
+    const own = aln.rows.get(alleleName) || '';
+    let col = at.col < 0 ? (step > 0 ? -1 : columns) : at.col;
+    if (event.shiftKey) col += step;
+    else do { col += step; } while (col >= 0 && col < columns && !/[A-Za-z-]/.test(own[col] || ''));
+    point(Math.min(Math.max(col, 0), columns - 1), alleleName, true);
+  });
+  const own = aln.notes.get(alleleName);
   return el('details', { class: 'aln' }, el('summary', { text: 'Alignment of this gene' }),
-    el('p', { class: 'muted', text: 'A dot is the same base as the reference; a letter is a difference; a dash is a missing base. This allele is highlighted.' }), pre);
+    el('p', { class: 'muted', text: 'Every allele of the gene under the reference, read 5′ to 3′. A dot is the same base as the reference, a coloured letter is a difference, a dash is a missing base. This allele is the highlighted row. Point at a column to see what is there; with the keyboard, the arrow keys jump between the differences of this allele (hold Shift to move one base).' }),
+    own ? el('p', { class: 'muted', text: `${alleleName}: ${own.replace(/\s{2,}/g, ', ')}.` }) : null,
+    el('p', { class: 'aln-where', text: aln.title.replace(/\s{2,}/g, ' · ') }),
+    grid, tip);
 }
 
 // ---- score and checks ------------------------------------------------------

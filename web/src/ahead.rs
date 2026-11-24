@@ -96,6 +96,11 @@ async fn region(index: &Tabix, contig: &str, start: u64, end: u64) -> Result<()>
     Ok(())
 }
 
+thread_local! {
+    /// Regions downloaded so far, and how many there are.
+    static DONE: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+}
+
 /// One file with its index: the index first, then its regions.
 async fn file(url: String, regions: Vec<Region>) -> Result<()> {
     let index_url = format!("{url}.tbi");
@@ -107,7 +112,16 @@ async fn file(url: String, regions: Vec<Region>) -> Result<()> {
     let jobs = regions.iter().filter_map(|(contig, start, end)| {
         let name = index.resolve_contig(contig)?;
         let index = &index;
-        Some(async move { region(index, &name, *start, *end).await })
+        Some(async move {
+            let result = region(index, &name, *start, *end).await;
+            DONE.with(|done| {
+                let (so_far, total) = done.get();
+                done.set((so_far + 1, total));
+                // One line per region, in a form the page turns into a bar.
+                note!("progress: {} of {total} regions downloaded", so_far + 1);
+            });
+            result
+        })
     });
     let results: Vec<Result<()>> = stream::iter(jobs).buffer_unordered(PER_SERVER).collect().await;
     results.into_iter().collect()
@@ -132,6 +146,7 @@ pub async fn download(downloads: Vec<Download>) {
     if regions == 0 {
         return;
     }
+    DONE.with(|done| done.set((0, regions)));
     note!(
         "downloading {regions} regions from {} servers, up to {PER_SERVER} at a time per server",
         servers.len()

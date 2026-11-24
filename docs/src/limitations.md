@@ -5,9 +5,10 @@
   (site filters, `segdup`) but cannot recover the truth.
 - **Shared loci.** Genes annotated at the same interval (`shares_locus_with`)
   cannot be told apart in population data.
-- **Genes missing from the reference.** A gene absent from the build cannot
-  be assessed on that build. Five IGHV genes in the shipped coordinates
-  exist only on GRCh37.
+- **Genes missing from the reference.** Four IGHV genes are absent from
+  GRCh38 and are judged on GRCh37, with older and smaller data; one more
+  (IGHV4-38-2) is on an unplaced scaffold and gets no population evidence.
+  See [Datasets](datasets.md#genes-that-the-reference-genome-lacks).
 - **Absent is not disproof.** A variant with no record may sit where
   genotyping fails. igpop does not yet read per-site coverage, so it cannot
   separate "confidently not there" from "not callable".

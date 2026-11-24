@@ -127,6 +127,7 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
     Table::new()
         .col("allele_name", |r: &R| r.allele.placed.allele.clone())
         .col("gene", |r: &R| r.allele.placed.gene.clone())
+        .col("build", |r: &R| r.allele.build.to_string())
         .col("rsid", |r: &R| r.v.rsid.clone())
         .col("evidence", |r: &R| {
             if r.v.observed.is_empty() {
@@ -159,7 +160,13 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
             (Some(prior), Some(x)) => format!("{:.3}", score::posterior(prior, x)),
             _ => ".".to_string(),
         })
-        .col("support", |r: &R| if r.ev.counted() { num(r.v.support) } else { ".".to_string() })
+        .col("support", |r: &R| {
+            if r.ev.reads(&r.v.lookup.0) {
+                num(r.v.support)
+            } else {
+                ".".to_string()
+            }
+        })
         .col("class", |r: &R| r.v.class.as_str().to_string())
         .col("class_basis", |r: &R| r.v.basis.clone().unwrap_or_else(|| ".".to_string()))
         .col("class_p", |r: &R| r.v.class_p.map_or(".".to_string(), num))
@@ -241,7 +248,7 @@ fn kgp_cells(r: &VariantRow) -> Vec<String> {
             ]);
             out
         }
-        None if r.ev.kgp_read() => {
+        None if r.ev.kgp_read() && r.ev.reads(&r.v.lookup.0) => {
             let mut out = vec![
                 ".".to_string(),
                 ".".to_string(),
@@ -279,7 +286,7 @@ fn gnomad_cells(r: &VariantRow) -> Vec<String> {
                 num(freq::max_upper95(&site.groups)),
             ]
         }
-        None if r.ev.gnomad_read() => {
+        None if r.ev.gnomad_read() && r.ev.reads(&r.v.lookup.0) => {
             let mut out = vec![
                 ".".to_string(),
                 ".".to_string(),
@@ -337,6 +344,7 @@ pub fn alleles_table<'a>() -> Table<AlleleResult<'a>> {
     Table::new()
         .col("allele_name", |r: &R| r.placed.allele.clone())
         .col("gene", |r: &R| r.placed.gene.clone())
+        .col("build", |r: &R| r.build.to_string())
         .col("verdict", |r: &R| r.verdict.as_str().to_string())
         .col("supported_by", |r: &R| r.supported_by().to_string())
         .col("filters", |r: &R| r.filters())
@@ -435,15 +443,21 @@ fn haplotype_cells(r: &AlleleResult) -> Vec<String> {
     out
 }
 
+/// One row of `alignments.tsv`.
+pub struct PlacedRow<'a> {
+    pub build: &'a str,
+    pub placed: &'a Placed,
+}
+
 /// `alignments.tsv`: where each allele was placed.
-pub fn alignments_table(build: &str) -> Table<Placed> {
-    let build = build.to_string();
-    let placement = |cell: fn(&Placement) -> String| move |p: &Placed| p.placement.as_ref().map_or(".".to_string(), cell);
+pub fn alignments_table<'a>() -> Table<PlacedRow<'a>> {
+    type R<'a> = PlacedRow<'a>;
+    let placement = |cell: fn(&Placement) -> String| move |r: &R| r.placed.placement.as_ref().map_or(".".to_string(), cell);
     Table::new()
-        .col("allele", |p: &Placed| p.allele.clone())
-        .col("gene", |p: &Placed| p.gene.clone())
-        .col("build", move |_| build.clone())
-        .col("contig", |p: &Placed| p.contig().to_string())
+        .col("allele", |r: &R| r.placed.allele.clone())
+        .col("gene", |r: &R| r.placed.gene.clone())
+        .col("build", |r: &R| r.build.to_string())
+        .col("contig", |r: &R| r.placed.contig().to_string())
         .col("ref_start", placement(|a| a.span.0.to_string()))
         .col("ref_end", placement(|a| a.span.1.to_string()))
         .col("strand", placement(|a| if a.reverse { "-" } else { "+" }.to_string()))
@@ -457,29 +471,26 @@ pub fn alignments_table(build: &str) -> Table<Placed> {
             "best_other_score",
             placement(|a| a.rival.as_ref().map_or(".".to_string(), |(_, s)| s.to_string())),
         )
-        .col("shares_locus_with", |p: &Placed| p.shared())
-        .col("status", |p: &Placed| p.status.as_str().to_string())
+        .col("shares_locus_with", |r: &R| r.placed.shared())
+        .col("status", |r: &R| r.placed.status.as_str().to_string())
         .col("missing_5prime", placement(|a| a.missing.0.to_string()))
         .col("missing_3prime", placement(|a| a.missing.1.to_string()))
 }
 
-/// `alignments.txt`: stacked alignments, one block per gene, to read by eye.
+/// The head of `alignments.txt`: how to read the blocks.
+pub fn alignments_legend() -> String {
+    "# igpop alignments, one block per gene, shown 5'->3' in gene orientation.\n\
+     # '.' = same as reference, letter = mismatch, '-' = reference base missing in the allele,\n\
+     # blank = not covered by the allele. Inserted bases are listed under each block as\n\
+     # <reference position before the insertion>+<bases on the reference strand>.\n\
+     # Coordinates above each chunk are the reference positions of its first and last column.\n\n"
+        .to_string()
+}
+
+/// The blocks of `alignments.txt` for the loci of one build: stacked
+/// alignments, one block per gene, to read by eye.
 pub fn alignments_text(build: &str, windows: &[Window], placed: &[Placed]) -> Result<String> {
     let mut out = String::new();
-    writeln!(out, "# igpop alignments, one block per gene, shown 5'->3' in gene orientation.")?;
-    writeln!(
-        out,
-        "# '.' = same as reference, letter = mismatch, '-' = reference base missing in the allele,"
-    )?;
-    writeln!(
-        out,
-        "# blank = not covered by the allele. Inserted bases are listed under each block as"
-    )?;
-    writeln!(out, "# <reference position before the insertion>+<bases on the reference strand>.")?;
-    writeln!(
-        out,
-        "# Coordinates above each chunk are the reference positions of its first and last column.\n"
-    )?;
     let mut order: Vec<usize> = (0..windows.len()).collect();
     order.sort_by(|x, y| windows[*x].coord.gene.cmp(&windows[*y].coord.gene));
     for index in order {

@@ -23,7 +23,8 @@ starting with `#` and a header line starting with `gene` are ignored.
 | start, end | 1-based inclusive coordinates of the gene. |
 | strand | `+`, `-`, or `.` to let igpop choose: both orientations are aligned and the better-scoring one is used. |
 
-A table may hold rows for several builds; a run uses the rows of `--build`.
+A table may hold rows for several builds. A run uses the rows of `--build`,
+and for a gene without such a row the row of another build.
 
 Several genes may share exactly the same interval (for example `IGHV3-23`
 and `IGHV3-23D`). igpop treats them as one locus and says so in the
@@ -33,7 +34,7 @@ and `IGHV3-23D`). igpop treats them as one locus and says so in the
 
 | File | Content |
 |---|---|
-| `coordinates.tsv` | Human IGH loci: 122 on GRCh38 (110 lifted from the IgSNPer GRCh37 coordinates, 12 native) and 5 genes that exist only on GRCh37. |
+| `coordinates.tsv` | Human IGH loci: 123 on GRCh38 (110 lifted from the IgSNPer GRCh37 coordinates, 12 native, IGHV4-38-2 on an unplaced scaffold) and 5 rows on GRCh37, used for the genes GRCh38 lacks. |
 | `lift_report.tsv` | Evidence for every lift (see below). |
 | `gene_aliases.tsv` | IGHV4-4 allele-to-locus assignments from IgSNPer. |
 

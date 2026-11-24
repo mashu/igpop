@@ -42,7 +42,7 @@ datasets have the same problem there, so frequencies in these genes are
 less certain. The verdict stands, with that caveat.
 
 **Half my alleles are `not_placed`.**
-Read the reason. "coordinates on GRCh37 only": run again with `--build 37`.
+Read the reason. "coordinates on GRCh37 only": the run used `--single-build`; leave it out.
 "missing from the coordinates table": the gene name before `*` does not
 match a row of the table; add it or use `--gene-aliases`.
 
@@ -61,3 +61,21 @@ No. The population datasets are human.
 **How do I cite the numbers?**
 State the igpop version (top of the report), the datasets (section 4), and
 the calibration source (section 5).
+
+**What does "less reliable position" mean?**
+The 1000 Genomes project checks every position of the genome. A position
+fails when the project's variant filter rejects the call, when more than 5%
+of people have no genotype, when the numbers of carriers of one and two
+copies do not fit together in any population, or when children's genotypes
+contradict their parents' in more than 5% of families. In antibody genes
+this is common, because the genes exist in several similar copies and
+reads end up in the wrong one. It does not mean that the variant is wrong.
+It means that its frequency in 1000 Genomes is less certain and that the
+haplotype check cannot use the position. Details:
+[Site quality filters](site-qc.md).
+
+**What does the frequency line show?**
+Each mark is one population or dataset in which the base was seen, placed
+by the share of chromosomes that carry it. The line runs from 1 in a
+million (left) to all chromosomes (right) in steps of a hundred; the dashed
+line is 1%.
