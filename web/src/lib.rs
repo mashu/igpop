@@ -218,6 +218,11 @@ fn configure(job: &Object) -> Config {
     }
     config.coords = named("coords", "the gene list of this page");
     config.aliases = named("aliases", "the gene names of this page");
+    // The gnomAD bucket cannot be read from a web page.
+    config.gnomad = Choice::Off;
+    if !flag(job, "haplotypes") {
+        config.phased = Choice::Off;
+    }
     config
 }
 
@@ -235,26 +240,44 @@ pub fn gene_aliases() -> String {
 }
 
 /// The genes of a FASTA file and whether the gene list has them, before
-/// anything is downloaded: an array of `{ gene, alleles: [names], build,
-/// contig, start, end }`, where a gene that is not in the list has no
-/// `build`. The job is the one `run` takes.
+/// anything is downloaded: `{ genes: [{ gene, alleles: [names], evidence,
+/// build, contig, start, end }], sources: [{ build, name, title, gives,
+/// people, about }] }`. A gene that is not in the list has no `build`;
+/// `sources` are the data the run will read. The job is the one `run` takes.
 #[wasm_bindgen]
 pub fn check(job: Object) -> Result<JsValue, JsValue> {
     let config = configure(&job);
-    let genes = igpop::preview(&config).map_err(|e| JsValue::from_str(&format!("{e:#}")))?;
-    let out = Array::new();
-    for gene in genes {
+    let preview = igpop::preview(&config).map_err(|e| JsValue::from_str(&format!("{e:#}")))?;
+    let genes = Array::new();
+    for gene in preview.genes {
         let row = Object::new();
         set(&row, "gene", &JsValue::from_str(&gene.gene));
         set(&row, "alleles", &strings(&gene.alleles));
+        set(&row, "evidence", &JsValue::from_bool(gene.evidence));
         if let Some((build, contig, start, end)) = gene.place {
             set(&row, "build", &JsValue::from_str(&build));
             set(&row, "contig", &JsValue::from_str(&contig));
             set(&row, "start", &JsValue::from_f64(start as f64));
             set(&row, "end", &JsValue::from_f64(end as f64));
         }
-        out.push(&row);
+        genes.push(&row);
     }
+    let sources = Array::new();
+    for source in preview.sources {
+        let row = Object::new();
+        set(&row, "build", &JsValue::from_str(&source.build));
+        set(&row, "name", &JsValue::from_str(source.name));
+        set(&row, "title", &JsValue::from_str(source.title));
+        set(&row, "gives", &JsValue::from_str(source.gives));
+        set(&row, "about", &JsValue::from_str(source.about));
+        if let Some(people) = source.people {
+            set(&row, "people", &JsValue::from_f64(people as f64));
+        }
+        sources.push(&row);
+    }
+    let out = Object::new();
+    set(&out, "genes", &genes);
+    set(&out, "sources", &sources);
     Ok(out.into())
 }
 
@@ -282,10 +305,6 @@ pub async fn run(job: Object, on_progress: Function) -> Result<JsValue, JsValue>
     config.candidate_marker = text(&job, "marker").unwrap_or_else(|| "_S".to_string());
     config.paralog_check = flag(&job, "paralog");
     config.place_unknown = flag(&job, "placeUnknown");
-    config.gnomad = Choice::Off;
-    if !flag(&job, "haplotypes") {
-        config.phased = Choice::Off;
-    }
     config.prefix = "igpop".to_string();
 
     let failed = |e: anyhow::Error| JsValue::from_str(&format!("{e:#}"));

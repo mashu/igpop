@@ -126,7 +126,7 @@ function startWorker() {
       names.builtin = { coords: message.geneList, aliases: message.aliases };
       renderGeneList();
     }
-    if (message.type === 'checked' && message.id === names.asked) renderCheck(message.genes);
+    if (message.type === 'checked' && message.id === names.asked) renderCheck(message.genes.genes, message.genes.sources);
     if (message.type === 'check-failed' && message.id === names.asked) checkFailed(message.message);
     if ('stored' in message) showStored(message.stored);
     if (message.type === 'log') logLine(message.message);
@@ -254,7 +254,7 @@ async function handleFiles(fileList) {
   names.pending = { fasta, name: file.name };
   $('check-name').textContent = file.name;
   $('check-summary').textContent = 'Reading the gene names…';
-  for (const id of ['check-unknown', 'check-mapped']) $(id).replaceChildren();
+  for (const id of ['check-evidence', 'check-unknown', 'check-mapped']) $(id).replaceChildren();
   $('check-known').hidden = true;
   $('check-run').disabled = true;
   show('check');
@@ -305,6 +305,7 @@ function askCheck() {
   names.asked += 1;
   worker.postMessage({
     type: 'check', id: names.asked, fasta: names.pending.fasta, name: names.pending.name, build: $('opt-build').value,
+    haplotypes: $('opt-hap').checked,
     coords: names.rows ? geneListText(names.rows) : undefined, aliases: aliasText(),
   });
 }
@@ -319,8 +320,38 @@ function checkFailed(message) {
 const sortGenes = (a, b) => a.localeCompare(b, 'en', { numeric: true });
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function renderCheck(genes) {
+/** Where the evidence of the run will come from: one card per group of
+ *  genes that share their data, with the sources of each. */
+function renderEvidencePlan(genes, sources) {
+  const count = (list) => `${plural(list.length, 'gene')}, ${plural(list.reduce((n, g) => n + g.alleles.length, 0), 'allele')}`;
+  const builds = [...new Set(sources.map((s) => s.build))];
+  const cards = builds.map((build, i) => {
+    const members = genes.filter((g) => g.build === build && g.evidence);
+    const mine = sources.filter((s) => s.build === build);
+    return el('div', { class: 'plan-card' },
+      el('h3', {}, `Genes on ${build}`, el('small', { text: count(members) })),
+      i > 0 ? el('p', { class: 'muted', text: `These genes are missing from ${builds[0]}. They are judged with the older data of ${build}, so read their verdicts with more caution.` }) : null,
+      el('ul', { class: 'plan-sources' }, mine.map((s) => el('li', {},
+        el('b', { text: s.title }),
+        el('span', { class: 'plan-people', text: s.people ? `${s.people.toLocaleString('en')} people` : '' }),
+        el('small', { class: 'muted' }, el('span', { class: `plan-kind k-${s.gives}`, text: s.gives === 'haplotypes' ? 'whole sequences' : 'frequencies' }), ` ${s.about}`)))),
+      mine.some((s) => s.gives === 'haplotypes') ? null : el('p', { class: 'muted', text: 'The haplotype check is switched off.' }));
+  });
+  const apart = genes.filter((g) => g.build && !g.evidence);
+  if (apart.length) {
+    cards.push(el('div', { class: 'plan-card plan-none' },
+      el('h3', {}, 'Genes outside the chromosomes', el('small', { text: count(apart) })),
+      el('p', { class: 'muted', text: `${apart.map((g) => g.gene).join(', ')}: the reference has ${apart.length === 1 ? 'this gene' : 'these genes'} only on a piece of sequence that is not part of a chromosome. The alleles are compared with it, but there are no dependable population data: an allele that differs will be "not assessed".` })));
+  }
+  $('check-evidence').replaceChildren(cards.length ? el('section', { class: 'plan', 'aria-label': 'Where the evidence will come from' },
+    el('h3', { class: 'plan-title', text: 'Where the evidence will come from' }),
+    el('div', { class: 'plan-cards' }, cards),
+    el('p', { class: 'muted plan-foot', text: 'In the browser, gnomAD cannot be read directly (its server does not allow it); its overall frequencies still arrive through dbSNP. The command-line program reads gnomAD in full.' })) : '');
+}
+
+function renderCheck(genes, sources = []) {
   names.genes = genes;
+  renderEvidencePlan(genes, sources);
   $('check-error').hidden = true;
   const known = genes.filter((g) => g.build);
   const unknown = genes.filter((g) => !g.build);
@@ -369,13 +400,13 @@ function renderCheck(genes) {
   box.querySelector('summary').textContent = `${plural(known.length, 'gene')} found in the gene list`;
   const usual = $('opt-build').value === '37' ? 'GRCh37' : 'GRCh38';
   $('check-known-table').replaceChildren(
-    el('thead', {}, el('tr', {}, ...['Gene', 'Alleles', 'Place on the reference genome', ''].map((h) => el('th', { scope: 'col', text: h })))),
+    el('thead', {}, el('tr', {}, ...['Gene', 'Alleles', 'Place on the reference genome', 'Evidence from'].map((h) => el('th', { scope: 'col', text: h })))),
     el('tbody', {}, known.sort((a, b) => sortGenes(a.gene, b.gene)).map((g) => el('tr', {},
       el('th', { scope: 'row', text: g.gene }),
       el('td', { class: 'num', text: String(g.alleles.length) }),
       el('td', { text: `${g.build} ${g.contig}:${g.start.toLocaleString('en')}-${g.end.toLocaleString('en')}` }),
-      el('td', { class: 'muted', text: !/^(chr)?(\d{1,2}|X|Y)$/.test(g.contig) ? 'not on a chromosome: compared with the reference only, no population data'
-        : g.build !== usual ? `not on ${usual}: judged with the data of ${g.build}` : '' })))));
+      el('td', { class: g.evidence && g.build === usual ? '' : 'muted', text: !g.evidence ? 'none: not on a chromosome, compared with the reference only'
+        : `${sources.filter((x) => x.build === g.build).map((x) => x.title.replace('Studies collected by ', '')).join(', ')}${g.build !== usual ? ` (gene not on ${usual})` : ''}` })))));
   $('check-run').disabled = false;
   $('check-run').focus();
 }
@@ -438,7 +469,7 @@ function setGeneList(rows) {
 
 function wireGeneList() {
   $('check-run').addEventListener('click', runChecked);
-  $('opt-build').addEventListener('change', askCheck);
+  for (const id of ['opt-build', 'opt-hap']) $(id).addEventListener('change', askCheck);
   $('gene-filter').addEventListener('input', renderGeneList);
   $('gene-reset').addEventListener('click', () => setGeneList(null));
   $('gene-upload').addEventListener('click', () => $('gene-file').click());
@@ -507,6 +538,7 @@ function display(files, warnings, summary = []) {
   renderFilters();
   renderLegend();
   renderAlleles();
+  renderData();
   renderMethod();
   renderReport();
   renderFiles();
@@ -1035,6 +1067,82 @@ function alignmentPanel(block, alleleName) {
 }
 
 // ---- score and checks ------------------------------------------------------
+
+// ---- the data behind the results ---------------------------------------------
+
+/** What each data source contributed to this run, from the result tables:
+ *  how many of the differences it has seen and for how many it settled
+ *  that they are common. */
+function renderData() {
+  const view = $('view-data');
+  view.replaceChildren();
+  // One entry per distinct difference; alleles often share them.
+  const distinct = new Map();
+  for (const rows of state.variants.values()) for (const v of rows) distinct.set(`${v.build}|${v.contig}|${v.genome_pos}|${v.query_variant}`, v);
+  const all = [...distinct.values()];
+  if (!all.length) {
+    view.append(el('p', { class: 'muted', text: 'No differences from the reference in these results, so no population data were needed.' }));
+    return;
+  }
+  const builds = [...new Set(all.map((v) => v.build).filter(given))];
+  const title = (name) => ({ '1kGP_30x': '1000 Genomes, 30x', '1kGP_phase3': '1000 Genomes, phase 3', dbSNP: 'Studies collected by dbSNP' }[name] || name.replace('gnomAD_v', 'gnomAD v').replace(/$/, name.startsWith('gnomAD') ? ' genomes' : ''));
+  const sections = builds.map((build) => {
+    const mine = all.filter((v) => v.build === build);
+    const assessed = mine.filter((v) => v.class !== 'not_assessed');
+    const sources = [...new Set(mine.flatMap((v) => (given(v.evidence) ? v.evidence.split(';') : [])))];
+    const chromosomes = (name) => {
+      const column = name.startsWith('1kGP') ? 'kgp_AN' : name.startsWith('gnomAD') ? 'gnomad_AN' : null;
+      const most = column ? Math.max(0, ...mine.map((v) => number(v[column])).filter((x) => x > 0)) : 0;
+      return most ? `${most.toLocaleString('en')} chromosomes` : '';
+    };
+    const rows = sources.map((name) => ({
+      name,
+      seen: mine.filter((v) => given(v.evidence) && v.evidence.split(';').includes(name)).length,
+      common: mine.filter((v) => v.class === 'common' && given(v.class_basis) && v.class_basis.split(':')[0] === name).length,
+    })).sort((a, b) => b.seen - a.seen);
+    const never = assessed.filter((v) => !given(v.evidence)).length;
+    const alleles = state.alleles.filter((a) => a.build === build && Number(a.n_variants) > 0);
+    const looked = alleles.filter((a) => ['found_exact', 'found_with_extra', 'not_found'].includes(a.hap_status));
+    const found = looked.filter((a) => a.hap_status === 'found_exact');
+    const panel = Math.max(0, ...alleles.map((a) => number(a.hap_total)).filter((x) => x > 0));
+    return el('section', { class: 'data-build' },
+      el('h3', { text: builds.length > 1 ? `Genes on ${build}: ${plural(mine.length, 'distinct difference')} in ${plural(alleles.length, 'allele')}` : `${plural(mine.length, 'distinct difference')} from the reference, in ${plural(alleles.length, 'allele')}` }),
+      build !== state.build ? el('p', { class: 'muted', text: `These genes are missing from ${state.build} and were judged with the older, smaller data of ${build}.` }) : null,
+      el('div', { class: 'scroll' }, el('table', { class: 'data-table' },
+        el('caption', { text: 'Frequencies: has anyone been seen with the same base?' }),
+        el('thead', {}, el('tr', {}, ...['Data source', 'Size', `Differences it has seen (of ${mine.length})`, 'Shown by it to be common'].map((h) => el('th', { scope: 'col', text: h })))),
+        el('tbody', {}, rows.map((r) => el('tr', {},
+          el('th', { scope: 'row', text: title(r.name) }),
+          el('td', { class: 'muted', text: r.name === 'dbSNP' ? 'many studies, see below' : chromosomes(r.name) }),
+          el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * r.seen) / mine.length}%` }), ` ${r.seen}`),
+          el('td', { class: 'num', text: String(r.common) })))),
+        el('tfoot', {}, el('tr', {}, el('td', { colspan: '4', class: 'muted', text: `${never} of the differences ${never === 1 ? 'was' : 'were'} seen in no source${mine.length - assessed.length ? `; ${mine.length - assessed.length} could not be looked up at all` : ''}. A difference counts once per source; "shown to be common" names the source whose population proved a frequency of 1% or more.` }))))),
+      panel ? el('p', {}, el('b', { text: 'Whole sequences: ' }), `the phased panel has ${panel.toLocaleString('en')} chromosomes. ${looked.length} of ${alleles.length} alleles could be looked up completely, and ${found.length} of those were found with their exact sequence.`) : null);
+  });
+  view.append(el('p', { text: 'Which data the verdicts rest on, and how much each source had to say about the alleles of this run.' }), ...sections);
+
+  // The studies behind dbSNP, by how many of the differences they report.
+  const studies = new Map();
+  for (const v of all) {
+    if (!given(v.dbsnp_freq)) continue;
+    for (const entry of v.dbsnp_freq.split(';')) {
+      const [name, af] = entry.split(':');
+      if (Number(af) > 0) studies.set(name, (studies.get(name) || 0) + 1);
+    }
+  }
+  const sizes = new Map((state.files['dbsnp_datasets.tsv'] ? parseTSV(state.files['dbsnp_datasets.tsv']) : []).map((d) => [d.dataset, d]));
+  if (studies.size) {
+    const top = Math.max(...studies.values());
+    view.append(el('details', { class: 'fold' }, el('summary', { text: `The ${studies.size} studies behind dbSNP` }),
+      el('p', { class: 'muted', text: 'dbSNP passes on frequencies from these studies without the number of people. igpop estimates each size from the smallest frequency the study reports; a larger study can demonstrate rarer variants.' }),
+      el('div', { class: 'scroll' }, el('table', { class: 'data-table' },
+        el('thead', {}, el('tr', {}, ...['Study', 'Estimated size', 'Differences it reports'].map((h) => el('th', { scope: 'col', text: h })))),
+        el('tbody', {}, [...studies].sort((a, b) => b[1] - a[1]).map(([name, seen]) => el('tr', {},
+          el('th', { scope: 'row', text: name }),
+          el('td', { class: 'muted', text: sizes.has(name) && Number(sizes.get(name).implied_chromosomes) ? `${Number(sizes.get(name).implied_chromosomes).toLocaleString('en')} chromosomes` : '' }),
+          el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * seen) / top}%` }), ` ${seen}`))))))));
+  }
+}
 
 function renderMethod() {
   const view = $('view-method');

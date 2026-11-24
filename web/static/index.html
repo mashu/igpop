@@ -63,6 +63,7 @@
       <h2>The genes of <span id="check-name"></span></h2>
       <p id="check-summary" aria-live="polite"></p>
       <p id="check-error" class="check-error" role="alert" hidden></p>
+      <div id="check-evidence"></div>
       <div id="check-unknown"></div>
       <div id="check-mapped"></div>
       <details id="check-known" class="fold">
@@ -124,6 +125,7 @@
 
       <div class="tabs" role="tablist" aria-label="Result views">
         <button role="tab" id="tab-alleles" aria-controls="view-alleles" aria-selected="true">Alleles</button>
+        <button role="tab" id="tab-data" aria-controls="view-data" aria-selected="false" tabindex="-1">Data used</button>
         <button role="tab" id="tab-method" aria-controls="view-method" aria-selected="false" tabindex="-1">Score and checks</button>
         <button role="tab" id="tab-report" aria-controls="view-report" aria-selected="false" tabindex="-1">Report</button>
         <button role="tab" id="tab-files" aria-controls="view-files" aria-selected="false" tabindex="-1">Files</button>
@@ -152,6 +154,7 @@
         <div id="legend" class="legend"></div>
         <div id="alleles"></div>
       </div>
+      <div id="view-data" role="tabpanel" aria-labelledby="tab-data" hidden></div>
       <div id="view-method" role="tabpanel" aria-labelledby="tab-method" hidden></div>
       <div id="view-report" role="tabpanel" aria-labelledby="tab-report" hidden class="prose"></div>
       <div id="view-files" role="tabpanel" aria-labelledby="tab-files" hidden></div>

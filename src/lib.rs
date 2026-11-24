@@ -299,28 +299,164 @@ pub struct GenePreview {
     /// Where it is judged: build, contig, first and last position; `None`
     /// if the gene is not in the coordinates table of this run.
     pub place: Option<(String, String, u64, u64)>,
+    /// Population data are read for it: it lies on a whole chromosome.
+    pub evidence: bool,
 }
 
-/// The genes of the allele file and whether the run knows them: a check
-/// to make before a run, without any download.
-pub fn preview(config: &Config) -> Result<Vec<GenePreview>> {
+/// A data source a run will read for the genes of one build.
+pub struct PlannedSource {
+    pub build: String,
+    /// The name the output uses, e.g. `1kGP_30x`.
+    pub name: &'static str,
+    pub title: &'static str,
+    /// `frequencies` or `haplotypes`.
+    pub gives: &'static str,
+    /// People in the dataset, where that is one number.
+    pub people: Option<u32>,
+    pub about: &'static str,
+}
+
+/// What a run will do, known before anything is downloaded.
+pub struct Preview {
+    pub genes: Vec<GenePreview>,
+    /// The sources of every build that has a gene of the file.
+    pub sources: Vec<PlannedSource>,
+}
+
+/// The sources a run reads for one build, given what the user switched off
+/// or replaced.
+fn planned(config: &Config, build: &str, main: bool) -> Vec<PlannedSource> {
+    let Some(d) = defaults(build) else { return Vec::new() };
+    let phase3 = d.kgp_release == KgpRelease::Phase3;
+    let own = |choice: &Choice| main && matches!(choice, Choice::Custom(_));
+    let mut out = Vec::new();
+    let mut add = |choice: &Choice, default: &str, source: PlannedSource| {
+        if choice.resolve(Some(default), main).is_some() {
+            out.push(match own(choice) {
+                true => PlannedSource {
+                    title: "your own file",
+                    people: None,
+                    about: "given on the command line",
+                    ..source
+                },
+                false => source,
+            });
+        }
+    };
+    let source = |name, title, gives, people, about| PlannedSource {
+        build: build.to_string(),
+        name,
+        title,
+        gives,
+        people,
+        about,
+    };
+    add(
+        &config.kgp,
+        d.kgp,
+        match phase3 {
+            true => source(
+                d.kgp_name,
+                "1000 Genomes, phase 3",
+                "frequencies",
+                Some(2504),
+                "five continental groups; low sequencing depth, no site quality measures",
+            ),
+            false => source(
+                d.kgp_name,
+                "1000 Genomes, 30x",
+                "frequencies",
+                Some(2504),
+                "unrelated people in five continental groups, with site quality measures",
+            ),
+        },
+    );
+    add(
+        &config.gnomad,
+        d.gnomad,
+        match phase3 {
+            true => source(
+                d.gnomad_name,
+                "gnomAD v2.1 genomes",
+                "frequencies",
+                Some(15708),
+                "six genetic ancestry groups",
+            ),
+            false => source(
+                d.gnomad_name,
+                "gnomAD v4.1 genomes",
+                "frequencies",
+                Some(76215),
+                "nine genetic ancestry groups",
+            ),
+        },
+    );
+    add(
+        &config.dbsnp,
+        d.dbsnp,
+        source(
+            "dbSNP",
+            "Studies collected by dbSNP",
+            "frequencies",
+            None,
+            "rsIDs, and frequencies from further studies of a few hundred to several hundred thousand people",
+        ),
+    );
+    add(
+        &config.phased,
+        d.phased,
+        match phase3 {
+            true => source(
+                "phased",
+                "1000 Genomes phase 3, phased",
+                "haplotypes",
+                Some(2504),
+                "whole sequences on single chromosomes, for the haplotype check",
+            ),
+            false => source(
+                "phased",
+                "1000 Genomes phased panel",
+                "haplotypes",
+                Some(2598),
+                "whole sequences on single chromosomes, for the haplotype check",
+            ),
+        },
+    );
+    out
+}
+
+/// The genes of the allele file, whether the run knows them and which
+/// data it will read for them: a check to make before a run, without any
+/// download.
+pub fn preview(config: &Config) -> Result<Preview> {
     let (plan, aliases) = Plan::new(config)?;
     let mut genes: Vec<GenePreview> = Vec::new();
     for (name, _) in io::parse_fasta(&config.alleles.content) {
         let gene = locus::gene_for(&name, &aliases);
         match genes.iter_mut().find(|g| g.gene == gene) {
             Some(known) => known.alleles.push(name.clone()),
-            None => genes.push(GenePreview {
-                gene: gene.to_string(),
-                alleles: vec![name.clone()],
-                place: plan.place_of(gene).map(|c| (c.build.clone(), c.contig.clone(), c.start, c.end)),
-            }),
+            None => {
+                let place = plan.place_of(gene);
+                genes.push(GenePreview {
+                    gene: gene.to_string(),
+                    alleles: vec![name.clone()],
+                    place: place.map(|c| (c.build.clone(), c.contig.clone(), c.start, c.end)),
+                    evidence: place.is_some_and(|c| evidence::whole_chromosome(&c.contig)),
+                })
+            }
         }
     }
     if genes.is_empty() {
         bail!("{} holds no FASTA records", config.alleles.name);
     }
-    Ok(genes)
+    let sources = plan
+        .builds
+        .iter()
+        .enumerate()
+        .filter(|(_, build)| genes.iter().any(|g| g.evidence && g.place.as_ref().is_some_and(|p| &p.0 == *build)))
+        .flat_map(|(n, build)| planned(config, build, n == 0))
+        .collect();
+    Ok(Preview { genes, sources })
 }
 
 /// The alleles judged on one genome build, with its loci and data.
@@ -719,7 +855,10 @@ mod tests {
             name: "test.fa".to_string(),
             content: fasta.to_string(),
         });
-        let genes = preview(&config).unwrap();
+        let Preview { genes, sources } = preview(&config).unwrap();
+        // Both builds are needed, each with its four default sources.
+        assert_eq!(sources.iter().filter(|s| s.build == "GRCh38").count(), 4);
+        assert_eq!(sources.iter().filter(|s| s.build == "GRCh37").count(), 4);
         let of = |gene: &str| genes.iter().find(|g| g.gene == gene).unwrap();
         assert_eq!(of("IGHV1-18").place.as_ref().unwrap().0, "GRCh38");
         // Named after a database allele of the gene the table calls IGHV4-4B.

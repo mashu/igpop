@@ -98,3 +98,17 @@ Under **Gene list** you can look through the list, remove a gene, add one
 (gene, build, contig, first and last base, strand), load your own list from
 a tab-separated file, or save the current one. Your list and your matches
 are kept in this browser; "Back to the built-in list" discards the list.
+
+## Where the evidence comes from
+
+The same step shows, before the run, which data will be read for which
+genes: one card per genome build with its sources (frequencies or whole
+sequences, and how many people), a card for genes that lie outside the
+chromosomes and get no population data, and for every gene of the file the
+sources that will be used for it.
+
+After the run, the tab **Data used** shows what each source had to say:
+how many of the distinct differences of the run it has seen, for how many
+it showed a frequency of 1% or more, how many alleles the phased panel
+could look up completely and how many it found. The studies that dbSNP
+passes on are listed underneath, with their estimated sizes.

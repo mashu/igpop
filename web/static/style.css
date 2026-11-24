@@ -267,3 +267,24 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 .gene-rows thead th, #check-known .scroll thead th { position: sticky; top: 0; background: var(--surface); }
 #check-known .scroll { max-height: 18rem; overflow: auto; }
 .gene-add input, .gene-add select, .toolbar input, .check-table select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 0.4rem 0.6rem; }
+
+/* ---- where the evidence comes from ---- */
+.plan { margin: 1rem 0 1.2rem; }
+.plan-title { font-size: 1rem; margin: 0 0 0.6rem; }
+.plan-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 0.8rem; }
+.plan-card { border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem 1rem; }
+.plan-card h3 { margin: 0 0 0.5rem; font-size: 0.98rem; display: flex; justify-content: space-between; gap: 0.8rem; align-items: baseline; flex-wrap: wrap; }
+.plan-card h3 small { font-weight: 400; color: var(--muted); }
+.plan-card p { margin: 0 0 0.5rem; font-size: 0.86rem; }
+.plan-none { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.plan-sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.plan-sources li { display: grid; grid-template-columns: 1fr auto; column-gap: 0.8rem; align-items: baseline; font-size: 0.92rem; }
+.plan-sources small { grid-column: 1 / -1; font-size: 0.8rem; line-height: 1.5; }
+.plan-kind { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.05rem 0.45rem; border-radius: 5px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); white-space: nowrap; }
+.plan-kind.k-haplotypes { color: var(--supported); border-color: color-mix(in srgb, var(--supported) 45%, transparent); }
+.plan-people { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plan-foot { font-size: 0.84rem; margin: 0.7rem 0 0; }
+.data-build { margin-bottom: 1.6rem; }
+.data-table { max-width: 820px; }
+.data-table .bar-fill { max-width: 70%; }
+.data-table tfoot td { border-bottom: 0; font-size: 0.85rem; }
