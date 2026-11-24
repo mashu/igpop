@@ -1002,14 +1002,14 @@ function scoreHint() {
 const LOG_MIN = -6; // strip runs from 1 in a million to 100%
 const STRIP = { width: 260, height: 38, pad: 14, line: 12 };
 // Labelled points of the scale, as shares of the chromosomes examined.
-const SCALE = [[1e-6, '1 in a million'], [1e-4, '0.01%'], [1e-2, '1%'], [1, 'all']];
+const SCALE = [[1e-6, '0.0001%'], [1e-4, '0.01%'], [1e-2, '1%'], [1, '100%']];
 
 /** How to read a frequency strip. */
 function stripHint() {
   return el('span', {},
     el('b', { text: 'How to read the line' }),
     el('span', { text: 'Each mark is one population or dataset in which this exact base was seen. Its place on the line shows how many of the chromosomes examined there carry it.' }),
-    el('span', { text: 'The line runs from 1 in a million at the left end to every chromosome at the right end. Each tick is a step of a hundred, because real variants range from very rare to very frequent.' }),
+    el('span', { text: 'The line runs from 0.0001% (1 in a million) at the left end to 100% at the right end. Each tick is a step of a hundred, because real variants range from very rare to very frequent.' }),
     el('span', { text: 'The dashed line marks 1%. A variant to the right of it in some population is called common, which is strong evidence that it is real. No mark at all means the base was never seen.' }));
 }
 const xOf = (af) => STRIP.pad + ((Math.max(Math.log10(af), LOG_MIN) - LOG_MIN) / -LOG_MIN) * (STRIP.width - 2 * STRIP.pad);
@@ -1041,7 +1041,9 @@ function frequencies(v) {
   return out;
 }
 
-const percent = (af) => (af >= 0.01 ? `${(100 * af).toFixed(1)}%` : af >= 0.0001 ? `${(100 * af).toFixed(3)}%` : `${(1e6 * af).toFixed(1)} per million`);
+// Frequencies are always percentages: one decimal from 1% up, two
+// significant digits below (0.70%, 0.0074%).
+const percent = (af) => (!(af > 0) ? '0%' : af >= 0.01 ? `${(100 * af).toFixed(1)}%` : `${Number((100 * af).toPrecision(2))}%`);
 
 function strip(v) {
   const marks = frequencies(v);
@@ -1164,7 +1166,7 @@ function evidencePanel(v) {
       el('th', { scope: 'row', text: r.name }),
       el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * af) / top}%` })),
       el('td', { class: 'num', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
-      el('td', { class: 'num', text: af > 0 ? percent(af) : '0' }));
+      el('td', { class: 'num', text: percent(af) }));
   };
   const kind = { SNV: 'single-base change', INS: 'insertion', DEL: 'deletion' }[v.type] || v.type;
   return el('div', { class: 'evidence' },
