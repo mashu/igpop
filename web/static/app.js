@@ -105,7 +105,7 @@ const state = { prefix: 'igpop', marker: '_S', build: '', files: {}, alleles: []
 let worker = null;
 
 function show(section) {
-  for (const id of ['start', 'progress', 'error', 'results']) $(id).hidden = id !== section;
+  for (const id of ['start', 'check', 'progress', 'error', 'results']) $(id).hidden = id !== section;
   if (section !== 'progress') clearInterval(run.timer);
 }
 
@@ -121,7 +121,13 @@ function startWorker() {
   worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
   worker.onmessage = (event) => {
     const message = event.data;
-    if (message.type === 'ready') $('version').textContent = `igpop ${message.version}`;
+    if (message.type === 'ready') {
+      $('version').textContent = `igpop ${message.version}`;
+      names.builtin = { coords: message.geneList, aliases: message.aliases };
+      renderGeneList();
+    }
+    if (message.type === 'checked' && message.id === names.asked) renderCheck(message.genes);
+    if (message.type === 'check-failed' && message.id === names.asked) checkFailed(message.message);
     if ('stored' in message) showStored(message.stored);
     if (message.type === 'log') logLine(message.message);
     else if (message.type === 'error') fail(message.message);
@@ -245,18 +251,232 @@ async function handleFiles(fileList) {
   const fasta = await file.text();
   if (!fasta.trimStart().startsWith('>')) return fail(`${file.name} does not look like a FASTA file (it should start with ">").`);
   state.prefix = file.name.replace(/\.[^.]+$/, '');
-  $('progress-name').textContent = file.name;
+  names.pending = { fasta, name: file.name };
+  $('check-name').textContent = file.name;
+  $('check-summary').textContent = 'Reading the gene names…';
+  for (const id of ['check-unknown', 'check-mapped']) $(id).replaceChildren();
+  $('check-known').hidden = true;
+  $('check-run').disabled = true;
+  show('check');
+  askCheck();
+}
+
+// ---- gene names: checked before a run -----------------------------------------
+
+// The gene list and the names of this browser. `rows` is the user's own
+// gene list (null = the built-in one); `mapping` says what to do with a
+// gene name the list does not have: another gene's name, 'sequence' (find
+// the gene by sequence) or 'skip' (leave its alleles out).
+const names = { builtin: { coords: '', aliases: '' }, rows: null, mapping: {}, pending: null, genes: [], asked: 0 };
+const KEPT = 'igpop-gene-names';
+try {
+  const kept = JSON.parse(localStorage.getItem(KEPT) || '{}');
+  if (Array.isArray(kept.rows)) names.rows = kept.rows;
+  if (kept.mapping && typeof kept.mapping === 'object') names.mapping = kept.mapping;
+} catch (error) { /* nothing kept, or storage is off */ }
+function keepNames() {
+  try { localStorage.setItem(KEPT, JSON.stringify({ rows: names.rows, mapping: names.mapping })); } catch (error) { /* storage is off */ }
+}
+
+const COLUMNS = ['gene', 'build', 'contig', 'start', 'end', 'strand'];
+/** Rows of a gene list in text form; throws with the line that is wrong. */
+function parseGeneList(text) {
+  const rows = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (!line.trim() || line.startsWith('#') || /^gene\b/i.test(line)) return;
+    const cells = line.trim().split(/\t|\s{2,}|,/).map((c) => c.trim());
+    const [gene, build, contig, start, end, strand = '.'] = cells;
+    if (cells.length < 5 || !Number.isInteger(Number(start)) || !Number.isInteger(Number(end)) || Number(start) < 1 || Number(end) < Number(start)) {
+      throw new Error(`Line ${i + 1} is not "gene, build, contig, start, end, strand": ${line.trim().slice(0, 80)}`);
+    }
+    rows.push({ gene, build, contig, start: Number(start), end: Number(end), strand: ['+', '-'].includes(strand) ? strand : '.' });
+  });
+  if (!rows.length) throw new Error('The list has no genes.');
+  return rows;
+}
+const geneRows = () => names.rows || (names.builtin.coords ? parseGeneList(names.builtin.coords) : []);
+const geneListText = (rows) => [COLUMNS.join('\t'), ...rows.map((r) => COLUMNS.map((c) => r[c]).join('\t'))].join('\n');
+/** The alias table of a run: the built-in one and the user's matches. */
+const aliasText = () => [names.builtin.aliases, ...Object.entries(names.mapping)
+  .filter(([, to]) => to !== 'sequence' && to !== 'skip').map(([from, to]) => `${from}\t${to}`)].join('\n');
+
+function askCheck() {
+  if (!names.pending || !worker) return;
+  names.asked += 1;
+  worker.postMessage({
+    type: 'check', id: names.asked, fasta: names.pending.fasta, name: names.pending.name, build: $('opt-build').value,
+    coords: names.rows ? geneListText(names.rows) : undefined, aliases: aliasText(),
+  });
+}
+
+function checkFailed(message) {
+  $('check-summary').textContent = 'The gene list could not be used.';
+  $('check-error').textContent = message;
+  $('check-error').hidden = false;
+  $('check-run').disabled = true;
+}
+
+const sortGenes = (a, b) => a.localeCompare(b, 'en', { numeric: true });
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function renderCheck(genes) {
+  names.genes = genes;
+  $('check-error').hidden = true;
+  const known = genes.filter((g) => g.build);
+  const unknown = genes.filter((g) => !g.build);
+  const alleles = genes.reduce((n, g) => n + g.alleles.length, 0);
+  $('check-summary').textContent = unknown.length
+    ? `${plural(alleles, 'allele')} of ${plural(genes.length, 'gene')}. ${plural(unknown.length, 'gene name')} ${unknown.length === 1 ? 'is' : 'are'} not in the gene list: say below what to do with ${unknown.length === 1 ? 'it' : 'them'}. Nothing has been downloaded yet.`
+    : `${plural(alleles, 'allele')} of ${plural(genes.length, 'gene')}, all in the gene list. Nothing has been downloaded yet.`;
+
+  // Genes of the list, the likeliest matches first: names that begin alike.
+  const all = [...new Set(geneRows().map((r) => r.gene))].sort(sortGenes);
+  const alike = (gene) => all.filter((g) => g.startsWith(gene) || gene.startsWith(g) || g.replace(/[A-Z]$/, '') === gene);
+  $('check-unknown').replaceChildren(unknown.length ? el('table', { class: 'check-table' },
+    el('caption', { text: 'Gene names that are not in the gene list' }),
+    el('thead', {}, el('tr', {}, ...['Name in your file', 'Alleles', 'What to do'].map((h) => el('th', { scope: 'col', text: h })))),
+    el('tbody', {}, unknown.map((g) => {
+      const choice = names.mapping[g.gene] || 'sequence';
+      const near = alike(g.gene);
+      const select = el('select', { 'aria-label': `What to do with ${g.gene}` },
+        el('option', { value: 'sequence', text: 'Find the gene by sequence' }),
+        el('option', { value: 'skip', text: 'Leave these alleles out' }),
+        near.length ? el('optgroup', { label: 'Similar names' }, near.map((n) => el('option', { value: n, text: `These are alleles of ${n}` }))) : null,
+        el('optgroup', { label: 'All genes of the list' }, all.filter((n) => !near.includes(n)).map((n) => el('option', { value: n, text: `These are alleles of ${n}` }))));
+      select.value = choice;
+      select.addEventListener('change', () => {
+        names.mapping[g.gene] = select.value;
+        keepNames();
+        // A match to a gene changes which genes the file has: check again.
+        if (select.value !== 'sequence' && select.value !== 'skip') askCheck();
+      });
+      return el('tr', {},
+        el('th', { scope: 'row', text: g.gene }),
+        el('td', {}, `${g.alleles.length}`, el('small', { class: 'muted', text: ` ${g.alleles.slice(0, 3).join(', ')}${g.alleles.length > 3 ? ', …' : ''}` })),
+        el('td', {}, select));
+    })),
+    el('tfoot', {}, el('tr', {}, el('td', { colspan: '3', class: 'muted', text: '"Find the gene by sequence" places each allele on the gene of the list that its sequence fits best, and says so in the results. If a gene is missing from the list altogether, add it under "Gene list" below.' })))) : '');
+
+  // Matches made earlier, with a way to undo them.
+  const matched = Object.entries(names.mapping).filter(([from, to]) => to !== 'sequence' && to !== 'skip'
+    && genes.some((g) => g.alleles.some((a) => a.startsWith(`${from}*`))));
+  $('check-mapped').replaceChildren(matched.length ? el('p', { class: 'mapped' }, 'Your matches: ',
+    matched.map(([from, to]) => el('span', { class: 'chip' }, `${from} → ${to} `,
+      el('button', { type: 'button', class: 'link', 'aria-label': `Undo the match of ${from}`, text: 'undo', onclick: () => { delete names.mapping[from]; keepNames(); askCheck(); } })))) : '');
+
+  const box = $('check-known');
+  box.hidden = !known.length;
+  box.querySelector('summary').textContent = `${plural(known.length, 'gene')} found in the gene list`;
+  const usual = $('opt-build').value === '37' ? 'GRCh37' : 'GRCh38';
+  $('check-known-table').replaceChildren(
+    el('thead', {}, el('tr', {}, ...['Gene', 'Alleles', 'Place on the reference genome', ''].map((h) => el('th', { scope: 'col', text: h })))),
+    el('tbody', {}, known.sort((a, b) => sortGenes(a.gene, b.gene)).map((g) => el('tr', {},
+      el('th', { scope: 'row', text: g.gene }),
+      el('td', { class: 'num', text: String(g.alleles.length) }),
+      el('td', { text: `${g.build} ${g.contig}:${g.start.toLocaleString('en')}-${g.end.toLocaleString('en')}` }),
+      el('td', { class: 'muted', text: !/^(chr)?(\d{1,2}|X|Y)$/.test(g.contig) ? 'not on a chromosome: compared with the reference only, no population data'
+        : g.build !== usual ? `not on ${usual}: judged with the data of ${g.build}` : '' })))));
+  $('check-run').disabled = false;
+  $('check-run').focus();
+}
+
+/** Start the run on the file that was checked. */
+function runChecked() {
+  const { fasta, name } = names.pending;
+  const unknown = names.genes.filter((g) => !g.build);
+  const choice = (g) => names.mapping[g.gene] || 'sequence';
+  // Alleles the user chose to leave out are taken from the FASTA text.
+  const skipped = new Set(unknown.filter((g) => choice(g) === 'skip').flatMap((g) => g.alleles));
+  const kept = skipped.size
+    ? fasta.split(/^(?=>)/m).filter((record) => !skipped.has(record.slice(1).split(/\s/)[0])).join('')
+    : fasta;
+  if (!kept.trim()) return checkFailed('Every allele of the file is left out: there is nothing to analyse.');
+  $('progress-name').textContent = name;
   startProgress();
   show('progress');
   // Ask the browser not to evict the stored data when disk space is short.
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   worker.postMessage({
-    fasta,
-    name: file.name,
+    fasta: kept,
+    name,
     build: $('opt-build').value,
     marker: $('opt-marker').value || '_S',
     haplotypes: $('opt-hap').checked,
     paralog: $('opt-paralog').checked,
+    coords: names.rows ? geneListText(names.rows) : undefined,
+    aliases: aliasText(),
+    placeUnknown: unknown.some((g) => choice(g) === 'sequence'),
+  });
+}
+
+// ---- the gene list, shown and edited ---------------------------------------------
+
+function renderGeneList() {
+  const rows = geneRows();
+  $('gene-editor-state').textContent = names.rows ? `your own, ${plural(rows.length, 'gene')}` : `built-in, ${plural(rows.length, 'gene')} of the human IGH locus`;
+  $('gene-reset').hidden = !names.rows;
+  const wanted = $('gene-filter').value.trim().toLowerCase();
+  const shown = rows.map((row, i) => ({ row, i })).filter(({ row }) => !wanted || row.gene.toLowerCase().includes(wanted))
+    .sort((a, b) => sortGenes(a.row.gene, b.row.gene) || a.row.build.localeCompare(b.row.build));
+  $('gene-table').replaceChildren(
+    el('thead', {}, el('tr', {}, ...['Gene', 'Build', 'Contig', 'First base', 'Last base', 'Strand', ''].map((h) => el('th', { scope: 'col', text: h })))),
+    el('tbody', {}, shown.map(({ row, i }) => el('tr', {},
+      el('th', { scope: 'row', text: row.gene }),
+      el('td', { text: row.build }), el('td', { text: row.contig }),
+      el('td', { class: 'num', text: row.start.toLocaleString('en') }), el('td', { class: 'num', text: row.end.toLocaleString('en') }),
+      el('td', { text: row.strand === '.' ? 'either' : row.strand }),
+      el('td', {}, el('button', { type: 'button', class: 'link', 'aria-label': `Remove ${row.gene} on ${row.build}`, text: 'remove', onclick: () => setGeneList(rows.filter((_, k) => k !== i)) }))))));
+}
+
+/** Use `rows` as the gene list (null = the built-in one) and check again. */
+function setGeneList(rows) {
+  names.rows = rows;
+  keepNames();
+  renderGeneList();
+  askCheck();
+}
+
+function wireGeneList() {
+  $('check-run').addEventListener('click', runChecked);
+  $('opt-build').addEventListener('change', askCheck);
+  $('gene-filter').addEventListener('input', renderGeneList);
+  $('gene-reset').addEventListener('click', () => setGeneList(null));
+  $('gene-upload').addEventListener('click', () => $('gene-file').click());
+  $('gene-file').addEventListener('change', async () => {
+    const file = $('gene-file').files[0];
+    $('gene-file').value = '';
+    if (!file) return;
+    try {
+      setGeneList(parseGeneList(await file.text()));
+      $('check-error').hidden = true;
+    } catch (error) {
+      $('check-error').textContent = `${file.name}: ${error.message}`;
+      $('check-error').hidden = false;
+    }
+  });
+  $('gene-download').addEventListener('click', () => {
+    const link = el('a', { href: URL.createObjectURL(new Blob([`${geneListText(geneRows())}\n`], { type: 'text/tab-separated-values' })), download: 'igpop_gene_list.tsv' });
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
+  $('gene-add').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const row = { gene: form.get('gene').trim(), build: form.get('build'), contig: form.get('contig').trim(), start: Number(form.get('start')), end: Number(form.get('end')), strand: form.get('strand') };
+    const rows = geneRows();
+    if (row.end < row.start) {
+      $('check-error').textContent = 'The last base of a gene cannot lie before its first base.';
+      $('check-error').hidden = false;
+      return;
+    }
+    if (rows.some((r) => r.gene === row.gene && r.build === row.build)) {
+      $('check-error').textContent = `${row.gene} is already in the list for ${row.build}. Remove it first to change it.`;
+      $('check-error').hidden = false;
+      return;
+    }
+    $('check-error').hidden = true;
+    setGeneList([...rows, row]);
+    event.target.reset();
   });
 }
 
@@ -977,6 +1197,7 @@ function wire() {
 }
 
 wire();
+wireGeneList();
 // The worker is started with the page, so the analysis module is loaded
 // and the stored data counted before the first file is dropped.
 startWorker();

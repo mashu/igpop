@@ -50,3 +50,11 @@ build, `GRCh37` and `GRCh38` intervals, number of `placements`,
 `allele<TAB>gene`, one per line. Use it when alleles of one named gene
 belong to different loci, as with `IGHV4-4*01` (locus `IGHV4-4B`) and
 `IGHV4-4*07` (locus `IGHV4-4A`).
+
+A line also covers every name that extends it with `*`, `_` or `.`:
+`IGHV4-4*02` covers the candidate `IGHV4-4*02_S1234`, and a line with a
+gene name (`IGHVX-1<TAB>IGHV1-18`) covers all alleles of that gene. The
+longest matching line wins. An allele that no line covers belongs to the
+gene named before its `*`; if that gene is not in the coordinates table
+the allele is `not_placed`, unless `--place-unknown` is given, which
+places it on the locus its sequence fits best and says so in the notes.

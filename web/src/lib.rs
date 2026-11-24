@@ -190,21 +190,81 @@ pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// A text field of a job; `None` if it is absent or not a string.
+fn text(job: &Object, key: &str) -> Option<String> {
+    Reflect::get(job, &JsValue::from_str(key)).ok()?.as_string()
+}
+
+fn flag(job: &Object, key: &str) -> bool {
+    Reflect::get(job, &JsValue::from_str(key)).is_ok_and(|v| v.is_truthy())
+}
+
+/// What a job of the page says about its input: the FASTA text (`fasta`,
+/// `name`), the genome build (`build`) and, if the page has its own, the
+/// gene list (`coords`) and the alias table (`aliases`).
+fn configure(job: &Object) -> Config {
+    let named = |key: &str, name: &str| {
+        text(job, key).map(|content| Text {
+            name: name.to_string(),
+            content,
+        })
+    };
+    let mut config = Config::new(Text {
+        name: text(job, "name").unwrap_or_else(|| "alleles.fasta".to_string()),
+        content: text(job, "fasta").unwrap_or_default(),
+    });
+    if let Some(build) = text(job, "build") {
+        config.build = build;
+    }
+    config.coords = named("coords", "the gene list of this page");
+    config.aliases = named("aliases", "the gene names of this page");
+    config
+}
+
+/// The built-in gene list: `gene, build, contig, start, end, strand`.
+#[wasm_bindgen]
+pub fn gene_list() -> String {
+    igpop::BUILTIN_COORDS.to_string()
+}
+
+/// The built-in table of alleles whose gene is not the part of their
+/// name before `*`: `allele, gene`.
+#[wasm_bindgen]
+pub fn gene_aliases() -> String {
+    igpop::BUILTIN_ALIASES.to_string()
+}
+
+/// The genes of a FASTA file and whether the gene list has them, before
+/// anything is downloaded: an array of `{ gene, alleles: [names], build,
+/// contig, start, end }`, where a gene that is not in the list has no
+/// `build`. The job is the one `run` takes.
+#[wasm_bindgen]
+pub fn check(job: Object) -> Result<JsValue, JsValue> {
+    let config = configure(&job);
+    let genes = igpop::preview(&config).map_err(|e| JsValue::from_str(&format!("{e:#}")))?;
+    let out = Array::new();
+    for gene in genes {
+        let row = Object::new();
+        set(&row, "gene", &JsValue::from_str(&gene.gene));
+        set(&row, "alleles", &strings(&gene.alleles));
+        if let Some((build, contig, start, end)) = gene.place {
+            set(&row, "build", &JsValue::from_str(&build));
+            set(&row, "contig", &JsValue::from_str(&contig));
+            set(&row, "start", &JsValue::from_f64(start as f64));
+            set(&row, "end", &JsValue::from_f64(end as f64));
+        }
+        out.push(&row);
+    }
+    Ok(out.into())
+}
+
 /// Analyse the alleles of one FASTA text.
 ///
 /// Resolves to `{ files: { "<name>": "<content>", ... }, summary: [...],
 /// warnings: [...] }`, the same files the command-line program writes.
 /// `on_progress` is called with one line of text at a time.
 #[wasm_bindgen]
-pub async fn run(
-    fasta: String,
-    fasta_name: String,
-    build: String,
-    candidate_marker: String,
-    haplotypes: bool,
-    paralog_check: bool,
-    on_progress: Function,
-) -> Result<JsValue, JsValue> {
+pub async fn run(job: Object, on_progress: Function) -> Result<JsValue, JsValue> {
     igpop::net::set_transport(transport);
     igpop::log::set_sink(progress);
     PROGRESS.with(|slot| *slot.borrow_mut() = Some(on_progress));
@@ -218,15 +278,12 @@ pub async fn run(
     });
     let (_, before) = igpop::net::totals();
 
-    let mut config = Config::new(Text {
-        name: fasta_name,
-        content: fasta,
-    });
-    config.build = build;
-    config.candidate_marker = candidate_marker;
-    config.paralog_check = paralog_check;
+    let mut config = configure(&job);
+    config.candidate_marker = text(&job, "marker").unwrap_or_else(|| "_S".to_string());
+    config.paralog_check = flag(&job, "paralog");
+    config.place_unknown = flag(&job, "placeUnknown");
     config.gnomad = Choice::Off;
-    if !haplotypes {
+    if !flag(&job, "haplotypes") {
         config.phased = Choice::Off;
     }
     config.prefix = "igpop".to_string();

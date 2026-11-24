@@ -31,6 +31,7 @@ results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 | `--alleles` | required | Allele FASTA. |
 | `--coords` | shipped human IGH table | Coordinates table, see [Input files](inputs.md). |
 | `--build` | `38` | `38`/`GRCh38`/`hg38` or `37`/`GRCh37`/`hg19`. Genes are placed on this build if it has them. |
+| `--place-unknown` | off | Place an allele whose gene is not in the coordinates table on the locus its sequence fits best, with a note, instead of leaving it `not_placed`. |
 | `--single-build` | off | Do not judge genes that are missing from `--build` on another build; they are `not_placed`. |
 | `--gene-aliases` | shipped table (with the shipped coordinates) | `allele<TAB>gene` table for alleles whose locus differs from the gene in their name. |
 | `-o`, `--out` | `igpop` | Output prefix. |

@@ -74,3 +74,27 @@ The page shows four steps: placing the alleles on their genes, fetching
 the population data (with a bar that counts the regions), reading
 frequencies and haplotypes, and judging the alleles. "Show every step"
 lists each file as it is read.
+
+## Gene names are checked before the run
+
+An allele is matched to a gene by the part of its name before `*`, and the
+gene must be in the gene list, which says where each gene lies on the
+reference genome. After you choose a file, and before anything is
+downloaded, the page lists the genes of the file:
+
+- genes found in the list, with their place on the genome, and a remark
+  for genes that are judged on GRCh37 or lie outside a chromosome;
+- gene names that are not in the list. For each, choose what to do:
+  **find the gene by sequence** (each allele is placed on the gene its
+  sequence fits best, and the results say so), **these are alleles of ...**
+  (a gene of the list), or **leave these alleles out**.
+
+Some names are matched without asking. The built-in list has two genes for
+what the databases call IGHV4-4: `IGHV4-4*01`, `*02`, `*03` and the
+candidates named after them (`IGHV4-4*02_S1234`) belong to `IGHV4-4B`, and
+`IGHV4-4*07`, `*08`, `*09` to `IGHV4-4A`.
+
+Under **Gene list** you can look through the list, remove a gene, add one
+(gene, build, contig, first and last base, strand), load your own list from
+a tab-separated file, or save the current one. Your list and your matches
+are kept in this browser; "Back to the built-in list" discards the list.

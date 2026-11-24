@@ -129,6 +129,10 @@ struct Args {
     /// Alignments below this identity are reported but yield no variants.
     #[arg(long, default_value_t = 0.9)]
     min_identity: f64,
+    /// Place an allele whose gene is not in the coordinates table on the
+    /// locus its sequence fits best.
+    #[arg(long)]
+    place_unknown: bool,
     /// Do not judge genes that are missing from --build on another build.
     #[arg(long)]
     single_build: bool,
@@ -156,6 +160,7 @@ impl Args {
         config.coords = optional(&self.coords)?;
         config.build = self.build.clone();
         config.other_builds = !self.single_build;
+        config.place_unknown = self.place_unknown;
         config.aliases = optional(&self.gene_aliases)?;
         config.trusted = optional(&self.trusted)?.map(|t| t.content);
         config.candidate_marker = self.candidate_marker.clone();

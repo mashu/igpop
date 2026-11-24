@@ -246,3 +246,24 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 .hint-table { display: grid; gap: 0.2rem; }
 .hint-table > span { display: grid; grid-template-columns: 3.2rem 1fr; gap: 0.5rem; }
 .hint-table b { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- gene names, checked before a run ---- */
+.primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); border-radius: 999px; padding: 0.55rem 1.3rem; font-weight: 650; }
+.primary:disabled { opacity: 0.5; cursor: default; }
+.actions { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1.4rem; }
+.check-error { color: var(--confirm); font-weight: 600; }
+.check-table { margin: 0.6rem 0 1rem; border: 1px solid color-mix(in srgb, var(--inconclusive) 45%, transparent); border-radius: 10px; border-collapse: separate; border-spacing: 0; background: color-mix(in srgb, var(--inconclusive) 6%, transparent); }
+.check-table caption { padding: 0.2rem 0 0.5rem; }
+.check-table th, .check-table td { padding: 0.5rem 0.8rem; }
+.check-table tfoot td { border-bottom: 0; font-size: 0.85rem; }
+.check-table select { max-width: 22rem; }
+.mapped { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.9rem; }
+.fold { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.8rem; }
+.fold > summary { cursor: pointer; font-weight: 600; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin: 0.6rem 0; }
+.gene-add { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; padding: 0.8rem; margin: 0.6rem 0; border: 1px dashed var(--line); border-radius: 10px; }
+.gene-add input[type=number] { width: 9.5rem; }
+.gene-rows { max-height: 20rem; overflow: auto; }
+.gene-rows thead th, #check-known .scroll thead th { position: sticky; top: 0; background: var(--surface); }
+#check-known .scroll { max-height: 18rem; overflow: auto; }
+.gene-add input, .gene-add select, .toolbar input, .check-table select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 0.4rem 0.6rem; }

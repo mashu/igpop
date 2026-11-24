@@ -38,8 +38,8 @@
         <div class="grid">
           <label>Genome build
             <select id="opt-build">
-              <option value="38" selected>GRCh38 (all sources)</option>
-              <option value="37">GRCh37 (only the five genes missing from GRCh38)</option>
+              <option value="38" selected>GRCh38 (genes it lacks are judged on GRCh37)</option>
+              <option value="37">GRCh37 only</option>
             </select>
           </label>
           <label>Candidate marker
@@ -54,8 +54,46 @@
         <li><b>Private.</b> The analysis runs in this browser tab. Your sequences are not uploaded.</li>
         <li><b>Data on demand.</b> Only the regions of your genes are downloaded: a few MB for J or D genes, roughly 100 MB and several minutes for a full V set. They are kept in this browser, so the next run on the same genes starts almost at once. <span id="stored"></span></li>
         <li><b>Without gnomAD ancestry groups.</b> The gnomAD server does not allow access from web pages; its overall frequencies still arrive through dbSNP. The <a href="../installation.html">command-line program</a> reads gnomAD in full and is faster.</li>
+        <li><b>Gene names are checked first.</b> Before anything is downloaded, the page lists the genes of your file. A name it does not know can be matched to a gene, found by sequence or left out, and the gene list itself can be edited.</li>
         <li><b>Already ran igpop?</b> Drop its <code>.tsv</code> output files here to browse them.</li>
       </ul>
+    </section>
+
+    <section id="check" class="panel" hidden>
+      <h2>The genes of <span id="check-name"></span></h2>
+      <p id="check-summary" aria-live="polite"></p>
+      <p id="check-error" class="check-error" role="alert" hidden></p>
+      <div id="check-unknown"></div>
+      <div id="check-mapped"></div>
+      <details id="check-known" class="fold">
+        <summary></summary>
+        <div class="scroll"><table id="check-known-table"></table></div>
+      </details>
+      <details id="gene-editor" class="fold">
+        <summary>Gene list: <span id="gene-editor-state"></span></summary>
+        <p class="muted">The gene list says where each gene lies on the reference genome. An allele is matched to a gene by the part of its name before <code>*</code>. Add a gene, remove one, or load your own list (tab-separated: gene, build, contig, start, end, strand). Your list is kept in this browser.</p>
+        <div class="toolbar">
+          <label>Find <input id="gene-filter" type="search" placeholder="gene name" size="14"></label>
+          <button type="button" class="ghost" id="gene-upload">Load a list</button>
+          <input id="gene-file" type="file" accept=".tsv,.txt,.tab,text/plain,text/tab-separated-values" hidden>
+          <button type="button" class="ghost" id="gene-download">Save the list</button>
+          <button type="button" class="ghost" id="gene-reset">Back to the built-in list</button>
+        </div>
+        <form id="gene-add" class="gene-add">
+          <label>Gene <input name="gene" required size="12" placeholder="IGHV1-99"></label>
+          <label>Build <select name="build"><option>GRCh38</option><option>GRCh37</option></select></label>
+          <label>Contig <input name="contig" required size="8" value="chr14"></label>
+          <label>First base <input name="start" required type="number" min="1" size="11"></label>
+          <label>Last base <input name="end" required type="number" min="1" size="11"></label>
+          <label>Strand <select name="strand"><option value="-">- (reverse)</option><option value="+">+ (forward)</option><option value=".">let igpop choose</option></select></label>
+          <button type="submit" class="ghost">Add the gene</button>
+        </form>
+        <div class="scroll gene-rows"><table id="gene-table"></table></div>
+      </details>
+      <div class="actions">
+        <button type="button" class="primary" id="check-run">Run the analysis</button>
+        <button type="button" class="ghost" data-restart>Choose another file</button>
+      </div>
     </section>
 
     <section id="progress" class="panel" hidden>

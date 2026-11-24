@@ -43,8 +43,10 @@ use locus::{Placed, Status};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-const BUILTIN_COORDS: &str = include_str!("../data/coordinates.tsv");
-const BUILTIN_ALIASES: &str = include_str!("../data/gene_aliases.tsv");
+/// The shipped tables: human IGH loci, and the alleles whose gene is not
+/// the part of their name before `*`.
+pub const BUILTIN_COORDS: &str = include_str!("../data/coordinates.tsv");
+pub const BUILTIN_ALIASES: &str = include_str!("../data/gene_aliases.tsv");
 const DEFAULT_PEDIGREE: &str =
     "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/20130606_g1k_3202_samples_ped_population.txt";
 
@@ -138,6 +140,9 @@ pub struct Config {
     /// `allele<TAB>gene` table; `None` = the shipped one, if the shipped
     /// coordinates are used.
     pub aliases: Option<Text>,
+    /// Place an allele whose gene is not in the coordinates table on the
+    /// locus its sequence fits best, instead of leaving it unplaced.
+    pub place_unknown: bool,
     /// Trusted allele names, one per line; `None` = by `candidate_marker`.
     pub trusted: Option<String>,
     /// Alleles whose name contains this are candidates, the others trusted.
@@ -174,6 +179,7 @@ impl Config {
             build: "38".to_string(),
             other_builds: true,
             aliases: None,
+            place_unknown: false,
             trusted: None,
             candidate_marker: "_S".to_string(),
             calibration: None,
@@ -220,39 +226,21 @@ pub struct Output {
     pub warnings: Vec<String>,
 }
 
-/// The alleles judged on one genome build, with its loci and data.
-struct Stage {
-    build: String,
-    windows: Vec<locus::Window>,
-    placed: Vec<Placed>,
-    sources: Sources,
-}
-
-/// A run in two halves, for programs that can download concurrently:
-/// after `start` (loci and placement) they may fetch `downloads()` ahead,
-/// before `finish` reads the population data and judges the alleles.
-pub struct Session<'a> {
-    config: &'a Config,
-    coords_label: String,
-    /// Genes that could not be placed because their coordinates are on a
-    /// build that is not used in this run.
-    elsewhere: HashMap<String, String>,
-    /// The build that was asked for first, then any other build that holds
+/// Which genes a run knows, and on which build each is judged.
+struct Plan {
+    /// The build that was asked for, then any other build that holds
     /// genes the first one lacks.
-    stages: Vec<Stage>,
+    builds: Vec<String>,
+    all_coords: Vec<io::Coord>,
+    coords_label: String,
+    /// Genes whose only coordinates are on a build this run does not use.
+    elsewhere: HashMap<String, String>,
 }
 
-/// One whole run.
-pub fn run(config: &Config) -> Result<Output> {
-    Session::start(config)?.finish()
-}
-
-impl<'a> Session<'a> {
-    /// Step 1: loci and placement.
-    pub fn start(config: &'a Config) -> Result<Self> {
-        config.check()?;
+impl Plan {
+    /// The plan, and the alias table of the run.
+    fn new(config: &Config) -> Result<(Self, HashMap<String, String>)> {
         let main_build = io::normalise_build(&config.build);
-
         let (all_coords, coords_label) = match &config.coords {
             Some(text) => (io::parse_coords(&text.content, &text.name)?, format!("`{}`", text.name)),
             None => (
@@ -281,12 +269,101 @@ impl<'a> Session<'a> {
                 elsewhere.insert(c.gene.clone(), c.build.clone());
             }
         }
-
         let aliases = match &config.aliases {
             Some(text) => locus::parse_aliases(&text.content, &text.name)?,
             None if config.coords.is_none() => locus::parse_aliases(BUILTIN_ALIASES, "built-in aliases")?,
             None => HashMap::new(),
         };
+        let plan = Plan {
+            builds,
+            all_coords,
+            coords_label,
+            elsewhere,
+        };
+        Ok((plan, aliases))
+    }
+
+    /// Where a gene is judged: the first build of the run that has it.
+    fn place_of(&self, gene: &str) -> Option<&io::Coord> {
+        self.builds
+            .iter()
+            .find_map(|build| self.all_coords.iter().find(|c| &c.build == build && c.gene == gene))
+    }
+}
+
+/// One gene of the allele file, before anything is downloaded.
+pub struct GenePreview {
+    pub gene: String,
+    /// The alleles of the file that belong to it.
+    pub alleles: Vec<String>,
+    /// Where it is judged: build, contig, first and last position; `None`
+    /// if the gene is not in the coordinates table of this run.
+    pub place: Option<(String, String, u64, u64)>,
+}
+
+/// The genes of the allele file and whether the run knows them: a check
+/// to make before a run, without any download.
+pub fn preview(config: &Config) -> Result<Vec<GenePreview>> {
+    let (plan, aliases) = Plan::new(config)?;
+    let mut genes: Vec<GenePreview> = Vec::new();
+    for (name, _) in io::parse_fasta(&config.alleles.content) {
+        let gene = locus::gene_for(&name, &aliases);
+        match genes.iter_mut().find(|g| g.gene == gene) {
+            Some(known) => known.alleles.push(name.clone()),
+            None => genes.push(GenePreview {
+                gene: gene.to_string(),
+                alleles: vec![name.clone()],
+                place: plan.place_of(gene).map(|c| (c.build.clone(), c.contig.clone(), c.start, c.end)),
+            }),
+        }
+    }
+    if genes.is_empty() {
+        bail!("{} holds no FASTA records", config.alleles.name);
+    }
+    Ok(genes)
+}
+
+/// The alleles judged on one genome build, with its loci and data.
+struct Stage {
+    build: String,
+    windows: Vec<locus::Window>,
+    placed: Vec<Placed>,
+    sources: Sources,
+}
+
+/// A run in two halves, for programs that can download concurrently:
+/// after `start` (loci and placement) they may fetch `downloads()` ahead,
+/// before `finish` reads the population data and judges the alleles.
+pub struct Session<'a> {
+    config: &'a Config,
+    coords_label: String,
+    /// Genes that could not be placed because their coordinates are on a
+    /// build that is not used in this run.
+    elsewhere: HashMap<String, String>,
+    /// Alleles placed by sequence because their gene is not in the
+    /// coordinates table, with the gene their name gives.
+    by_sequence: HashMap<String, String>,
+    /// The build that was asked for first, then any other build that holds
+    /// genes the first one lacks.
+    stages: Vec<Stage>,
+}
+
+/// One whole run.
+pub fn run(config: &Config) -> Result<Output> {
+    Session::start(config)?.finish()
+}
+
+impl<'a> Session<'a> {
+    /// Step 1: loci and placement.
+    pub fn start(config: &'a Config) -> Result<Self> {
+        config.check()?;
+        let (plan, mut aliases) = Plan::new(config)?;
+        let Plan {
+            builds,
+            all_coords,
+            coords_label,
+            elsewhere,
+        } = plan;
         let options = locus::PlaceOptions {
             min_identity: config.min_identity,
             paralog_check: config.paralog_check,
@@ -296,8 +373,11 @@ impl<'a> Session<'a> {
         if alleles.is_empty() {
             bail!("{} holds no FASTA records", config.alleles.name);
         }
-        let gene_of = |name: &str| -> String { aliases.get(name).cloned().unwrap_or_else(|| locus::gene_of(name).to_string()) };
-
+        let on_main: HashSet<&str> = all_coords
+            .iter()
+            .filter(|c| c.build == builds[0])
+            .map(|c| c.gene.as_str())
+            .collect();
         // The genes of each build: all of the main build, and of any other
         // build those the main build lacks.
         let coords_of = |n: usize| -> Vec<io::Coord> {
@@ -308,13 +388,12 @@ impl<'a> Session<'a> {
                 .collect()
         };
         // An allele belongs to the first build that has its gene; one that
-        // no build has stays with the main build, as not placed.
-        let home = |name: &str| {
-            (0..builds.len())
-                .find(|n| coords_of(*n).iter().any(|c| c.gene == gene_of(name)))
-                .unwrap_or(0)
+        // no build has stays with the main build.
+        let home = |name: &str, aliases: &HashMap<String, String>| {
+            (0..builds.len()).find(|n| coords_of(*n).iter().any(|c| c.gene == locus::gene_for(name, aliases)))
         };
-        let homes: Vec<usize> = alleles.iter().map(|(name, _)| home(name)).collect();
+        let homes: Vec<Option<usize>> = alleles.iter().map(|(name, _)| home(name, &aliases)).collect();
+        let mut by_sequence: HashMap<String, String> = HashMap::new();
 
         let mut stages = Vec::new();
         for (n, build) in builds.iter().enumerate() {
@@ -323,7 +402,7 @@ impl<'a> Session<'a> {
             let members: Vec<(String, Vec<u8>)> = alleles
                 .iter()
                 .zip(&homes)
-                .filter(|(_, home)| **home == n)
+                .filter(|(_, home)| home.unwrap_or(0) == n)
                 .map(|(allele, _)| allele.clone())
                 .collect();
             if members.is_empty() && !main {
@@ -337,6 +416,31 @@ impl<'a> Session<'a> {
             };
             note!("{build} reference: {reference}");
             let windows = locus::load_windows(coords, &mut io::Reference::open(&reference)?, config.flank)?;
+            if main && config.place_unknown {
+                // An allele whose gene is not in the table goes to the
+                // locus its sequence fits best.
+                let unknown: Vec<&(String, Vec<u8>)> = alleles
+                    .iter()
+                    .zip(&homes)
+                    .filter(|(_, home)| home.is_none())
+                    .map(|(allele, _)| allele)
+                    .collect();
+                if !unknown.is_empty() {
+                    note!("finding the gene of {} alleles by sequence", unknown.len());
+                }
+                let found = par::map(&unknown, None, |(_, seq)| {
+                    locus::best_locus(seq, &windows, &options.scoring).map(|(gene, _)| gene.to_string())
+                });
+                for (name, _) in &unknown {
+                    by_sequence.insert(name.clone(), locus::gene_for(name, &aliases).to_string());
+                }
+                for ((name, _), gene) in unknown.iter().zip(found) {
+                    match gene {
+                        Some(gene) => aliases.insert(name.clone(), gene),
+                        None => by_sequence.remove(name),
+                    };
+                }
+            }
             note!("aligning {} alleles to {} loci on {build}", members.len(), windows.len());
             let mut placed = locus::place_all(&members, &windows, &aliases, &options)?;
             placed.sort_by(|a, b| a.allele.cmp(&b.allele));
@@ -368,6 +472,7 @@ impl<'a> Session<'a> {
             config,
             coords_label,
             elsewhere,
+            by_sequence,
             stages,
         })
     }
@@ -386,6 +491,7 @@ impl<'a> Session<'a> {
             config,
             coords_label,
             elsewhere,
+            by_sequence,
             stages,
         } = self;
         let cache = fetch::Cache(config.cache_dir.as_deref());
@@ -486,6 +592,15 @@ impl<'a> Session<'a> {
                         format!(
                             "gene on {}, which is not part of a chromosome: no population data are read for it",
                             p.contig()
+                        ),
+                    );
+                }
+                if let Some(named) = by_sequence.get(&p.allele) {
+                    result.notes.insert(
+                        0,
+                        format!(
+                            "gene {named} is not in the gene list: placed on {} because its sequence fits that gene best",
+                            p.gene
                         ),
                     );
                 }
@@ -590,5 +705,28 @@ impl<'a> Session<'a> {
             summary,
             warnings: report::warnings(&summary_input),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_tells_known_genes_from_unknown_ones() {
+        let fasta = ">IGHV1-18*01\nACGT\n>IGHV4-4*02_S1\nACGT\n>IGHV3-9*01\nACGT\n>IGHVX-1*01\nACGT\n>IGHVX-1*02\nACGT\n";
+        let config = Config::new(Text {
+            name: "test.fa".to_string(),
+            content: fasta.to_string(),
+        });
+        let genes = preview(&config).unwrap();
+        let of = |gene: &str| genes.iter().find(|g| g.gene == gene).unwrap();
+        assert_eq!(of("IGHV1-18").place.as_ref().unwrap().0, "GRCh38");
+        // Named after a database allele of the gene the table calls IGHV4-4B.
+        assert!(of("IGHV4-4B").place.is_some());
+        // Absent from GRCh38: judged on the build that has it.
+        assert_eq!(of("IGHV3-9").place.as_ref().unwrap().0, "GRCh37");
+        assert!(of("IGHVX-1").place.is_none());
+        assert_eq!(of("IGHVX-1").alleles.len(), 2);
     }
 }

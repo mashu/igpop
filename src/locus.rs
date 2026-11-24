@@ -170,6 +170,39 @@ pub fn gene_of(allele: &str) -> &str {
     allele.split('*').next().unwrap_or(allele)
 }
 
+/// The gene an allele belongs to. The alias table is asked first: for the
+/// allele's own name, and otherwise for the longest name in the table that
+/// the allele's name extends (`IGHV4-4*02_S1234` extends `IGHV4-4*02`,
+/// and `IGHV4-4*05` extends `IGHV4-4`, so a table can map a whole gene).
+/// Without a match the gene is the part of the name before `*`.
+pub fn gene_for<'a>(allele: &'a str, aliases: &'a HashMap<String, String>) -> &'a str {
+    if let Some(gene) = aliases.get(allele) {
+        return gene;
+    }
+    aliases
+        .iter()
+        .filter(|(name, _)| {
+            allele
+                .strip_prefix(name.as_str())
+                .is_some_and(|rest| rest.starts_with(['*', '_', '.']))
+        })
+        .max_by_key(|(name, _)| name.len())
+        .map_or_else(|| gene_of(allele), |(_, gene)| gene.as_str())
+}
+
+/// The locus a sequence fits best, with its score there; of equal scores
+/// the first locus wins.
+pub fn best_locus<'a>(seq: &[u8], windows: &'a [Window], scoring: &Scoring) -> Option<(&'a str, i32)> {
+    let mut best: Option<(&str, i32)> = None;
+    for w in windows {
+        let score = score_at(seq, w, scoring);
+        if best.is_none_or(|(_, top)| score > top) {
+            best = Some((w.coord.gene.as_str(), score));
+        }
+    }
+    best
+}
+
 /// Inserted bases as `pos+SEQ`, where pos is the reference base before them.
 fn insertions(aln: &Alignment, query: &[u8], window_start: u64) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -293,7 +326,7 @@ pub fn place_all(
     options: &PlaceOptions,
 ) -> Result<Vec<Placed>> {
     let window_of = |name: &str| {
-        let gene = aliases.get(name).map(String::as_str).unwrap_or_else(|| gene_of(name));
+        let gene = gene_for(name, aliases);
         windows.iter().position(|w| w.coord.gene == gene)
     };
     let mut first: HashMap<usize, usize> = HashMap::new();
@@ -336,7 +369,7 @@ fn place(
     options: &PlaceOptions,
     guide: Option<&Guide>,
 ) -> Result<(Placed, Vec<Option<i32>>)> {
-    let gene = aliases.get(name).map(String::as_str).unwrap_or_else(|| gene_of(name));
+    let gene = gene_for(name, aliases);
     let Some(index) = windows.iter().position(|w| w.coord.gene == gene) else {
         let placed = Placed {
             allele: name.into(),
@@ -414,4 +447,22 @@ fn place(
         variants,
     };
     Ok((placed, scores))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aliases_reach_candidates_and_whole_genes() {
+        let aliases: HashMap<String, String> = [("IGHV4-4*02", "IGHV4-4B"), ("IGHV9-9", "IGHV3-30")]
+            .iter()
+            .map(|(a, g)| (a.to_string(), g.to_string()))
+            .collect();
+        assert_eq!(gene_for("IGHV4-4*02", &aliases), "IGHV4-4B");
+        assert_eq!(gene_for("IGHV4-4*02_S1234", &aliases), "IGHV4-4B");
+        assert_eq!(gene_for("IGHV4-4*05", &aliases), "IGHV4-4");
+        assert_eq!(gene_for("IGHV9-9*01_S1", &aliases), "IGHV3-30");
+        assert_eq!(gene_for("IGHV9-9-1*01", &aliases), "IGHV9-9-1");
+    }
 }
