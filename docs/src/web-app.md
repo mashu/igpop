@@ -80,23 +80,28 @@ lists each file as it is read.
 An allele is matched to a gene by the part of its name before `*`, and the
 gene must be in the gene list, which says where each gene lies on the
 reference genome. After you choose a file, and before anything is
-downloaded, the page lists the genes of the file:
+downloaded, the page shows how the names of the file connect to the genes
+of the list, one line per connection:
 
-- genes found in the list, with their place on the genome, and a remark
-  for genes that are judged on GRCh37 or lie outside a chromosome;
-- gene names that are not in the list. For each, choose what to do:
-  **find the gene by sequence** (each allele is placed on the gene its
-  sequence fits best, and the results say so), **these are alleles of ...**
-  (a gene of the list), or **leave these alleles out**.
+| Arrow | Meaning |
+|---|---|
+| solid, "same name" | The gene list has a gene of this name. These lines are folded away. |
+| solid, "built-in rule" | The list knows these alleles under another gene name. What the databases call IGHV4-4 is two genes in the list: `IGHV4-4*01`, `*02`, `*03` and candidates named after them belong to `IGHV4-4B`, and `*07`, `*08`, `*09` to `IGHV4-4A`. |
+| solid, "your match" | You said which gene these alleles belong to. |
+| dashed, "by sequence" | Each allele will be placed on the gene its sequence fits best; the results say which. |
+| broken, "not matched" | No gene of the list has this name. Without a choice the alleles are reported as `not_placed`. |
+| broken, "left out" | You took these alleles out of the analysis. |
 
-Some names are matched without asking. The built-in list has two genes for
-what the databases call IGHV4-4: `IGHV4-4*01`, `*02`, `*03` and the
-candidates named after them (`IGHV4-4*02_S1234`) belong to `IGHV4-4B`, and
-`IGHV4-4*07`, `*08`, `*09` to `IGHV4-4A`.
+Above the lines, counters say how many alleles are in each state, and the
+run button repeats how many are still not matched.
 
-Under **Gene list** you can look through the list, remove a gene, add one
-(gene, build, contig, first and last base, strand), load your own list from
-a tab-separated file, or save the current one. Your list and your matches
+Both sides can be changed. On the side of the file, the menu of a line
+sets what to do with its alleles, and "edit names" opens the alleles one
+by one: correct a name (your file is not changed; the corrected name is
+used for this run) or decide for a single allele. On the side of the list,
+**Gene list** lets you look through the genes, remove one, add one (gene,
+build, contig, first and last base, strand), load your own list from a
+tab-separated file, or save the current one. Your list and your matches
 are kept in this browser; "Back to the built-in list" discards the list.
 
 ## Where the evidence comes from

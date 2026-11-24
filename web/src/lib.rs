@@ -240,19 +240,28 @@ pub fn gene_aliases() -> String {
 }
 
 /// The genes of a FASTA file and whether the gene list has them, before
-/// anything is downloaded: `{ genes: [{ gene, alleles: [names], evidence,
-/// build, contig, start, end }], sources: [{ build, name, title, gives,
-/// people, about }] }`. A gene that is not in the list has no `build`;
+/// anything is downloaded: `{ alleles: [{ name, named, gene }], genes:
+/// [{ gene, evidence, build, contig, start, end }], sources: [{ build,
+/// name, title, gives, people, about }] }`. `named` is the gene an
+/// allele's name gives, `gene` the one it is assigned to (`?` = to be
+/// found by sequence). A gene that is not in the list has no `build`;
 /// `sources` are the data the run will read. The job is the one `run` takes.
 #[wasm_bindgen]
 pub fn check(job: Object) -> Result<JsValue, JsValue> {
     let config = configure(&job);
     let preview = igpop::preview(&config).map_err(|e| JsValue::from_str(&format!("{e:#}")))?;
+    let alleles = Array::new();
+    for allele in preview.alleles {
+        let row = Object::new();
+        set(&row, "name", &JsValue::from_str(&allele.name));
+        set(&row, "named", &JsValue::from_str(&allele.named));
+        set(&row, "gene", &JsValue::from_str(&allele.gene));
+        alleles.push(&row);
+    }
     let genes = Array::new();
     for gene in preview.genes {
         let row = Object::new();
         set(&row, "gene", &JsValue::from_str(&gene.gene));
-        set(&row, "alleles", &strings(&gene.alleles));
         set(&row, "evidence", &JsValue::from_bool(gene.evidence));
         if let Some((build, contig, start, end)) = gene.place {
             set(&row, "build", &JsValue::from_str(&build));
@@ -276,6 +285,7 @@ pub fn check(job: Object) -> Result<JsValue, JsValue> {
         sources.push(&row);
     }
     let out = Object::new();
+    set(&out, "alleles", &alleles);
     set(&out, "genes", &genes);
     set(&out, "sources", &sources);
     Ok(out.into())

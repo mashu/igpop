@@ -58,3 +58,4 @@ longest matching line wins. An allele that no line covers belongs to the
 gene named before its `*`; if that gene is not in the coordinates table
 the allele is `not_placed`, unless `--place-unknown` is given, which
 places it on the locus its sequence fits best and says so in the notes.
+A line with the gene `?` asks the same for the names it covers.

@@ -288,3 +288,31 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 .data-table { max-width: 820px; }
 .data-table .bar-fill { max-width: 70%; }
 .data-table tfoot td { border-bottom: 0; font-size: 0.85rem; }
+
+/* ---- names of the file matched to genes of the list ---- */
+.map { margin: 1.2rem 0; }
+.map-tallies { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0 0 0.6rem; font-size: 0.9rem; color: var(--muted); }
+.map-tally { padding: 0.1rem 0.6rem; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); }
+.map-tally.t-none { border-color: var(--confirm); color: var(--confirm); }
+.map-tally.t-same, .map-tally.t-rule, .map-tally.t-yours { border-color: color-mix(in srgb, var(--supported) 50%, transparent); }
+.map-table th, .map-table td { vertical-align: middle; }
+.map-table tbody th small { display: block; font-weight: 400; }
+.map-link { white-space: nowrap; text-align: center; min-width: 9.5rem; }
+.map-how { display: block; font-size: 0.74rem; color: var(--muted); }
+.arrow { display: inline-block; position: relative; width: 6.5rem; height: 0; border-top: 2px solid var(--supported); vertical-align: middle; }
+.arrow::after { content: ""; position: absolute; right: -1px; top: -6px; border: 5px solid transparent; border-left: 8px solid var(--supported); border-right: 0; }
+.arrow.a-dashed { border-top-style: dashed; border-color: var(--inconclusive); }
+.arrow.a-dashed::after { border-left-color: var(--inconclusive); }
+.arrow.a-broken { width: 2.6rem; border-color: var(--confirm); margin-right: 3.9rem; }
+.arrow.a-broken::after { content: "\00d7"; border: 0; right: -1.3rem; top: -0.8rem; color: var(--confirm); font-weight: 700; font-size: 1.1rem; line-height: 1; }
+.m-none th { color: var(--confirm); }
+.m-out th, .m-out td { opacity: 0.7; }
+.map-missing { color: var(--confirm); font-weight: 600; }
+.map-table select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 0.35rem 0.5rem; max-width: 15rem; }
+.map-names td { background: color-mix(in srgb, var(--ink) 4%, transparent); padding: 0.7rem 1rem; }
+.map-names ul { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.4rem; }
+.map-names li { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.map-names input { font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.3rem 0.5rem; }
+.map-open { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; color: var(--confirm); font-weight: 600; margin: 0.8rem 0; }
+.map-same { max-height: 22rem; overflow: auto; }
+.map-same thead th { position: sticky; top: 0; background: var(--surface); }

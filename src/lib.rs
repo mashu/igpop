@@ -141,7 +141,9 @@ pub struct Config {
     /// coordinates are used.
     pub aliases: Option<Text>,
     /// Place an allele whose gene is not in the coordinates table on the
-    /// locus its sequence fits best, instead of leaving it unplaced.
+    /// locus its sequence fits best, instead of leaving it unplaced. The
+    /// alias table asks the same for single alleles or genes with the
+    /// gene `?` (`BY_SEQUENCE`).
     pub place_unknown: bool,
     /// Trusted allele names, one per line; `None` = by `candidate_marker`.
     pub trusted: Option<String>,
@@ -291,11 +293,20 @@ impl Plan {
     }
 }
 
-/// One gene of the allele file, before anything is downloaded.
+/// The alias-table gene that means "find the gene by sequence".
+pub const BY_SEQUENCE: &str = "?";
+
+/// One allele of the file: its name, the gene its name gives (the part
+/// before `*`), and the gene it is assigned to after the alias table.
+pub struct AllelePreview {
+    pub name: String,
+    pub named: String,
+    pub gene: String,
+}
+
+/// One gene the alleles of the file are assigned to.
 pub struct GenePreview {
     pub gene: String,
-    /// The alleles of the file that belong to it.
-    pub alleles: Vec<String>,
     /// Where it is judged: build, contig, first and last position; `None`
     /// if the gene is not in the coordinates table of this run.
     pub place: Option<(String, String, u64, u64)>,
@@ -318,6 +329,7 @@ pub struct PlannedSource {
 
 /// What a run will do, known before anything is downloaded.
 pub struct Preview {
+    pub alleles: Vec<AllelePreview>,
     pub genes: Vec<GenePreview>,
     /// The sources of every build that has a gene of the file.
     pub sources: Vec<PlannedSource>,
@@ -430,24 +442,28 @@ fn planned(config: &Config, build: &str, main: bool) -> Vec<PlannedSource> {
 /// download.
 pub fn preview(config: &Config) -> Result<Preview> {
     let (plan, aliases) = Plan::new(config)?;
-    let mut genes: Vec<GenePreview> = Vec::new();
-    for (name, _) in io::parse_fasta(&config.alleles.content) {
-        let gene = locus::gene_for(&name, &aliases);
-        match genes.iter_mut().find(|g| g.gene == gene) {
-            Some(known) => known.alleles.push(name.clone()),
-            None => {
-                let place = plan.place_of(gene);
-                genes.push(GenePreview {
-                    gene: gene.to_string(),
-                    alleles: vec![name.clone()],
-                    place: place.map(|c| (c.build.clone(), c.contig.clone(), c.start, c.end)),
-                    evidence: place.is_some_and(|c| evidence::whole_chromosome(&c.contig)),
-                })
-            }
-        }
-    }
-    if genes.is_empty() {
+    let alleles: Vec<AllelePreview> = io::parse_fasta(&config.alleles.content)
+        .into_iter()
+        .map(|(name, _)| AllelePreview {
+            named: locus::gene_of(&name).to_string(),
+            gene: locus::gene_for(&name, &aliases).to_string(),
+            name,
+        })
+        .collect();
+    if alleles.is_empty() {
         bail!("{} holds no FASTA records", config.alleles.name);
+    }
+    let mut genes: Vec<GenePreview> = Vec::new();
+    for allele in &alleles {
+        if genes.iter().any(|g| g.gene == allele.gene) {
+            continue;
+        }
+        let place = plan.place_of(&allele.gene);
+        genes.push(GenePreview {
+            gene: allele.gene.clone(),
+            place: place.map(|c| (c.build.clone(), c.contig.clone(), c.start, c.end)),
+            evidence: place.is_some_and(|c| evidence::whole_chromosome(&c.contig)),
+        });
     }
     let sources = plan
         .builds
@@ -456,7 +472,7 @@ pub fn preview(config: &Config) -> Result<Preview> {
         .filter(|(_, build)| genes.iter().any(|g| g.evidence && g.place.as_ref().is_some_and(|p| &p.0 == *build)))
         .flat_map(|(n, build)| planned(config, build, n == 0))
         .collect();
-    Ok(Preview { genes, sources })
+    Ok(Preview { alleles, genes, sources })
 }
 
 /// The alleles judged on one genome build, with its loci and data.
@@ -552,13 +568,13 @@ impl<'a> Session<'a> {
             };
             note!("{build} reference: {reference}");
             let windows = locus::load_windows(coords, &mut io::Reference::open(&reference)?, config.flank)?;
-            if main && config.place_unknown {
+            if main {
                 // An allele whose gene is not in the table goes to the
                 // locus its sequence fits best.
                 let unknown: Vec<&(String, Vec<u8>)> = alleles
                     .iter()
                     .zip(&homes)
-                    .filter(|(_, home)| home.is_none())
+                    .filter(|((name, _), home)| home.is_none() && (config.place_unknown || locus::gene_for(name, &aliases) == BY_SEQUENCE))
                     .map(|(allele, _)| allele)
                     .collect();
                 if !unknown.is_empty() {
@@ -568,7 +584,7 @@ impl<'a> Session<'a> {
                     locus::best_locus(seq, &windows, &options.scoring).map(|(gene, _)| gene.to_string())
                 });
                 for (name, _) in &unknown {
-                    by_sequence.insert(name.clone(), locus::gene_for(name, &aliases).to_string());
+                    by_sequence.insert(name.clone(), locus::gene_of(name).to_string());
                 }
                 for ((name, _), gene) in unknown.iter().zip(found) {
                     match gene {
@@ -855,17 +871,19 @@ mod tests {
             name: "test.fa".to_string(),
             content: fasta.to_string(),
         });
-        let Preview { genes, sources } = preview(&config).unwrap();
+        let Preview { alleles, genes, sources } = preview(&config).unwrap();
         // Both builds are needed, each with its four default sources.
         assert_eq!(sources.iter().filter(|s| s.build == "GRCh38").count(), 4);
         assert_eq!(sources.iter().filter(|s| s.build == "GRCh37").count(), 4);
         let of = |gene: &str| genes.iter().find(|g| g.gene == gene).unwrap();
         assert_eq!(of("IGHV1-18").place.as_ref().unwrap().0, "GRCh38");
-        // Named after a database allele of the gene the table calls IGHV4-4B.
+        // Named IGHV4-4 after a database allele of the gene the table calls IGHV4-4B.
+        let renamed = alleles.iter().find(|a| a.name == "IGHV4-4*02_S1").unwrap();
+        assert_eq!((renamed.named.as_str(), renamed.gene.as_str()), ("IGHV4-4", "IGHV4-4B"));
         assert!(of("IGHV4-4B").place.is_some());
         // Absent from GRCh38: judged on the build that has it.
         assert_eq!(of("IGHV3-9").place.as_ref().unwrap().0, "GRCh37");
         assert!(of("IGHVX-1").place.is_none());
-        assert_eq!(of("IGHVX-1").alleles.len(), 2);
+        assert_eq!(alleles.iter().filter(|a| a.gene == "IGHVX-1").count(), 2);
     }
 }

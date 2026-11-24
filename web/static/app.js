@@ -131,7 +131,7 @@ function startWorker() {
       names.builtin = { coords: message.geneList, aliases: message.aliases };
       renderGeneList();
     }
-    if (message.type === 'checked' && message.id === names.asked) renderCheck(message.genes.genes, message.genes.sources);
+    if (message.type === 'checked' && message.id === names.asked) renderCheck(message.genes);
     if (message.type === 'check-failed' && message.id === names.asked) checkFailed(message.message);
     if ('stored' in message) showStored(message.stored);
     if (message.type === 'log') logLine(message.message);
@@ -259,8 +259,8 @@ async function handleFiles(fileList) {
   names.pending = { fasta, name: file.name };
   $('check-name').textContent = file.name;
   $('check-summary').textContent = 'Reading the gene names…';
-  for (const id of ['check-evidence', 'check-unknown', 'check-mapped']) $(id).replaceChildren();
-  $('check-known').hidden = true;
+  for (const id of ['check-evidence', 'check-map']) $(id).replaceChildren();
+  names.renames = {};
   $('check-run').disabled = true;
   show('check');
   askCheck();
@@ -272,7 +272,7 @@ async function handleFiles(fileList) {
 // gene list (null = the built-in one); `mapping` says what to do with a
 // gene name the list does not have: another gene's name, 'sequence' (find
 // the gene by sequence) or 'skip' (leave its alleles out).
-const names = { builtin: { coords: '', aliases: '' }, rows: null, mapping: {}, pending: null, genes: [], asked: 0 };
+const names = { builtin: { coords: '', aliases: '' }, rows: null, mapping: {}, renames: {}, open: new Set(), pending: null, alleles: [], genes: [], asked: 0 };
 const KEPT = 'igpop-gene-names';
 try {
   const kept = JSON.parse(localStorage.getItem(KEPT) || '{}');
@@ -301,15 +301,29 @@ function parseGeneList(text) {
 }
 const geneRows = () => names.rows || (names.builtin.coords ? parseGeneList(names.builtin.coords) : []);
 const geneListText = (rows) => [COLUMNS.join('\t'), ...rows.map((r) => COLUMNS.map((c) => r[c]).join('\t'))].join('\n');
-/** The alias table of a run: the built-in one and the user's matches. */
+// What the user can decide for a name: a gene of the list, BY_SEQUENCE
+// (find the gene by sequence during the run) or LEFT_OUT.
+const BY_SEQUENCE = '?';
+const LEFT_OUT = 'skip';
+for (const [key, value] of Object.entries(names.mapping)) if (value === 'sequence') names.mapping[key] = BY_SEQUENCE;
+
+/** The decision that applies to an allele: its own, else that of its name. */
+const decision = (allele) => names.mapping[allele.name] ?? names.mapping[allele.named];
+/** The alias table of a run: the built-in one and the user's decisions. */
 const aliasText = () => [names.builtin.aliases, ...Object.entries(names.mapping)
-  .filter(([, to]) => to !== 'sequence' && to !== 'skip').map(([from, to]) => `${from}\t${to}`)].join('\n');
+  .filter(([, to]) => to !== LEFT_OUT).map(([from, to]) => `${from}\t${to}`)].join('\n');
+/** The FASTA text with the names the user corrected. */
+function currentFasta() {
+  const { fasta } = names.pending;
+  if (!Object.keys(names.renames).length) return fasta;
+  return fasta.replace(/^>(\S+)/gm, (line, name) => (names.renames[name] ? `>${names.renames[name]}` : line));
+}
 
 function askCheck() {
   if (!names.pending || !worker) return;
   names.asked += 1;
   worker.postMessage({
-    type: 'check', id: names.asked, fasta: names.pending.fasta, name: names.pending.name, build: $('opt-build').value,
+    type: 'check', id: names.asked, fasta: currentFasta(), name: names.pending.name, build: $('opt-build').value,
     haplotypes: $('opt-hap').checked,
     coords: names.rows ? geneListText(names.rows) : undefined, aliases: aliasText(),
   });
@@ -327,12 +341,14 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** Where the evidence of the run will come from: one card per group of
  *  genes that share their data, with the sources of each. */
-function renderEvidencePlan(genes, sources) {
-  const count = (list) => `${plural(list.length, 'gene')}, ${plural(list.reduce((n, g) => n + g.alleles.length, 0), 'allele')}`;
+function renderEvidencePlan(groups, genes, sources) {
+  const used = (gene) => groups.filter((g) => g.gene === gene.gene && g.state !== 'out');
+  const count = (list) => `${plural(list.length, 'gene')}, ${plural(list.reduce((n, gene) => n + used(gene).reduce((k, g) => k + g.alleles.length, 0), 0), 'allele')}`;
   const builds = [...new Set(sources.map((s) => s.build))];
   const cards = builds.map((build, i) => {
-    const members = genes.filter((g) => g.build === build && g.evidence);
+    const members = genes.filter((g) => g.build === build && g.evidence && used(g).length);
     const mine = sources.filter((s) => s.build === build);
+    if (!members.length) return null;
     return el('div', { class: 'plan-card' },
       el('h3', {}, `Genes on ${build}`, el('small', { text: count(members) })),
       i > 0 ? el('p', { class: 'muted', text: `These genes are missing from ${builds[0]}. They are judged with the older data of ${build}, so read their verdicts with more caution.` }) : null,
@@ -341,8 +357,8 @@ function renderEvidencePlan(genes, sources) {
         el('span', { class: 'plan-people', text: s.people ? `${s.people.toLocaleString('en')} people` : '' }),
         el('small', { class: 'muted' }, el('span', { class: `plan-kind k-${s.gives}`, text: s.gives === 'haplotypes' ? 'whole sequences' : 'frequencies' }), ` ${s.about}`)))),
       mine.some((s) => s.gives === 'haplotypes') ? null : el('p', { class: 'muted', text: 'The haplotype check is switched off.' }));
-  });
-  const apart = genes.filter((g) => g.build && !g.evidence);
+  }).filter(Boolean);
+  const apart = genes.filter((g) => g.build && !g.evidence && used(g).length);
   if (apart.length) {
     cards.push(el('div', { class: 'plan-card plan-none' },
       el('h3', {}, 'Genes outside the chromosomes', el('small', { text: count(apart) })),
@@ -354,75 +370,159 @@ function renderEvidencePlan(genes, sources) {
     el('p', { class: 'muted plan-foot', text: 'In the browser, gnomAD cannot be read directly (its server does not allow it); its overall frequencies still arrive through dbSNP. The command-line program reads gnomAD in full.' })) : '');
 }
 
-function renderCheck(genes, sources = []) {
-  names.genes = genes;
-  renderEvidencePlan(genes, sources);
-  $('check-error').hidden = true;
-  const known = genes.filter((g) => g.build);
-  const unknown = genes.filter((g) => !g.build);
-  const alleles = genes.reduce((n, g) => n + g.alleles.length, 0);
-  $('check-summary').textContent = unknown.length
-    ? `${plural(alleles, 'allele')} of ${plural(genes.length, 'gene')}. ${plural(unknown.length, 'gene name')} ${unknown.length === 1 ? 'is' : 'are'} not in the gene list: say below what to do with ${unknown.length === 1 ? 'it' : 'them'}. Nothing has been downloaded yet.`
-    : `${plural(alleles, 'allele')} of ${plural(genes.length, 'gene')}, all in the gene list. Nothing has been downloaded yet.`;
+// How a name of the file is connected to a gene of the list.
+const LINKS = {
+  same: { label: 'same name', arrow: 'solid' },
+  rule: { label: 'built-in rule', arrow: 'solid', help: 'The gene list knows these alleles under another gene name.' },
+  yours: { label: 'your match', arrow: 'solid' },
+  sequence: { label: 'by sequence', arrow: 'dashed', help: 'Each allele will be placed on the gene its sequence fits best. The results say which.' },
+  out: { label: 'left out', arrow: 'broken', help: 'These alleles are not analysed.' },
+  none: { label: 'not matched', arrow: 'broken', help: 'No gene of the list has this name. Choose a gene, let igpop find it by sequence, correct the name, or add the gene to the list.' },
+};
 
-  // Genes of the list, the likeliest matches first: names that begin alike.
+/** The alleles of the file in groups that share name, gene and state. */
+function mappingGroups(alleles, genes) {
+  const known = new Map(genes.map((g) => [g.gene, g]));
+  const groups = new Map();
+  for (const allele of alleles) {
+    const chosen = decision(allele);
+    const place = known.get(allele.gene);
+    const state = chosen === LEFT_OUT ? 'out'
+      : allele.gene === BY_SEQUENCE ? 'sequence'
+        : !(place && place.build) ? 'none'
+          : allele.gene === allele.named ? 'same'
+            : chosen === allele.gene ? 'yours' : 'rule';
+    const key = `${allele.named}\n${allele.gene}\n${state}`;
+    if (!groups.has(key)) groups.set(key, { key, named: allele.named, gene: allele.gene, state, place, alleles: [] });
+    groups.get(key).alleles.push(allele);
+  }
+  const order = ['none', 'out', 'sequence', 'yours', 'rule', 'same'];
+  return [...groups.values()].sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || sortGenes(a.named, b.named) || sortGenes(a.gene, b.gene));
+}
+
+/** Apply a decision to the alleles of a group: to the whole name if the
+ *  group holds every allele of that name, else to each allele. */
+function decide(group, value) {
+  const whole = names.alleles.filter((a) => a.named === group.named).length === group.alleles.length;
+  for (const allele of group.alleles) delete names.mapping[allele.name];
+  if (whole) {
+    if (value) names.mapping[group.named] = value;
+    else delete names.mapping[group.named];
+  } else for (const allele of group.alleles) {
+    // Without a decision of its own an allele follows its name again.
+    if (value) names.mapping[allele.name] = value;
+  }
+  keepNames();
+  askCheck();
+}
+
+/** The choices for a group or an allele, as a select. */
+function decisionSelect(label, current, similarTo, onChange) {
   const all = [...new Set(geneRows().map((r) => r.gene))].sort(sortGenes);
-  const alike = (gene) => all.filter((g) => g.startsWith(gene) || gene.startsWith(g) || g.replace(/[A-Z]$/, '') === gene);
-  $('check-unknown').replaceChildren(unknown.length ? el('table', { class: 'check-table' },
-    el('caption', { text: 'Gene names that are not in the gene list' }),
-    el('thead', {}, el('tr', {}, ...['Name in your file', 'Alleles', 'What to do'].map((h) => el('th', { scope: 'col', text: h })))),
-    el('tbody', {}, unknown.map((g) => {
-      const choice = names.mapping[g.gene] || 'sequence';
-      const near = alike(g.gene);
-      const select = el('select', { 'aria-label': `What to do with ${g.gene}` },
-        el('option', { value: 'sequence', text: 'Find the gene by sequence' }),
-        el('option', { value: 'skip', text: 'Leave these alleles out' }),
-        near.length ? el('optgroup', { label: 'Similar names' }, near.map((n) => el('option', { value: n, text: `These are alleles of ${n}` }))) : null,
-        el('optgroup', { label: 'All genes of the list' }, all.filter((n) => !near.includes(n)).map((n) => el('option', { value: n, text: `These are alleles of ${n}` }))));
-      select.value = choice;
-      select.addEventListener('change', () => {
-        names.mapping[g.gene] = select.value;
-        keepNames();
-        // A match to a gene changes which genes the file has: check again.
-        if (select.value !== 'sequence' && select.value !== 'skip') askCheck();
-      });
-      return el('tr', {},
-        el('th', { scope: 'row', text: g.gene }),
-        el('td', {}, `${g.alleles.length}`, el('small', { class: 'muted', text: ` ${g.alleles.slice(0, 3).join(', ')}${g.alleles.length > 3 ? ', …' : ''}` })),
-        el('td', {}, select));
-    })),
-    el('tfoot', {}, el('tr', {}, el('td', { colspan: '3', class: 'muted', text: '"Find the gene by sequence" places each allele on the gene of the list that its sequence fits best, and says so in the results. If a gene is missing from the list altogether, add it under "Gene list" below.' })))) : '');
+  const near = all.filter((g) => g.startsWith(similarTo) || similarTo.startsWith(g) || g.replace(/[A-Z]$/, '') === similarTo);
+  const select = el('select', { 'aria-label': label },
+    el('option', { value: '', text: 'As the name says' }),
+    el('option', { value: BY_SEQUENCE, text: 'Find the gene by sequence' }),
+    el('option', { value: LEFT_OUT, text: 'Leave out of the analysis' }),
+    near.length ? el('optgroup', { label: 'Genes with a similar name' }, near.map((n) => el('option', { value: n, text: `Alleles of ${n}` }))) : null,
+    el('optgroup', { label: 'All genes of the list' }, all.filter((n) => !near.includes(n)).map((n) => el('option', { value: n, text: `Alleles of ${n}` }))));
+  select.value = current || '';
+  select.addEventListener('change', () => onChange(select.value));
+  return select;
+}
 
-  // Matches made earlier, with a way to undo them.
-  const matched = Object.entries(names.mapping).filter(([from, to]) => to !== 'sequence' && to !== 'skip'
-    && genes.some((g) => g.alleles.some((a) => a.startsWith(`${from}*`))));
-  $('check-mapped').replaceChildren(matched.length ? el('p', { class: 'mapped' }, 'Your matches: ',
-    matched.map(([from, to]) => el('span', { class: 'chip' }, `${from} → ${to} `,
-      el('button', { type: 'button', class: 'link', 'aria-label': `Undo the match of ${from}`, text: 'undo', onclick: () => { delete names.mapping[from]; keepNames(); askCheck(); } })))) : '');
+const short = (allele) => allele.name.slice(allele.named.length) || allele.name;
+const original = (name) => Object.keys(names.renames).find((from) => names.renames[from] === name);
 
-  const box = $('check-known');
-  box.hidden = !known.length;
-  box.querySelector('summary').textContent = `${plural(known.length, 'gene')} found in the gene list`;
-  const usual = $('opt-build').value === '37' ? 'GRCh37' : 'GRCh38';
-  $('check-known-table').replaceChildren(
-    el('thead', {}, el('tr', {}, ...['Gene', 'Alleles', 'Place on the reference genome', 'Evidence from'].map((h) => el('th', { scope: 'col', text: h })))),
-    el('tbody', {}, known.sort((a, b) => sortGenes(a.gene, b.gene)).map((g) => el('tr', {},
-      el('th', { scope: 'row', text: g.gene }),
-      el('td', { class: 'num', text: String(g.alleles.length) }),
-      el('td', { text: `${g.build} ${g.contig}:${g.start.toLocaleString('en')}-${g.end.toLocaleString('en')}` }),
-      el('td', { class: g.evidence && g.build === usual ? '' : 'muted', text: !g.evidence ? 'none: not on a chromosome, compared with the reference only'
-        : `${sources.filter((x) => x.build === g.build).map((x) => x.title.replace('Studies collected by ', '')).join(', ')}${g.build !== usual ? ` (gene not on ${usual})` : ''}` })))));
+function mappingRow(group, sources) {
+  const link = LINKS[group.state];
+  const whole = names.alleles.filter((a) => a.named === group.named).length === group.alleles.length;
+  const chosen = whole ? names.mapping[group.named] : (group.alleles.every((a) => names.mapping[a.name] === names.mapping[group.alleles[0].name]) ? names.mapping[group.alleles[0].name] : undefined);
+  const target = group.state === 'sequence' ? el('span', { class: 'muted', text: 'found during the run' })
+    : group.state === 'out' ? el('span', { class: 'muted', text: 'not analysed' })
+      : group.state === 'none' ? el('span', { class: 'map-missing', text: 'no gene of the list' })
+        : el('span', {}, el('b', { text: group.gene }), el('small', { class: 'muted', text: !group.place.evidence ? ' not on a chromosome: no population data'
+          : ` ${group.place.build}${sources.some((x) => x.build === group.place.build) && group.place.build !== (sources[0] || {}).build ? ', older data' : ''}` }));
+  const open = names.open.has(group.key);
+  const toggle = el('button', { type: 'button', class: 'link', 'aria-expanded': String(open), text: open ? 'hide names' : 'edit names',
+    onclick: () => { if (open) names.open.delete(group.key); else names.open.add(group.key); renderCheck(); } });
+  const rows = [el('tr', { class: `map-row m-${group.state}` },
+    el('th', { scope: 'row' }, group.named,
+      el('small', { class: 'muted', text: ` ${plural(group.alleles.length, 'allele')}: ${group.alleles.slice(0, 4).map(short).join(', ')}${group.alleles.length > 4 ? ', …' : ''}` })),
+    el('td', { class: 'map-link' }, el('span', { class: `arrow a-${link.arrow}`, 'aria-hidden': 'true' }), el('span', { class: 'map-how', title: link.help || '', text: link.label })),
+    el('td', {}, target),
+    el('td', {}, decisionSelect(`What to do with ${group.named}`, chosen, group.named, (value) => decide(group, value)), ' ', toggle))];
+  if (open) {
+    rows.push(el('tr', { class: 'map-names' }, el('td', { colspan: '4' },
+      el('p', { class: 'muted', text: 'Correct a name here and it is used for this run; your file is not changed. A name is "gene*allele", for example IGHV1-69*01.' }),
+      el('ul', {}, group.alleles.map((allele) => {
+        const was = original(allele.name);
+        const input = el('input', { type: 'text', value: allele.name, size: Math.max(18, allele.name.length + 2), 'aria-label': `Name of ${allele.name}`, spellcheck: 'false' });
+        input.addEventListener('change', () => {
+          const next = input.value.trim().split(/\s/)[0];
+          const first = was || allele.name;
+          if (!next || next === allele.name) return;
+          if (names.alleles.some((a) => a.name === next)) {
+            $('check-error').textContent = `Another sequence of the file is already called ${next}.`;
+            $('check-error').hidden = false;
+            input.value = allele.name;
+            return;
+          }
+          if (next === first) delete names.renames[first];
+          else names.renames[first] = next;
+          askCheck();
+        });
+        return el('li', {}, input,
+          was ? el('small', { class: 'muted' }, ` was ${was} `, el('button', { type: 'button', class: 'link', text: 'undo', onclick: () => { delete names.renames[was]; askCheck(); } })) : null,
+          decisionSelect(`What to do with ${allele.name}`, names.mapping[allele.name], allele.named, (value) => {
+            if (value) names.mapping[allele.name] = value;
+            else delete names.mapping[allele.name];
+            keepNames();
+            askCheck();
+          }));
+      })))));
+  }
+  return rows;
+}
+
+/** The check of the file: how its names connect to the gene list. Called
+ *  with a new answer of the analysis module, or without to draw again. */
+function renderCheck(result) {
+  if (result) Object.assign(names, { alleles: result.alleles, genes: result.genes, sources: result.sources });
+  const { alleles, genes, sources = [] } = names;
+  $('check-error').hidden = true;
+  const groups = mappingGroups(alleles, genes);
+  renderEvidencePlan(groups, genes, sources);
+  const of = (state) => groups.filter((g) => g.state === state);
+  const allelesOf = (list) => list.reduce((n, g) => n + g.alleles.length, 0);
+  const open = of('none');
+  $('check-summary').textContent = `${plural(alleles.length, 'allele')} with ${plural(new Set(alleles.map((a) => a.named)).size, 'gene name')}. `
+    + (open.length ? `${plural(new Set(open.map((g) => g.named)).size, 'name')} (${plural(allelesOf(open), 'allele')}) not matched to a gene yet. ` : 'Every name is matched to a gene. ')
+    + 'Nothing has been downloaded yet.';
+
+  const tally = ['none', 'sequence', 'out', 'yours', 'rule', 'same'].filter((state) => of(state).length)
+    .map((state) => el('span', { class: `map-tally t-${state}` }, el('b', { text: String(allelesOf(of(state))) }), ` ${LINKS[state].label}`));
+  const head = el('thead', {}, el('tr', {}, ...['Name in your file', '', 'Gene of the list', 'Change'].map((h) => el('th', { scope: 'col', text: h }))));
+  const shown = groups.filter((g) => g.state !== 'same');
+  const same = of('same');
+  $('check-map').replaceChildren(el('section', { class: 'map', 'aria-label': 'How the names of your file match the gene list' },
+    el('h3', { class: 'plan-title', text: 'How the names of your file match the gene list' }),
+    el('p', { class: 'map-tallies' }, 'Alleles: ', tally),
+    shown.length ? el('div', { class: 'scroll' }, el('table', { class: 'map-table' }, head, el('tbody', {}, shown.flatMap((g) => mappingRow(g, sources))))) : null,
+    open.length ? el('p', { class: 'map-open' }, `${plural(allelesOf(open), 'allele')} not matched: without a choice they are reported as "not placed". `,
+      el('button', { type: 'button', class: 'ghost', text: 'Find all of them by sequence', onclick: () => { for (const g of open) decide(g, BY_SEQUENCE); } })) : null,
+    same.length ? el('details', { class: 'fold', open: shown.length ? null : true }, el('summary', { text: `${plural(same.length, 'name')} found in the gene list as written (${plural(allelesOf(same), 'allele')})` }),
+      el('div', { class: 'scroll map-same' }, el('table', { class: 'map-table' }, head.cloneNode(true), el('tbody', {}, same.flatMap((g) => mappingRow(g, sources)))))) : null));
   $('check-run').disabled = false;
-  $('check-run').focus();
+  $('check-run').textContent = open.length ? `Run the analysis (${plural(allelesOf(open), 'allele')} not matched)` : 'Run the analysis';
 }
 
 /** Start the run on the file that was checked. */
 function runChecked() {
-  const { fasta, name } = names.pending;
-  const unknown = names.genes.filter((g) => !g.build);
-  const choice = (g) => names.mapping[g.gene] || 'sequence';
+  const { name } = names.pending;
   // Alleles the user chose to leave out are taken from the FASTA text.
-  const skipped = new Set(unknown.filter((g) => choice(g) === 'skip').flatMap((g) => g.alleles));
+  const skipped = new Set(names.alleles.filter((a) => decision(a) === LEFT_OUT).map((a) => a.name));
+  const fasta = currentFasta();
   const kept = skipped.size
     ? fasta.split(/^(?=>)/m).filter((record) => !skipped.has(record.slice(1).split(/\s/)[0])).join('')
     : fasta;
@@ -441,7 +541,6 @@ function runChecked() {
     paralog: $('opt-paralog').checked,
     coords: names.rows ? geneListText(names.rows) : undefined,
     aliases: aliasText(),
-    placeUnknown: unknown.some((g) => choice(g) === 'sequence'),
   });
 }
 
