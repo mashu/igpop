@@ -117,3 +117,24 @@ how many of the distinct differences of the run it has seen, for how many
 it showed a frequency of 1% or more, how many alleles the phased panel
 could look up completely and how many it found. The studies that dbSNP
 passes on are listed underneath, with their estimated sizes.
+
+## The evidence behind one difference
+
+In an opened allele, "populations and reasons" on a difference (or a click
+on it in the alignment) shows:
+
+- **Where**: its position in your sequence and on the genome, and the two
+  bases.
+- **Who carries it**: every population that looked at the position, with
+  the number of chromosomes that carry the base out of those examined: the
+  five continental groups of 1000 Genomes, the ancestry groups of gnomAD
+  (command-line runs), and the studies dbSNP passes on. Populations without
+  a single copy are listed too. For dbSNP studies the counts are worked
+  out from the estimated study size and marked "about".
+- **Why this verdict and score**: which population gives the guaranteed
+  frequency (the support), the level it falls in, the shares of real
+  variants and of arbitrary changes at that level whose ratio is the score,
+  and whether a test showed a frequency of 1% or more.
+
+The site files give counts for continental groups and ancestry groups, not
+for the single populations within them.

@@ -167,6 +167,7 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
                 ".".to_string()
             }
         })
+        .col("support_from", |r: &R| r.v.support_from.clone().unwrap_or_else(|| ".".to_string()))
         .col("class", |r: &R| r.v.class.as_str().to_string())
         .col("class_basis", |r: &R| r.v.basis.clone().unwrap_or_else(|| ".".to_string()))
         .col("class_p", |r: &R| r.v.class_p.map_or(".".to_string(), num))
@@ -183,6 +184,7 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
                 "gnomad_max_group_AF",
                 "gnomad_max_group_AF_lower95",
                 "gnomad_any_group_AF_upper95",
+                "gnomad_groups",
             ]),
             gnomad_cells,
         )
@@ -284,6 +286,14 @@ fn gnomad_cells(r: &VariantRow) -> Vec<String> {
                 num(top.af()),
                 num(top.lower95()),
                 num(freq::max_upper95(&site.groups)),
+                // Copies and chromosomes of every group that was genotyped.
+                GNOMAD_GROUPS
+                    .iter()
+                    .zip(&site.groups)
+                    .filter(|(_, c)| c.an > 0)
+                    .map(|(group, c)| format!("{group}:{}/{}", c.ac, c.an))
+                    .collect::<Vec<_>>()
+                    .join(";"),
             ]
         }
         None if r.ev.gnomad_read() && r.ev.reads(&r.v.lookup.0) => {
@@ -297,9 +307,18 @@ fn gnomad_cells(r: &VariantRow) -> Vec<String> {
             ];
             out.extend(dots(3));
             out.push(num(absent_upper(&r.ev.gnomad_full)));
+            out.push(
+                GNOMAD_GROUPS
+                    .iter()
+                    .zip(&r.ev.gnomad_full)
+                    .filter(|(_, an)| **an > 0)
+                    .map(|(group, an)| format!("{group}:0/{an}"))
+                    .collect::<Vec<_>>()
+                    .join(";"),
+            );
             out
         }
-        None => dots(10),
+        None => dots(11),
     }
 }
 

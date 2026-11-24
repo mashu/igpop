@@ -789,11 +789,13 @@ function alleleDetail(allele) {
   const parts = [el('p', { class: 'reason', text: allele.reason })];
   if (given(allele.notes)) parts.push(el('p', { class: 'muted', text: `Keep in mind: ${allele.notes}.` }));
   const variants = state.variants.get(allele.allele_name) || [];
-  if (variants.length) parts.push(variantTable(variants));
+  // Genome position of each difference -> opens its evidence in the table.
+  const opened = new Map();
+  if (variants.length) parts.push(variantTable(variants, opened));
   const hap = haplotypePanel(allele);
   if (hap) parts.push(hap);
   const block = state.alignments.get(allele.gene);
-  if (block) parts.push(alignmentPanel(block, allele.allele_name));
+  if (block) parts.push(alignmentPanel(block, allele.allele_name, opened));
   return parts;
 }
 
@@ -937,25 +939,156 @@ function strip(v) {
   return el('div', { class: 'strip-cell' }, picture, el('small', { text: label }));
 }
 
-function variantTable(variants) {
+const GNOMAD_NAMES = { afr: 'African / African American', ami: 'Amish', amr: 'Admixed American', asj: 'Ashkenazi Jewish', eas: 'East Asian', fin: 'Finnish', mid: 'Middle Eastern', nfe: 'European (non-Finnish)', sas: 'South Asian' };
+const sourceTitle = (name) => ({ '1kGP_30x': '1000 Genomes, 30x', '1kGP_phase3': '1000 Genomes, phase 3', dbSNP: 'dbSNP' }[name] || name.replace('gnomAD_v', 'gnomAD v'));
+/** A stratum such as `1kGP_30x:AFR` in words. */
+function stratumWords(stratum) {
+  const [source, population] = stratum.split(':');
+  if (source.startsWith('1kGP')) return `${POP_NAMES[population] || population} people of ${sourceTitle(source)}`;
+  if (source.startsWith('gnomAD')) return `the ${GNOMAD_NAMES[population] || population} group of ${sourceTitle(source)}`;
+  return `the study ${population}`;
+}
+
+/** Every population that looked at a variant, with its counts:
+ *  [{ source, total: {ac, an}, note, rows: [{ name, ac, an, estimated }] }]. */
+function populations(v) {
+  const out = [];
+  const kgp = POPS.map((pop) => {
+    const [ac, an] = (v[`kgp_AC/AN_${pop}`] || '').split('/').map(Number);
+    return { name: POP_NAMES[pop], ac, an };
+  }).filter((r) => r.an > 0);
+  if (kgp.length) {
+    const [het, hom] = [number(v.kgp_het), number(v.kgp_hom)];
+    out.push({
+      source: v.build === 'GRCh37' ? '1000 Genomes, phase 3' : '1000 Genomes, 30x',
+      total: { ac: number(v.kgp_AC), an: number(v.kgp_AN) },
+      note: het >= 0 && hom >= 0 && (het || hom) ? `${het} ${het === 1 ? 'person' : 'people'} with one copy, ${hom} with two` : '',
+      rows: kgp,
+    });
+  }
+  if (given(v.gnomad_groups)) {
+    out.push({
+      source: v.build === 'GRCh37' ? 'gnomAD v2.1 genomes' : 'gnomAD v4.1 genomes',
+      total: { ac: number(v.gnomad_AC), an: number(v.gnomad_AN) },
+      note: number(v.gnomad_nhomalt) > 0 ? `${v.gnomad_nhomalt} people with two copies` : '',
+      rows: v.gnomad_groups.split(';').map((entry) => {
+        const [group, counts] = entry.split(':');
+        const [ac, an] = counts.split('/').map(Number);
+        return { name: GNOMAD_NAMES[group] || group, ac, an };
+      }),
+    });
+  }
+  if (given(v.dbsnp_freq)) {
+    const sizes = new Map((state.files['dbsnp_datasets.tsv'] ? parseTSV(state.files['dbsnp_datasets.tsv']) : []).map((d) => [d.dataset, Number(d.implied_chromosomes)]));
+    out.push({
+      source: 'Studies collected by dbSNP',
+      note: 'dbSNP gives frequencies only; the counts are worked out from the estimated size of each study',
+      rows: v.dbsnp_freq.split(';').map((entry) => {
+        const [name, af] = entry.split(':');
+        const an = sizes.get(name) || 0;
+        return { name, ac: an ? Math.round(Number(af) * an) : NaN, an, af: Number(af), estimated: true };
+      }),
+    });
+  }
+  return out;
+}
+
+/** The level of support a guaranteed frequency falls in, as the
+ *  calibration table names it. */
+function supportLevel(support) {
+  if (!(support > 0)) return 'none';
+  return ['<0.001%', '0.001-0.01%', '0.01-0.1%', '0.1-1%', '1-10%', '>=10%'][[1e-5, 1e-4, 1e-3, 1e-2, 1e-1].filter((edge) => support >= edge).length];
+}
+
+/** Why a difference has its verdict and score, step by step. */
+function whyScore(v) {
+  const steps = [];
+  const support = number(v.support);
+  const pct = (x) => `${(100 * x).toPrecision(2).replace(/\.?0+$/, '')}%`;
+  if (!(support > 0)) steps.push('No population of any source has seen this base, so no frequency is guaranteed.');
+  else if (given(v.support_from)) steps.push(`The strongest evidence comes from ${stratumWords(v.support_from)}. Its counts guarantee, with 95% confidence, a frequency of at least ${percent(support)} there. This guaranteed frequency is what igpop calls the support; it is lower than the observed frequency, the more so the fewer people were examined.`);
+  else steps.push(`The counts guarantee, with 95% confidence, a frequency of at least ${percent(support)} in some population.`);
+  const level = supportLevel(support);
+  const row = (state.files['score_calibration.tsv'] ? parseTSV(state.files['score_calibration.tsv']) : []).find((r) => r.support === level);
+  if (given(v.score) && row) {
+    steps.push(`That puts it in the support level "${level === 'none' ? 'never seen' : level.replace('>=', 'at least ').replace('<', 'below ')}". In this run, ${pct(Number(row.trusted_fraction))} of the variants of real alleles are at this level and ${pct(Number(row.arbitrary_fraction))} of all possible single-base changes. The score is the ratio of the two${row.pooled_group && parseTSV(state.files['score_calibration.tsv']).filter((r) => r.pooled_group === row.pooled_group).length > 1 ? ', taken together with the neighbouring level' : ''}: ${Number(v.score) < 1 ? Number(v.score).toFixed(3) : Number(v.score).toFixed(1)}.`);
+  } else if (!given(v.score)) steps.push('Insertions and deletions get no score, because the comparison with arbitrary changes is made for single-base changes only.');
+  if (v.class === 'common') steps.push(given(v.class_basis) && v.class_basis !== 'dbSNP:COMMON'
+    ? `Apart from the score, a test shows that the frequency reaches 1% in ${stratumWords(v.class_basis)}${given(v.class_p) ? ` (p = ${Number(v.class_p).toPrecision(2)} after correction for the number of populations)` : ''}. A common variant is supported whatever its score.`
+    : 'dbSNP marks this base as common. A common variant is supported whatever its score.');
+  else if (support > 0) steps.push(`No population shows a frequency of 1% or more${given(v.class_p) ? ` (best test: p = ${Number(v.class_p).toPrecision(2)})` : ''}, so the verdict follows the score: 10 or more is supported, 0.1 or less needs confirmation, in between inconclusive.`);
+  return steps;
+}
+
+/** Everything behind one difference: where it is, who carries it, and why
+ *  it has its score. */
+function evidencePanel(v) {
+  const groups = populations(v);
+  const top = Math.max(1e-12, ...groups.flatMap((g) => g.rows.map((r) => (r.af ?? (r.an ? r.ac / r.an : 0)))));
+  const bar = (r) => {
+    const af = r.af ?? (r.an ? r.ac / r.an : 0);
+    return el('tr', { class: af > 0 ? '' : 'zero' },
+      el('th', { scope: 'row', text: r.name }),
+      el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * af) / top}%` })),
+      el('td', { class: 'num', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
+      el('td', { class: 'num', text: af > 0 ? percent(af) : '0' }));
+  };
+  const kind = { SNV: 'single-base change', INS: 'insertion', DEL: 'deletion' }[v.type] || v.type;
+  return el('div', { class: 'evidence' },
+    el('div', { class: 'evidence-part' },
+      el('h4', { text: 'Where' }),
+      el('p', {}, `Base ${v.aln_pos} of your sequence (counted from its first base), ${v.build || ''} ${v.contig}:${Number(v.genome_pos).toLocaleString('en')} on the genome. `,
+        `A ${kind}: the reference genome has ${v.vcf_ref}, this allele has ${v.vcf_alt.split(',').length > 1 ? v.query_variant : v.vcf_alt}`,
+        el('span', { class: 'muted', text: ' (written on the forward strand of the genome, as in the population files; the alignment below shows the gene in its own direction).' }))),
+    el('div', { class: 'evidence-part' },
+      el('h4', { text: 'Who carries it' }),
+      groups.length ? groups.map((g) => el('table', { class: 'people' },
+        el('caption', {}, el('b', { text: g.source }), g.total && g.total.an > 0 ? `: ${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')} chromosomes carry it` : '',
+          g.note ? el('small', { class: 'muted', text: ` ${g.note}` }) : null),
+        el('thead', { class: 'sr' }, el('tr', {}, ...['Population', 'Share', 'Chromosomes with it', 'Frequency'].map((h) => el('th', { scope: 'col', text: h })))),
+        el('tbody', {}, g.rows.sort((a, b) => (b.af ?? b.ac / b.an) - (a.af ?? a.ac / a.an)).map(bar))))
+        : el('p', { class: 'muted', text: 'No source has a record of this base at this position.' }),
+      groups.length ? el('p', { class: 'muted', text: 'Each person has two chromosomes, so the counts are of chromosomes. Bars are drawn relative to the population where the base is most frequent.' }) : null),
+    el('div', { class: 'evidence-part' },
+      el('h4', { text: 'Why this verdict and score' }),
+      el('ol', {}, whyScore(v).map((step) => el('li', { text: step })))));
+}
+
+function variantTable(variants, opened) {
   const rsLink = (v) => (given(v.rsid)
     ? el('a', { href: `https://www.ncbi.nlm.nih.gov/snp/${v.rsid}`, target: '_blank', rel: 'noopener', text: v.rsid })
     : el('span', { class: 'muted', text: 'no rsID' }));
   const kind = { SNV: 'base change to', INS: 'insertion,', DEL: 'deletion, leaving' };
   const change = (v) => `${kind[v.type] || v.type} ${v.query_variant}`;
-  return el('div', { class: 'scroll' }, el('table', { class: 'variants' },
-    el('caption', { text: 'Differences from the reference genome' }),
-    el('thead', {}, el('tr', {},
-      ...['Variant', 'Position in allele', 'Verdict by frequency', 'Why'].map((h) => el('th', { scope: 'col', text: h })),
-      el('th', { scope: 'col' }, 'Score ', hint('What the score means', scoreHint())),
-      el('th', { scope: 'col' }, 'How common in people ', hint('How to read the frequency line', stripHint())))),
-    el('tbody', {}, variants.map((v) => el('tr', {},
+  const rows = variants.flatMap((v) => {
+    const detail = el('tr', { class: 'evidence-row', hidden: true }, el('td', { colspan: '7' }));
+    const button = el('button', { type: 'button', class: 'link', 'aria-expanded': 'false', text: 'populations and reasons' });
+    const toggle = (open) => {
+      detail.hidden = !open;
+      button.setAttribute('aria-expanded', String(open));
+      button.textContent = open ? 'hide' : 'populations and reasons';
+      if (open && !detail.firstElementChild.childElementCount) detail.firstElementChild.append(evidencePanel(v));
+    };
+    button.addEventListener('click', () => toggle(detail.hidden));
+    // The alignment opens the evidence of the difference under the pointer.
+    if (opened) opened.set(Number(v.genome_pos), () => { toggle(true); detail.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+    return [el('tr', {},
       el('th', { scope: 'row' }, rsLink(v), el('small', { text: ` ${change(v)}, ${v.contig}:${v.genome_pos}` })),
       el('td', { text: v.aln_pos }),
       el('td', {}, badge(v.verdict)),
       el('td', {}, chips(v.filters), siteQuality(v)),
       scoreCell(v),
-      el('td', {}, strip(v)))))));
+      el('td', {}, strip(v)),
+      el('td', {}, button)), detail];
+  });
+  return el('div', { class: 'scroll' }, el('table', { class: 'variants' },
+    el('caption', { text: 'Differences from the reference genome' }),
+    el('thead', {}, el('tr', {},
+      ...['Variant', 'Position in allele', 'Verdict by frequency', 'Why'].map((h) => el('th', { scope: 'col', text: h })),
+      el('th', { scope: 'col' }, 'Score ', hint('What the score means', scoreHint())),
+      el('th', { scope: 'col' }, 'How common in people ', hint('How to read the frequency line', stripHint())),
+      el('th', { scope: 'col', text: 'Details' }))),
+    el('tbody', {}, rows)));
 }
 
 // Why the 1000 Genomes genotypes at a position are less reliable: the
@@ -1065,7 +1198,7 @@ const BASE_WORDS = { '.': 'same as the reference', '-': 'base missing (deletion)
 
 /** The alignment of one gene: every allele under the reference, one column
  *  per base. Pointing at a column highlights it and says what is there. */
-function alignmentPanel(block, alleleName) {
+function alignmentPanel(block, alleleName, opened = new Map()) {
   const aln = parseBlock(block);
   const columns = aln.positions.length;
   const names = ['reference', ...(aln.rows.has(alleleName) ? [alleleName] : []), ...[...aln.rows.keys()].filter((n) => n !== 'reference' && n !== alleleName)];
@@ -1111,10 +1244,14 @@ function alignmentPanel(block, alleleName) {
     if (variant && !BASE_WORDS[base] || (variant && base === '-')) {
       const seen = frequencies(variant);
       const best = seen.reduce((top, m) => (m.af > top.af ? m : top), { af: 0 });
+      const counted = populations(variant).filter((g) => g.total && g.total.an > 0)
+        .map((g) => `${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')} chromosomes in ${g.source}`);
       parts.push(
         el('span', {}, given(variant.rsid) ? variant.rsid : 'no rsID', ' ', badge(variant.verdict)),
         el('span', { text: seen.length ? `Seen in ${seen.length} population${seen.length > 1 ? 's' : ''}, most often ${percent(best.af)} in ${best.name}.` : 'Not seen in any population.' }),
-        given(variant.score) ? el('span', { text: `Score ${Number(variant.score) < 1 ? Number(variant.score).toFixed(3) : Number(variant.score).toFixed(1)}: ${scoreWords(Number(variant.score))}.` }) : null);
+        counted.length ? el('span', { text: `Carried by ${counted.join('; ')}.` }) : null,
+        given(variant.score) ? el('span', { text: `Score ${Number(variant.score) < 1 ? Number(variant.score).toFixed(3) : Number(variant.score).toFixed(1)}: ${scoreWords(Number(variant.score))}.` }) : null,
+        row === alleleName && opened.has(Number(variant.genome_pos)) ? el('span', { class: 'aln-more', text: 'Click (or press Enter) for the populations and the reasons.' }) : null);
     }
     parts.push(el('span', { class: 'muted', text: differing ? `${differing} of ${aln.rows.size - 1} alleles differ from the reference here.` : 'No allele differs from the reference here.' }));
     return parts;
@@ -1147,12 +1284,26 @@ function alignmentPanel(block, alleleName) {
     const row = event.target.closest('.aln-line');
     point(Math.floor(((event.clientX - box.left) / box.width) * columns), row ? row.dataset.name : alleleName, false);
   });
+  // A click on a difference of this allele opens its evidence in the table above.
+  const openAt = (col) => {
+    const pos = aln.positions[col];
+    const variant = (state.variants.get(alleleName) || []).find((v) => (v.type === 'SNV'
+      ? Number(v.genome_pos) === pos
+      : Math.abs(Number(v.genome_pos) - pos) <= Math.max(v.vcf_ref.length, v.vcf_alt.length)));
+    const open = variant && /[A-Za-z-]/.test((aln.rows.get(alleleName) || '')[col] || '') && opened.get(Number(variant.genome_pos));
+    if (open) { leave(); open(); }
+  };
+  seqs.addEventListener('click', (event) => {
+    const box = seqs.getBoundingClientRect();
+    openAt(Math.floor(((event.clientX - box.left) / box.width) * columns));
+  });
   seqs.addEventListener('mouseleave', () => { if (document.activeElement !== grid) leave(); });
   grid.addEventListener('blur', leave);
   grid.addEventListener('scroll', () => { if (document.activeElement !== grid) leave(); });
   grid.addEventListener('keydown', (event) => {
     const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
     if (event.key === 'Escape') leave();
+    if (event.key === 'Enter' && at.col >= 0) openAt(at.col);
     if (!step) return;
     event.preventDefault();
     // The arrow keys walk through the differences of this allele first.

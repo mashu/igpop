@@ -39,6 +39,7 @@ identical to the reference has no rows here (it still appears in
 | `filters` | Why the variant is not `supported`: what the data show, then how that scores, e.g. `rare_in_every_population,low_score`. `.` for a supported variant. See [Why an allele did not pass](filters.md). |
 | `probability_real` | With `--prior`: prior x score / (prior x score + 1 - prior). `.` otherwise. |
 | `support` | The number the score is based on: the largest lower 95% bound of the allele frequency over all populations of all datasets (1000 Genomes, gnomAD, datasets relayed by dbSNP). 0 if never seen. |
+| `support_from` | The population that gives it, as `dataset:population`. |
 | `class` | `common`, `uncommon`, `absent` or `not_assessed` (below). |
 | `class_basis` | What made the variant `common`: the dataset and population that passed the test (`gnomAD_v4.1:afr`), or `dbSNP:COMMON`. |
 | `class_p` | p-value of the best population, corrected for the number of populations tested. `.` if the allele was nowhere seen twice. |
@@ -89,6 +90,7 @@ Counts are from the 2,504 unrelated samples only.
 | `gnomad_max_group_AF` | Its allele frequency. |
 | `gnomad_max_group_AF_lower95` | Its one-sided 95% lower bound. |
 | `gnomad_any_group_AF_upper95` | Largest upper bound over the groups. |
+| `gnomad_groups` | Copies and chromosomes in every genetic ancestry group, as `group:AC/AN;...`. |
 
 ### Frequencies relayed by dbSNP
 

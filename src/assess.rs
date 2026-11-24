@@ -269,6 +269,8 @@ pub struct VariantResult {
     /// Sources in which the allele was observed.
     pub observed: Vec<&'static str>,
     pub support: f64,
+    /// The stratum that gives the support, as `dataset:population`.
+    pub support_from: Option<String>,
     pub class: Class,
     /// The stratum that made the variant common, or `dbSNP:COMMON`.
     pub basis: Option<String>,
@@ -300,6 +302,12 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
     let id = format!("{rsid}({reference}>{alternate}:{},{pos})", called.allele_pos);
     let strata = ev.strata(&lookup);
     let support = evidence::support(&strata);
+    // The population whose counts guarantee that frequency.
+    let support_from = strata
+        .iter()
+        .filter(|(_, c)| c.ac > 0)
+        .max_by(|a, b| a.1.lower95().total_cmp(&b.1.lower95()))
+        .map(|(stratum, _)| ev.stratum_name(*stratum));
 
     let kgp_site = ev.kgp.get(&lookup);
     let observed: Vec<&'static str> = [
@@ -362,6 +370,7 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         id,
         observed,
         support,
+        support_from,
         class,
         basis,
         class_p: corrected.map(|(p, _)| p),

@@ -316,3 +316,19 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 .map-open { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; color: var(--confirm); font-weight: 600; margin: 0.8rem 0; }
 .map-same { max-height: 22rem; overflow: auto; }
 .map-same thead th { position: sticky; top: 0; background: var(--surface); }
+
+/* ---- the evidence behind one difference ---- */
+.evidence-row > td { background: color-mix(in srgb, var(--ink) 3%, transparent); padding: 1rem 1.2rem; white-space: normal; }
+.evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.2rem 2rem; max-width: 1000px; }
+.evidence-part:first-child, .evidence-part:last-child { grid-column: 1 / -1; }
+.evidence h4 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+.evidence p, .evidence ol { margin: 0.2rem 0; font-size: 0.9rem; }
+.evidence ol { padding-left: 1.2rem; display: grid; gap: 0.4rem; }
+.people { width: 100%; max-width: 560px; margin: 0 0 0.9rem; font-size: 0.86rem; }
+.people caption { font-weight: 400; padding: 0.3rem 0; }
+.people th, .people td { padding: 0.22rem 0.6rem 0.22rem 0; border-bottom: 0; }
+.people tbody th { font-weight: 500; white-space: nowrap; }
+.people td:nth-child(2) { width: 38%; }
+.people .zero th, .people .zero td { color: var(--muted); }
+.people .bar-fill { height: 0.6rem; }
+.aln-more { color: var(--accent); font-weight: 600; }
