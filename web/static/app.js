@@ -48,6 +48,13 @@ const FILTERS = {
   no_coordinates: 'no coordinates for its gene',
   low_identity: 'too different from its gene',
 };
+// How well a sequence could be placed on the gene its name gives.
+const PLACEMENTS = {
+  ok: { label: 'Placed on its gene', help: 'The sequence fits the gene of its name better than any other gene of the list.' },
+  ambiguous_locus: { label: 'Fits another gene too', help: 'The sequence fits another gene of the list at least as well as the gene of its name. The genes are near-identical copies, so its differences, and their frequencies, may belong to the other gene.' },
+  low_identity: { label: 'Too different from its gene', help: 'The sequence is too different from the gene of its name to compare; no differences are called.' },
+  no_coordinates: { label: 'Gene not in the list', help: 'The gene of its name is not in the gene list, so the sequence could not be placed.' },
+};
 const HAPLOTYPES = {
   found_exact: { label: 'Haplotype found', help: 'Chromosomes with exactly this sequence exist in the phased 1000 Genomes panel.' },
   found_with_extra: { label: 'Found with extra variants', help: 'The combination exists, but always together with further variants inside the allele.' },
@@ -753,6 +760,7 @@ function wireGeneList() {
 function display(files, warnings, summary = []) {
   state.files = files;
   state.alleles = parseTSV(files['alleles.tsv']);
+  state.placements = null;
   // The build most alleles were judged on is the build of the run.
   const builds = new Map();
   for (const a of state.alleles) if (given(a.build)) builds.set(a.build, (builds.get(a.build) || 0) + 1);
@@ -822,7 +830,12 @@ function renderWarnings(warnings) {
   if (!warnings || !warnings.length) return;
   box.append(el('details', { class: 'notice' },
     el('summary', { text: `${warnings.length} thing${warnings.length > 1 ? 's' : ''} to know about this run` }),
-    el('ul', {}, warnings.map((w) => el('li', { text: w.replace(/`/g, '') })))));
+    el('ul', {}, warnings.map((w) => {
+      // The warning about placement leads to the alleles it is about.
+      const unclean = /not placed cleanly/.test(w) ? Object.keys(PLACEMENTS).filter((p) => p !== 'ok' && state.alleles.some((a) => a.locus_status === p)) : [];
+      return el('li', {}, w.replace(/`/g, '').replace('; see section 3.', '.'),
+        unclean.flatMap((p) => [' ', el('button', { type: 'button', class: 'link', text: `Show: ${PLACEMENTS[p].label.toLowerCase()}`, onclick: () => showPlacement(p) })]));
+    }))));
 }
 
 function renderFilters() {
@@ -830,8 +843,22 @@ function renderFilters() {
   $('f-gene').replaceChildren(el('option', { value: '', text: 'all genes' }), ...genes.map((g) => el('option', { value: g, text: g })));
   const statuses = [...new Set(state.alleles.map((a) => a.hap_status))].filter((s) => HAPLOTYPES[s]);
   $('f-hap').replaceChildren(el('option', { value: '', text: 'any' }), ...statuses.map((s) => el('option', { value: s, text: HAPLOTYPES[s].label })));
+  const places = Object.keys(PLACEMENTS).filter((p) => state.alleles.some((a) => a.locus_status === p));
+  $('f-place').replaceChildren(el('option', { value: '', text: 'any' }),
+    ...places.map((p) => el('option', { value: p, text: `${PLACEMENTS[p].label} (${state.alleles.filter((a) => a.locus_status === p).length})` })));
   $('f-search').value = '';
   $('f-kind').value = '';
+}
+
+/** Show the alleles with one kind of placement, in the allele list. */
+function showPlacement(status) {
+  state.verdict = '';
+  renderTiles();
+  for (const id of ['f-search', 'f-gene', 'f-kind', 'f-hap']) $(id).value = '';
+  $('f-place').value = status;
+  selectTab('tab-alleles');
+  renderAlleles();
+  $('f-place').scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 function renderLegend() {
@@ -849,7 +876,9 @@ function visibleAlleles() {
   const gene = $('f-gene').value;
   const kind = $('f-kind').value;
   const hap = $('f-hap').value;
+  const place = $('f-place').value;
   return state.alleles.filter((a) => {
+    if (place && a.locus_status !== place) return false;
     if (state.verdict && a.verdict !== state.verdict) return false;
     if (gene && a.gene !== gene) return false;
     if (kind === 'candidate' && !isCandidate(a)) return false;
@@ -909,7 +938,9 @@ function alleleCard(allele) {
       routeTag(allele),
       isCandidate(allele) ? el('span', { class: 'tag', text: 'candidate' }) : null,
       given(allele.build) && allele.build !== state.build ? el('span', { class: 'tag', title: `This gene is not on ${state.build}: the allele was judged with the data of ${allele.build}.`, text: allele.build }) : null,
-      el('span', { class: 'chips' }, allele.verdict === 'supported' ? [] : chips(allele.filters), hapPill(allele))),
+      el('span', { class: 'chips' }, allele.verdict === 'supported' ? [] : chips(allele.filters), hapPill(allele),
+        allele.locus_status && allele.locus_status !== 'ok' && PLACEMENTS[allele.locus_status]
+          ? el('span', { class: 'pill p-unclean', title: PLACEMENTS[allele.locus_status].help, text: PLACEMENTS[allele.locus_status].label }) : null)),
     body);
   // Details are built when first opened: a full V set has hundreds of cards.
   card.addEventListener('toggle', () => {
@@ -918,8 +949,28 @@ function alleleCard(allele) {
   return card;
 }
 
+/** Why a sequence was not placed cleanly, with the numbers behind it. */
+function placementNote(allele) {
+  if (!allele.locus_status || allele.locus_status === 'ok' || !PLACEMENTS[allele.locus_status]) return null;
+  if (!state.placements) state.placements = new Map((state.files['alignments.tsv'] ? parseTSV(state.files['alignments.tsv']) : []).map((r) => [r.allele, r]));
+  const at = state.placements.get(allele.allele_name);
+  const lines = [el('b', { text: `${PLACEMENTS[allele.locus_status].label}. ` })];
+  if (allele.locus_status === 'ambiguous_locus') {
+    if (at && given(at.best_other_gene)) {
+      const [own, other] = [Number(at.score), Number(at.best_other_score)];
+      lines.push(`Compared with every gene of the list, this sequence fits ${at.best_other_gene} ${other > own ? 'better than' : 'exactly as well as'} ${allele.gene}, the gene of its name (alignment score ${other} against ${own}; ${(100 * Number(at.identity)).toFixed(1)}% identical to ${allele.gene}). `);
+    } else lines.push(`This sequence fits another gene of the list at least as well as ${allele.gene}. `);
+    lines.push(`It was still compared with ${allele.gene} and judged, but read the verdict with care: the two genes are near-identical copies, so a difference seen here may be the normal sequence of the other gene, and the short reads of the population data are often assigned to the wrong copy as well. If the sequence belongs to the other gene, give it that gene's name and run again.`);
+  } else if (allele.locus_status === 'low_identity') {
+    lines.push(`The sequence is ${at && given(at.identity) ? `only ${(100 * Number(at.identity)).toFixed(1)}% identical` : 'too different'} to ${allele.gene}, so no differences were called. Check that the name is right, or that the sequence is complete and in one piece.`);
+  } else lines.push(PLACEMENTS[allele.locus_status].help);
+  return el('p', { class: 'placement-note' }, lines);
+}
+
 function alleleDetail(allele) {
   const parts = [el('p', { class: 'reason', text: allele.reason })];
+  const placement = placementNote(allele);
+  if (placement) parts.push(placement);
   if (given(allele.notes)) parts.push(el('p', { class: 'muted', text: `Keep in mind: ${allele.notes}.` }));
   const variants = state.variants.get(allele.allele_name) || [];
   // Genome position of each difference -> opens its evidence in the table.
@@ -1680,7 +1731,7 @@ function wire() {
     handleFiles(event.dataTransfer.files);
   });
   for (const button of document.querySelectorAll('[data-restart]')) button.addEventListener('click', () => show('start'));
-  for (const id of ['f-search', 'f-gene', 'f-kind', 'f-hap']) $(id).addEventListener('input', renderAlleles);
+  for (const id of ['f-search', 'f-gene', 'f-kind', 'f-hap', 'f-place']) $(id).addEventListener('input', renderAlleles);
   const tabs = [...document.querySelectorAll('[role=tab]')];
   tabs.forEach((tab, i) => {
     tab.addEventListener('click', () => selectTab(tab.id));

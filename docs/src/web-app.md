@@ -138,3 +138,15 @@ on it in the alignment) shows:
 
 The site files give counts for continental groups and ancestry groups, not
 for the single populations within them.
+
+## Alleles that were not placed cleanly
+
+A sequence is "not placed cleanly" when it fits another gene of the list
+at least as well as the gene of its name (`ambiguous_locus`), is too
+different from its gene (`low_identity`), or names a gene the list does
+not have. Such alleles carry a label in the allele list ("Fits another
+gene too"), the **Placement** filter shows only them, and the warning
+about them has a link that sets this filter. Opening one explains why,
+with the gene it fits and the two alignment scores. An allele that fits
+another gene is still judged, but its differences, and the frequencies
+found for them, may belong to the other copy of the gene.

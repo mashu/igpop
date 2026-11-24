@@ -353,3 +353,6 @@ tr.n-none .name-status { color: var(--confirm); font-weight: 600; }
 tr.n-changed input { border-color: var(--supported); background: color-mix(in srgb, var(--supported) 8%, var(--surface)); }
 tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(in srgb, var(--confirm) 8%, var(--surface)); }
 #name-replace-preview { flex-basis: 100%; }
+
+.pill.p-unclean { color: var(--inconclusive); border-color: color-mix(in srgb, var(--inconclusive) 55%, transparent); }
+.placement-note { border: 1px solid color-mix(in srgb, var(--inconclusive) 50%, transparent); background: color-mix(in srgb, var(--inconclusive) 9%, transparent); border-radius: 10px; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
