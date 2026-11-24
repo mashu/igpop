@@ -361,8 +361,8 @@ function renderEvidencePlan(groups, genes, sources) {
   const apart = genes.filter((g) => g.build && !g.evidence && used(g).length);
   if (apart.length) {
     cards.push(el('div', { class: 'plan-card plan-none' },
-      el('h3', {}, 'Genes outside the chromosomes', el('small', { text: count(apart) })),
-      el('p', { class: 'muted', text: `${apart.map((g) => g.gene).join(', ')}: the reference has ${apart.length === 1 ? 'this gene' : 'these genes'} only on a piece of sequence that is not part of a chromosome. The alleles are compared with it, but there are no dependable population data: an allele that differs will be "not assessed".` })));
+      el('h3', {}, el('span', {}, el('span', { class: 'plan-warn', 'aria-hidden': 'true', text: '!' }), ' No population data for these genes'), el('small', { text: count(apart) })),
+      el('p', { text: `${apart.map((g) => g.gene).join(', ')}: the reference has ${apart.length === 1 ? 'this gene' : 'these genes'} only on a piece of sequence that is not part of a chromosome. The alleles are compared with it, but there are no dependable population data there: an allele that differs from it will be "not assessed".` })));
   }
   $('check-evidence').replaceChildren(cards.length ? el('section', { class: 'plan', 'aria-label': 'Where the evidence will come from' },
     el('h3', { class: 'plan-title', text: 'Where the evidence will come from' }),
@@ -380,18 +380,23 @@ const LINKS = {
   none: { label: 'not matched', arrow: 'broken', help: 'No gene of the list has this name. Choose a gene, let igpop find it by sequence, correct the name, or add the gene to the list.' },
 };
 
+/** How an allele is connected to the gene list: a key of LINKS. */
+function linkOf(allele, place) {
+  const chosen = decision(allele);
+  return chosen === LEFT_OUT ? 'out'
+    : allele.gene === BY_SEQUENCE ? 'sequence'
+      : !(place && place.build) ? 'none'
+        : allele.gene === allele.named ? 'same'
+          : chosen === allele.gene ? 'yours' : 'rule';
+}
+
 /** The alleles of the file in groups that share name, gene and state. */
 function mappingGroups(alleles, genes) {
   const known = new Map(genes.map((g) => [g.gene, g]));
   const groups = new Map();
   for (const allele of alleles) {
-    const chosen = decision(allele);
     const place = known.get(allele.gene);
-    const state = chosen === LEFT_OUT ? 'out'
-      : allele.gene === BY_SEQUENCE ? 'sequence'
-        : !(place && place.build) ? 'none'
-          : allele.gene === allele.named ? 'same'
-            : chosen === allele.gene ? 'yours' : 'rule';
+    const state = linkOf(allele, place);
     const key = `${allele.named}\n${allele.gene}\n${state}`;
     if (!groups.has(key)) groups.set(key, { key, named: allele.named, gene: allele.gene, state, place, alleles: [] });
     groups.get(key).alleles.push(allele);
@@ -443,46 +448,171 @@ function mappingRow(group, sources) {
       : group.state === 'none' ? el('span', { class: 'map-missing', text: 'no gene of the list' })
         : el('span', {}, el('b', { text: group.gene }), el('small', { class: 'muted', text: !group.place.evidence ? ' not on a chromosome: no population data'
           : ` ${group.place.build}${sources.some((x) => x.build === group.place.build) && group.place.build !== (sources[0] || {}).build ? ', older data' : ''}` }));
-  const open = names.open.has(group.key);
-  const toggle = el('button', { type: 'button', class: 'link', 'aria-expanded': String(open), text: open ? 'hide names' : 'edit names',
-    onclick: () => { if (open) names.open.delete(group.key); else names.open.add(group.key); renderCheck(); } });
-  const rows = [el('tr', { class: `map-row m-${group.state}` },
+  const toggle = el('button', { type: 'button', class: 'link', text: 'correct names', onclick: () => showNameEditor(group.named) });
+  return [el('tr', { class: `map-row m-${group.state}` },
     el('th', { scope: 'row' }, group.named,
-      el('small', { class: 'muted', text: ` ${plural(group.alleles.length, 'allele')}: ${group.alleles.slice(0, 4).map(short).join(', ')}${group.alleles.length > 4 ? ', …' : ''}` })),
+      el('small', { class: 'muted', text: ` ${plural(group.alleles.length, 'allele')}: ${group.alleles.slice(0, 4).map(short).join(', ')}${group.alleles.length > 4 ? ', …' : ''}` }),
+      group.state === 'rule' ? el('small', { class: 'map-rule', text: `The gene list has no gene called ${group.named}. It knows these alleles as ${group.gene}, so they are sent there automatically.` }) : null),
     el('td', { class: 'map-link' }, el('span', { class: `arrow a-${link.arrow}`, 'aria-hidden': 'true' }), el('span', { class: 'map-how', title: link.help || '', text: link.label })),
     el('td', {}, target),
     el('td', {}, decisionSelect(`What to do with ${group.named}`, chosen, group.named, (value) => decide(group, value)), ' ', toggle))];
-  if (open) {
-    rows.push(el('tr', { class: 'map-names' }, el('td', { colspan: '4' },
-      el('p', { class: 'muted', text: 'Correct a name here and it is used for this run; your file is not changed. A name is "gene*allele", for example IGHV1-69*01.' }),
-      el('ul', {}, group.alleles.map((allele) => {
-        const was = original(allele.name);
-        const input = el('input', { type: 'text', value: allele.name, size: Math.max(18, allele.name.length + 2), 'aria-label': `Name of ${allele.name}`, spellcheck: 'false' });
-        input.addEventListener('change', () => {
-          const next = input.value.trim().split(/\s/)[0];
-          const first = was || allele.name;
-          if (!next || next === allele.name) return;
-          if (names.alleles.some((a) => a.name === next)) {
-            $('check-error').textContent = `Another sequence of the file is already called ${next}.`;
-            $('check-error').hidden = false;
-            input.value = allele.name;
-            return;
-          }
-          if (next === first) delete names.renames[first];
-          else names.renames[first] = next;
-          askCheck();
-        });
-        return el('li', {}, input,
-          was ? el('small', { class: 'muted' }, ` was ${was} `, el('button', { type: 'button', class: 'link', text: 'undo', onclick: () => { delete names.renames[was]; askCheck(); } })) : null,
-          decisionSelect(`What to do with ${allele.name}`, names.mapping[allele.name], allele.named, (value) => {
-            if (value) names.mapping[allele.name] = value;
-            else delete names.mapping[allele.name];
-            keepNames();
-            askCheck();
-          }));
-      })))));
+}
+
+// ---- the names of the sequences, corrected one by one or all at once ----------
+
+// One line per sequence, in the order of the file. The lines are built
+// once per file and only their content changes afterwards, so that a line
+// never moves or disappears while it is being edited.
+const editor = { lines: new Map(), built: null };
+
+/** Give the sequence first called `first` the name `next`; false if refused. */
+function rename(first, next) {
+  const now = names.renames[first] || first;
+  if (!next || next === now) return true;
+  if (names.alleles.some((a) => a.name === next)) {
+    $('check-error').textContent = `Another sequence of the file is already called ${next}.`;
+    $('check-error').hidden = false;
+    return false;
   }
-  return rows;
+  // A decision made for the sequence follows its name.
+  if (now in names.mapping) {
+    names.mapping[next] = names.mapping[now];
+    delete names.mapping[now];
+    keepNames();
+  }
+  if (next === first) delete names.renames[first];
+  else names.renames[first] = next;
+  return true;
+}
+
+function buildNameEditor() {
+  editor.built = names.pending;
+  editor.lines = new Map();
+  const body = el('tbody');
+  for (const allele of names.alleles) {
+    const first = allele.name;
+    const input = el('input', { type: 'text', value: first, size: Math.max(20, first.length + 4), 'aria-label': `Name of ${first}`, spellcheck: 'false' });
+    input.addEventListener('change', () => {
+      if (rename(first, input.value.trim().split(/\s/)[0])) askCheck();
+      else input.value = names.renames[first] || first;
+    });
+    const status = el('td', { class: 'name-status' });
+    const was = el('td', { class: 'muted' });
+    const choice = el('td');
+    const row = el('tr', {}, el('td', {}, input), status, choice, was);
+    editor.lines.set(first, { row, input, status, choice, was });
+    body.append(row);
+  }
+  $('name-table').replaceChildren(
+    el('thead', {}, el('tr', {}, ...['Name used for the run', 'Leads to', 'Or decide for this sequence', ''].map((h) => el('th', { scope: 'col', text: h })))), body);
+}
+
+/** Bring every line of the editor up to date with the last check. */
+function updateNameEditor() {
+  if (editor.built !== names.pending) buildNameEditor();
+  const known = new Map(names.genes.map((g) => [g.gene, g]));
+  const show = $('name-show').value;
+  const wanted = $('name-filter').value.trim().toLowerCase();
+  let changed = 0;
+  let shown = 0;
+  for (const allele of names.alleles) {
+    const first = original(allele.name) || allele.name;
+    const line = editor.lines.get(first);
+    if (!line) continue;
+    const state = linkOf(allele, known.get(allele.gene));
+    if (document.activeElement !== line.input) line.input.value = allele.name;
+    line.row.className = `n-${state}${first !== allele.name ? ' n-changed' : ''}`;
+    line.status.replaceChildren(
+      el('span', { class: `name-mark k-${state}`, 'aria-hidden': 'true', text: state === 'none' ? '×' : state === 'out' ? '–' : state === 'sequence' ? '?' : '✓' }),
+      state === 'none' ? `no gene called ${allele.named}` : state === 'out' ? 'left out' : state === 'sequence' ? 'found by sequence during the run'
+        : `${allele.gene}${state === 'rule' ? ' (built-in rule)' : state === 'yours' ? ' (your match)' : ''}`);
+    line.choice.replaceChildren(decisionSelect(`What to do with ${allele.name}`, names.mapping[allele.name], allele.named, (value) => {
+      if (value) names.mapping[allele.name] = value;
+      else delete names.mapping[allele.name];
+      keepNames();
+      askCheck();
+    }));
+    line.was.replaceChildren(...(first !== allele.name ? [`was ${first} `, el('button', { type: 'button', class: 'link', text: 'undo', onclick: () => { rename(first, first); askCheck(); } })] : []));
+    if (first !== allele.name) changed += 1;
+    const visible = (!show || (show === 'open' && state === 'none') || (show === 'changed' && first !== allele.name))
+      && (!wanted || allele.name.toLowerCase().includes(wanted) || first.toLowerCase().includes(wanted));
+    // A line being edited stays, even if its new name no longer fits the filter.
+    line.row.hidden = !visible && document.activeElement !== line.input;
+    if (!line.row.hidden) shown += 1;
+  }
+  $('name-editor-state').textContent = changed ? `: ${plural(changed, 'name')} changed` : '';
+  previewReplace(shown);
+}
+
+/** Open the editor on the sequences of one gene name. */
+function showNameEditor(named) {
+  $('name-show').value = '';
+  $('name-filter').value = named;
+  $('name-editor').open = true;
+  updateNameEditor();
+  $('name-editor').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+/** What "find and replace" would do to the names shown: [first, next] pairs,
+ *  or an error message for a pattern that cannot be read. */
+function replacements() {
+  const form = new FormData($('name-replace'));
+  const find = String(form.get('find') || '');
+  if (!find) return [];
+  let pattern;
+  try {
+    pattern = form.get('regex') ? new RegExp(find, 'g') : null;
+  } catch (error) {
+    return `That is not a valid regular expression: ${error.message}`;
+  }
+  const out = [];
+  for (const [first, line] of editor.lines) {
+    if (line.row.hidden) continue;
+    const now = names.renames[first] || first;
+    const next = (pattern ? now.replace(pattern, String(form.get('replace') || '')) : now.split(find).join(String(form.get('replace') || ''))).trim().split(/\s/)[0];
+    if (next && next !== now) out.push([first, next]);
+  }
+  return out;
+}
+
+function previewReplace(shown) {
+  const planned = replacements();
+  $('name-replace-preview').textContent = typeof planned === 'string' ? planned
+    : new FormData($('name-replace')).get('find') ? `${plural(planned.length, 'name')} of the ${shown ?? [...editor.lines.values()].filter((l) => !l.row.hidden).length} shown would change${planned.length ? `, for example ${names.renames[planned[0][0]] || planned[0][0]} to ${planned[0][1]}` : ''}.` : '';
+}
+
+function wireNameEditor() {
+  for (const id of ['name-show', 'name-filter']) $(id).addEventListener('input', updateNameEditor);
+  $('name-replace').addEventListener('input', () => previewReplace());
+  $('name-replace').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const planned = replacements();
+    if (typeof planned === 'string' || !planned.length) return;
+    // All or nothing: two sequences must not end up with one name.
+    const after = new Map(names.alleles.map((a) => [original(a.name) || a.name, a.name]));
+    for (const [first, next] of planned) after.set(first, next);
+    const taken = new Set();
+    for (const name of after.values()) {
+      if (taken.has(name)) {
+        $('check-error').textContent = `Nothing was replaced: two sequences would both be called ${name}.`;
+        $('check-error').hidden = false;
+        return;
+      }
+      taken.add(name);
+    }
+    $('check-error').hidden = true;
+    for (const [first, next] of planned) {
+      const now = names.renames[first] || first;
+      if (now in names.mapping) {
+        names.mapping[next] = names.mapping[now];
+        delete names.mapping[now];
+      }
+      if (next === first) delete names.renames[first];
+      else names.renames[first] = next;
+    }
+    keepNames();
+    askCheck();
+  });
 }
 
 /** The check of the file: how its names connect to the gene list. Called
@@ -508,11 +638,14 @@ function renderCheck(result) {
   $('check-map').replaceChildren(el('section', { class: 'map', 'aria-label': 'How the names of your file match the gene list' },
     el('h3', { class: 'plan-title', text: 'How the names of your file match the gene list' }),
     el('p', { class: 'map-tallies' }, 'Alleles: ', tally),
+    of('rule').length ? el('p', { class: 'map-note' }, el('b', { text: 'Some names were redirected for you. ' }),
+      `${[...new Set(of('rule').map((g) => g.named))].join(', ')}: the gene list has no gene of ${new Set(of('rule').map((g) => g.named)).size === 1 ? 'this name' : 'these names'}, but it knows the alleles under other gene names, shown below. Check that this is what you mean; you can redirect a line or correct the names.`) : null,
     shown.length ? el('div', { class: 'scroll' }, el('table', { class: 'map-table' }, head, el('tbody', {}, shown.flatMap((g) => mappingRow(g, sources))))) : null,
     open.length ? el('p', { class: 'map-open' }, `${plural(allelesOf(open), 'allele')} not matched: without a choice they are reported as "not placed". `,
       el('button', { type: 'button', class: 'ghost', text: 'Find all of them by sequence', onclick: () => { for (const g of open) decide(g, BY_SEQUENCE); } })) : null,
     same.length ? el('details', { class: 'fold', open: shown.length ? null : true }, el('summary', { text: `${plural(same.length, 'name')} found in the gene list as written (${plural(allelesOf(same), 'allele')})` }),
       el('div', { class: 'scroll map-same' }, el('table', { class: 'map-table' }, head.cloneNode(true), el('tbody', {}, same.flatMap((g) => mappingRow(g, sources)))))) : null));
+  updateNameEditor();
   $('check-run').disabled = false;
   $('check-run').textContent = open.length ? `Run the analysis (${plural(allelesOf(open), 'allele')} not matched)` : 'Run the analysis';
 }
@@ -1561,6 +1694,7 @@ function wire() {
 
 wire();
 wireGeneList();
+wireNameEditor();
 // The worker is started with the page, so the analysis module is loaded
 // and the stored data counted before the first file is dropped.
 startWorker();

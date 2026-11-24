@@ -276,7 +276,9 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 .plan-card h3 { margin: 0 0 0.5rem; font-size: 0.98rem; display: flex; justify-content: space-between; gap: 0.8rem; align-items: baseline; flex-wrap: wrap; }
 .plan-card h3 small { font-weight: 400; color: var(--muted); }
 .plan-card p { margin: 0 0 0.5rem; font-size: 0.86rem; }
-.plan-none { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.plan-none { background: color-mix(in srgb, var(--confirm) 9%, transparent); border-color: color-mix(in srgb, var(--confirm) 55%, transparent); }
+.plan-none h3 { color: var(--confirm); }
+.plan-warn { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--confirm); color: var(--surface); font-size: 0.8rem; font-weight: 800; }
 .plan-sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
 .plan-sources li { display: grid; grid-template-columns: 1fr auto; column-gap: 0.8rem; align-items: baseline; font-size: 0.92rem; }
 .plan-sources small { grid-column: 1 / -1; font-size: 0.8rem; line-height: 1.5; }
@@ -332,3 +334,22 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 .people .zero th, .people .zero td { color: var(--muted); }
 .people .bar-fill { height: 0.6rem; }
 .aln-more { color: var(--accent); font-weight: 600; }
+
+.map-rule { display: block; font-weight: 400; color: var(--inconclusive); margin-top: 0.15rem; white-space: normal; max-width: 26rem; }
+.m-rule .map-how { color: var(--inconclusive); font-weight: 600; }
+.map-note { border: 1px solid color-mix(in srgb, var(--inconclusive) 50%, transparent); background: color-mix(in srgb, var(--inconclusive) 9%, transparent); border-radius: 10px; padding: 0.6rem 0.8rem; font-size: 0.9rem; margin: 0 0 0.7rem; }
+.name-rows { max-height: 26rem; overflow: auto; }
+.name-rows thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.name-rows td { padding: 0.3rem 0.7rem 0.3rem 0; }
+.name-rows input { font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.3rem 0.5rem; }
+.name-rows select { font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.25rem 0.4rem; max-width: 14rem; }
+.name-status { white-space: nowrap; font-size: 0.88rem; }
+.name-mark { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; border-radius: 50%; margin-right: 0.4rem; font-size: 0.78rem; font-weight: 800; color: var(--surface); background: var(--supported); }
+.name-mark.k-none { background: var(--confirm); }
+.name-mark.k-rule, .name-mark.k-sequence { background: var(--inconclusive); }
+.name-mark.k-out { background: var(--grey); }
+tr.n-none input { border-color: var(--confirm); }
+tr.n-none .name-status { color: var(--confirm); font-weight: 600; }
+tr.n-changed input { border-color: var(--supported); background: color-mix(in srgb, var(--supported) 8%, var(--surface)); }
+tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(in srgb, var(--confirm) 8%, var(--surface)); }
+#name-replace-preview { flex-basis: 100%; }

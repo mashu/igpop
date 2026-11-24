@@ -65,6 +65,22 @@
       <p id="check-error" class="check-error" role="alert" hidden></p>
       <div id="check-evidence"></div>
       <div id="check-map"></div>
+      <details id="name-editor" class="fold">
+        <summary>Correct the names of your sequences<span id="name-editor-state"></span></summary>
+        <p class="muted">A name is "gene*allele", for example IGHV1-69*01, and the gene must be in the gene list. Names you correct here are used for this run; your file is not changed. The list stays in the order of your file while you edit, and each line shows at once whether its name now leads to a gene.</p>
+        <div class="toolbar">
+          <label>Show <select id="name-show"><option value="">all sequences</option><option value="open">not matched</option><option value="changed">changed by you</option></select></label>
+          <label>Names containing <input id="name-filter" type="search" size="16" placeholder="IGHV4-4"></label>
+        </div>
+        <form id="name-replace" class="gene-add">
+          <label>Find <input name="find" size="16" placeholder="IGHV4-4\*0[789]" spellcheck="false"></label>
+          <label>Replace with <input name="replace" size="16" placeholder="IGHV4-4A*07" spellcheck="false"></label>
+          <label class="check"><input name="regex" type="checkbox"> Regular expression</label>
+          <button type="submit" class="ghost">Replace in the names shown</button>
+          <span id="name-replace-preview" class="muted" aria-live="polite"></span>
+        </form>
+        <div class="scroll name-rows"><table id="name-table"></table></div>
+      </details>
       <details id="gene-editor" class="fold">
         <summary>Gene list: <span id="gene-editor-state"></span></summary>
         <p class="muted">The gene list says where each gene lies on the reference genome. An allele is matched to a gene by the part of its name before <code>*</code>. Add a gene, remove one, or load your own list (tab-separated: gene, build, contig, start, end, strand). Your list is kept in this browser.</p>
