@@ -492,6 +492,10 @@ impl HaplotypeCheck {
 }
 
 /// Everything concluded about one allele.
+/// Filter of an allele whose variants pass but whose sequence the phased
+/// panel does not have.
+pub const SEQUENCE_NOT_IN_PANEL: &str = "sequence_not_in_panel";
+
 pub struct AlleleResult<'a> {
     pub placed: &'a Placed,
     /// Named as trusted (by `--trusted` or the candidate marker).
@@ -522,11 +526,14 @@ impl AlleleResult<'_> {
 
     /// Which evidence makes the allele `supported`.
     pub fn supported_by(&self) -> &'static str {
+        if self.verdict != Verdict::Supported {
+            return ".";
+        }
         match (self.by_frequency == Verdict::Supported, self.haplotype_support.is_some()) {
             (true, true) => "frequency+haplotype",
             (true, false) => "frequency",
-            (false, true) if self.verdict == Verdict::Supported => "haplotype",
-            _ => ".",
+            (false, true) => "haplotype",
+            (false, false) => ".",
         }
     }
 
@@ -560,11 +567,20 @@ impl AlleleResult<'_> {
                 (k > 0).then(|| format!("{}:{k}", f.as_str()))
             })
             .collect();
+        if self.contradicted() {
+            return SEQUENCE_NOT_IN_PANEL.to_string();
+        }
         if parts.is_empty() {
             ".".to_string()
         } else {
             parts.join(",")
         }
+    }
+
+    /// Supported by the frequencies of its variants, yet the phased panel,
+    /// which has every one of them, has the exact sequence on no chromosome.
+    pub fn contradicted(&self) -> bool {
+        self.by_frequency == Verdict::Supported && self.verdict == Verdict::Inconclusive
     }
 
     pub fn hap_status(&self) -> &'static str {
@@ -613,8 +629,24 @@ pub fn assess_allele<'a>(
         by_frequency,
         Verdict::Inconclusive | Verdict::NeedsConfirmation | Verdict::NotAssessed
     );
-    let (verdict, reason) = match &haplotype.support {
-        Some(h) if undecided => (
+    // The reverse also holds: frequencies show that each variant exists, not
+    // that they occur together. A complete lookup that finds the sequence on
+    // no phased chromosome leaves the combination unsupported.
+    let absent = haplotype
+        .assessment
+        .as_ref()
+        .and_then(|a| a.exact.as_ref())
+        .map(hap::total)
+        .filter(|exact| exact.ac == 0);
+    let (verdict, reason) = match (&haplotype.support, absent) {
+        (_, Some(exact)) if by_frequency == Verdict::Supported => (
+            Verdict::Inconclusive,
+            format!(
+                "every variant has population support, but none of the {} phased chromosomes has this exact sequence",
+                exact.an
+            ),
+        ),
+        (Some(h), _) if undecided => (
             Verdict::Supported,
             format!(
                 "exact sequence on {} chromosomes of {} people in the phased panel; by frequency alone: {frequency_reason}",

@@ -81,6 +81,21 @@ purpose: they join the named trusted alleles as the yardstick of the
 [score](calibration.md), because they are real alleles found by the data,
 rare ones included.
 
+## When the check speaks against an allele
+
+Frequencies are counted one difference at a time. They can show that every
+difference of an allele exists in people; they cannot show that the
+differences occur together. A chimera of two real alleles, made in a PCR
+reaction, consists only of real variants.
+
+So when the panel has every difference of an allele and still no
+chromosome with exactly its sequence (`found_with_extra` or `not_found`),
+an allele that would be supported by frequency is reported as
+`inconclusive`, with the filter `sequence_not_in_panel`. Among 324
+artificial chimeras of two database alleles of the same gene, 56 could be
+looked up; 22 of them were on no chromosome, and none of those is reported
+as supported.
+
 ## What the haplotype check cannot do
 
 - **It often has no answer.** The phased panel contains only sites that

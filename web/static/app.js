@@ -44,6 +44,7 @@ const FILTERS = {
   low_score: 'low score',
   intermediate_score: 'intermediate score',
   not_scored: 'not scored (insertion or deletion)',
+  sequence_not_in_panel: 'each difference is known, but no phased chromosome has this exact sequence',
   no_coordinates: 'no coordinates for its gene',
   low_identity: 'too different from its gene',
 };
