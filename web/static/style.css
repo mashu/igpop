@@ -438,3 +438,18 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .people-tip { min-width: min(24rem, calc(100vw - 48px)); }
 .tip-none { max-width: 30rem; }
 @media (max-width: 520px) { .tip-rows { grid-template-columns: 1fr max-content; } .tip-track { display: none; } .tip-count { grid-column: 1; text-align: left; } }
+
+/* ---- progress, source by source ---- */
+.sources { width: 100%; max-width: 54rem; margin: 0.9rem 0 0; font-size: 0.9rem; border-collapse: collapse; }
+.sources th, .sources td { padding: 0.28rem 0.9rem 0.28rem 0; border: 0; text-align: left; vertical-align: middle; }
+.sources th { font-weight: 500; white-space: nowrap; color: var(--muted); }
+.sources tr.active th, .sources tr.complete th { color: var(--ink); }
+.sources td:nth-child(2) { width: 34%; min-width: 7rem; }
+.sources .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.source-track { display: flex; gap: 2px; height: 0.5rem; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.source-track i { display: block; height: 100%; transition: width 0.25s ease; }
+.source-track i.kept { background: color-mix(in srgb, var(--accent) 45%, var(--grey)); }
+.source-track i.new { background: var(--accent); }
+.source-track i[style="width:0%"] { display: none; }
+@media (max-width: 640px) { .sources td:last-child { display: none; } }
+.sources td:last-child { white-space: nowrap; }

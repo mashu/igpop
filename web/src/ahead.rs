@@ -124,8 +124,18 @@ async fn file(url: String, regions: Vec<Region>) -> Result<()> {
                 let (so_far, kept, total) = done.get();
                 let kept = kept + usize::from(matches!(result, Ok(true)));
                 done.set((so_far + 1, kept, total));
-                // One line per region, in a form the page turns into a bar.
-                note!("progress: {} of {total} regions ready, {kept} kept from an earlier run", so_far + 1);
+                let how = match result {
+                    Ok(true) => "kept",
+                    Ok(false) => "downloaded",
+                    Err(_) => "failed",
+                };
+                // One line per region, in a form the page turns into bars:
+                // the totals of the run, then this region and its file.
+                note!(
+                    "progress: {} of {total} regions ready, {kept} kept from an earlier run ({how} {})",
+                    so_far + 1,
+                    index.spec()
+                );
             });
             result.map(|_| ())
         })
@@ -154,6 +164,10 @@ pub async fn download(downloads: Vec<Download>) {
         return;
     }
     DONE.with(|done| done.set((0, 0, regions)));
+    // What is to come, per file, so that the page can show each source.
+    for file in servers.values().flatten() {
+        note!("plan: {} regions of {}", file.regions.len(), file.url);
+    }
     note!(
         "downloading {regions} regions from {} servers, up to {PER_SERVER} at a time per server",
         servers.len()
