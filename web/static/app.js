@@ -167,14 +167,16 @@ function showStored(bytes) {
 // of the analysis module that announce each of them.
 const STEPS = [
   { id: 'place', label: 'Placing alleles on their genes', now: 'Reading the reference sequence of each gene and aligning your alleles to it.', starts: /reference:|^aligning/ },
-  { id: 'download', label: 'Fetching population data', now: 'Downloading the regions of your genes from 1000 Genomes and dbSNP.', starts: /^downloading|^progress:/ },
+  { id: 'download', label: 'Fetching population data', now: 'Fetching the regions of your genes from 1000 Genomes, gnomAD and dbSNP.', starts: /^downloading|^progress:/ },
   { id: 'read', label: 'Reading frequencies and haplotypes', now: 'Looking up every difference in the population data.', starts: /^(1kGP|gnomAD|dbSNP|phased panel)/ },
   { id: 'judge', label: 'Judging the alleles', now: 'Scoring every difference and writing the results.', starts: /^score:/ },
 ];
-const run = { step: -1, started: 0, timer: null };
+const run = { step: -1, started: 0, timer: null, sources: new Map() };
 
 function startProgress() {
   run.step = -1;
+  run.sources = new Map();
+  $('sources').hidden = true;
   run.started = Date.now();
   $('steps').replaceChildren(...STEPS.map((step, i) => el('li', { id: `step-${step.id}` },
     el('span', { class: 'step-mark', 'aria-hidden': 'true', text: String(i + 1) }), el('span', { text: step.label }))));
@@ -216,31 +218,89 @@ function setBar(share) {
   if (share == null) bar.firstElementChild.style.width = '';
 }
 
+/** The source a data file belongs to, in the words of the results. */
+function sourceOf(url) {
+  const u = url.toLowerCase();
+  if (u.includes('gnomad')) return /2\.1/.test(u) ? 'gnomAD v2.1 (GRCh37)' : 'gnomAD v4.1';
+  if (/\/snp\/|gcf_/.test(u)) return u.includes('gcf_000001405.25') ? 'dbSNP (GRCh37)' : 'dbSNP';
+  if (u.includes('phase3')) return '1000 Genomes phase 3 (GRCh37)';
+  if (u.includes('phased')) return 'Phased chromosomes of 1000 Genomes';
+  if (/1000g|1000genomes/.test(u)) return '1000 Genomes, 30x';
+  return url.split('/').pop();
+}
+
+/** The table of sources under the bar: how far each one is, and how much
+ *  of it was already in the browser. */
+function renderSources() {
+  const table = $('sources');
+  table.hidden = !run.sources.size || run.step !== 1;
+  table.tBodies[0].replaceChildren(...[...run.sources].map(([name, s]) => {
+    const done = s.kept + s.downloaded + s.failed;
+    const state = !done ? 'waiting'
+      : [s.downloaded ? `${s.downloaded} downloaded` : '', s.kept ? `${s.kept} already in this browser` : '', s.failed ? `${s.failed} to be read later` : ''].filter(Boolean).join(', ');
+    return el('tr', { class: done >= s.total ? 'complete' : done ? 'active' : '' },
+      el('th', { scope: 'row', text: name }),
+      el('td', {}, el('span', { class: 'source-track', role: 'img', 'aria-label': `${done} of ${s.total} regions` },
+        el('i', { class: 'kept', style: `width:${(100 * s.kept) / s.total}%` }),
+        el('i', { class: 'new', style: `width:${(100 * (s.downloaded + s.failed)) / s.total}%` }))),
+      el('td', { class: 'num', text: `${done} of ${s.total}` }),
+      el('td', { class: 'muted', text: state }));
+  }));
+}
+
+// The lines of the analysis module in the words of the page. A line that
+// matches nothing is shown as it is, without addresses.
+const STEP_WORDS = [
+  [/^(\S+) reference: .*/, (m) => `Reference genome ${m[1]}`],
+  [/^aligning (\d+) alleles to (\d+) loci on (\S+)/, (m) => `${m[1]} alleles aligned to ${m[2]} genes on ${m[3]}`],
+  [/^finding the gene of (\d+) alleles by sequence/, (m) => `Gene of ${m[1]} alleles found by sequence`],
+  [/^downloading (\d+) regions from (\d+) servers.*/, (m) => `Population data for ${m[1]} regions of the genome`],
+  [/^phased panel: .*/, () => 'Phased chromosomes read'],
+  [/^(1kGP\w*|gnomAD\S*|dbSNP): .*/, (m) => `${sourceTitle(m[1])} read`],
+  [/^(\d+) founders, (\d+) haplotypes/, (m) => `${Number(m[2]).toLocaleString('en')} chromosomes of ${Number(m[1]).toLocaleString('en')} unrelated people`],
+  [/^(\d+) regions, (\d+) from cache/, (m) => `${m[1]} regions`],
+  [/^score: calibrated from (.*)/, (m) => `Score calibrated from ${m[1].replace(/^this run: /, '')}`],
+];
+
 function logLine(message) {
+  const planned = message.match(/^plan: (\d+) regions of (\S+)/);
+  if (planned) {
+    const name = sourceOf(planned[2]);
+    const source = run.sources.get(name) || { total: 0, kept: 0, downloaded: 0, failed: 0 };
+    source.total += Number(planned[1]);
+    run.sources.set(name, source);
+    return;
+  }
   const text = message.replace(/https?:\/\/\S+\/([^/\s]+)/g, '$1');
   const step = STEPS.findIndex((s) => s.starts.test(text.trim()));
   if (step >= 0) setStep(step);
-  const counted = text.match(/^progress: (\d+) of (\d+)(?: regions ready, (\d+) kept)?/);
+  const counted = message.match(/^progress: (\d+) of (\d+)(?: regions ready, (\d+) kept[^(]*(?:\((kept|downloaded|failed) (\S+)\))?)?/);
   if (counted) {
-    // One line per region: shown as the bar, not as text.
+    // One line per region: shown as bars, not as text.
     const [done, total, kept] = [Number(counted[1]), Number(counted[2]), Number(counted[3] || 0)];
+    const source = counted[5] && run.sources.get(sourceOf(counted[5]));
+    if (source) source[counted[4]] += 1;
     if (run.step === 1) {
       setBar(done / total);
       $('progress-now').textContent = `${done} of ${total} regions ready: ${done - kept} downloaded, ${kept} already in this browser.`;
+      renderSources();
     }
     return;
   }
+  if (run.step !== 1) $('sources').hidden = true;
   const dataset = text.match(/^(1kGP\w*|gnomAD\S*|dbSNP|phased panel):/);
-  if (dataset && run.step === 2) $('progress-now').textContent = `Reading ${dataset[1].replace('1kGP', '1000 Genomes ').replace('_', ' ')}.`;
+  if (dataset && run.step === 2) $('progress-now').textContent = `Reading ${dataset[1] === 'phased panel' ? 'the phased chromosomes' : sourceTitle(dataset[1])}.`;
   const aligning = text.match(/^aligning (\d+) alleles to (\d+) loci on (\S+)/);
   if (aligning && run.step === 0) $('progress-now').textContent = `Aligning ${aligning[1]} alleles to ${aligning[2]} genes on ${aligning[3]}.`;
+  const worded = STEP_WORDS.map(([pattern, words]) => [text.trim().match(pattern), words]).find(([match]) => match);
+  const line = worded ? worded[1](worded[0]) : text.trim();
   const log = $('log');
   const last = log.lastElementChild;
   if (text.startsWith('  ') && last) {
-    last.append(el('small', { text: ` ${text.trim()}` }));
+    last.append(el('small', { text: `: ${line}` }));
   } else {
     if (last) last.classList.add('done');
-    log.append(el('li', { text }));
+    log.append(el('li', { text: line }));
   }
   log.scrollTop = log.scrollHeight;
 }
@@ -1404,7 +1464,8 @@ function whyScore(v) {
       ? `On the curve of this run, a base with this support is ${score >= 1 ? `${scoreText(score)} times more typical of the variants of real alleles than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of the variants of real alleles`}: a score of ${scoreText(score)}.${known}`
       : `${model ? `${pct(1 - model.seenShare)} of all possible single-base changes in these genes have never been seen either, but ${model.counts.trusted - model.counts.trusted_seen === 0 ? 'none' : model.counts.trusted - model.counts.trusted_seen} of the ${model.counts.trusted} variants of real alleles. ` : ''}That gives a score of ${scoreText(score)}.${known}`);
     if (given(v.chance) && support > 0) steps.push(`How often does chance do as well? Of all ${model ? model.counts.arbitrary.toLocaleString('en') : ''} single-base changes that are possible in the genes of the run, ${pct(Number(v.chance))} are supported at least as well as this one.`);
-  } else steps.push('Insertions and deletions get no score, because the comparison with arbitrary changes is made for single-base changes only.');
+    if (v.score_basis === 'borrowed') steps.push('This is an insertion or deletion. The curve is made from single-base changes, so the score is borrowed from it and is a lower bound: random insertions and deletions turn up in population data far more rarely than random base changes, so the same support counts at least as much.');
+  } else steps.push(v.type === 'SNV' ? 'No score could be given.' : 'No score: the curve is made from single-base changes and is borrowed for insertions and deletions only as a lower bound. For this support the bound is below 1 and says nothing, so the verdict rests on whether the change was seen at all.');
   if (v.class === 'common') steps.push(given(v.class_basis) && v.class_basis !== 'dbSNP:COMMON'
     ? `Apart from the score, a test shows that the frequency reaches 1% in ${stratumWords(v.class_basis)}${given(v.class_p) ? ` (p = ${Number(v.class_p).toPrecision(2)} after correction for the number of populations)` : ''}. A common variant is supported whatever its score.`
     : 'dbSNP marks this base as common. A common variant is supported whatever its score.');
@@ -1611,7 +1672,7 @@ function evidencePanel(v) {
 /** The part of the evidence panel that shows what a single-base difference
  *  was compared with, and what its score is worth. */
 function comparison(v) {
-  if (v.type !== 'SNV' || !given(v.score)) return null;
+  if (!given(v.score)) return null;
   const model = scoreModel();
   if (!model) return null;
   const score = Number(v.score);
@@ -1626,6 +1687,7 @@ function comparison(v) {
       ? `Blue dots: the ${model.real.length} distinct single-base variants of the ${model.alleles} alleles (${plural(model.genes, 'gene')}) that this run accepts as real, namely the database alleles and the candidates whose whole sequence was found on several phased chromosomes. Point at a dot to see which variant it is. Grey bars: all ${model.counts.arbitrary.toLocaleString('en')} single-base changes that are possible in the genes of the run, which is what an arbitrary error looks like. The line is the score: how much more typical a support is of the dots than of the bars. It is fitted to all of them at once, so it has no steps.`
       : `The scores of this run come from igpop's built-in curve, because the run has too few established alleles to make its own. The curve was made from ${model.counts.trusted} real variants (blue dots) and ${model.counts.arbitrary.toLocaleString('en')} possible changes (grey bars) in human IGHV genes.`),
     el('div', { class: 'scroll' }, comparisonChart(v)),
+    v.score_basis === 'borrowed' ? el('p', { text: 'This difference is an insertion or deletion, and the picture is made from single-base changes. Its score is read from the same line as a lower bound.' }) : null,
     el('p', {}, `This difference has a score of ${scoreText(score)}. The shaded band shows how well the real variants pin the line down here: between ${scoreText(low)} and ${scoreText(high)}. ${reading}`),
     state.prior
       ? el('p', {}, `With your setting that ${Math.round(100 * state.prior)}% of such differences are real before looking at population data, this one is real with a probability of `, el('b', { text: chanceText(afterEvidence(state.prior, score)) }), ` (between ${chanceText(afterEvidence(state.prior, low))} and ${chanceText(afterEvidence(state.prior, high))}, given how well the score is known).`)
@@ -1727,10 +1789,12 @@ function siteQuality(v) {
 }
 
 function scoreCell(v) {
-  if (!given(v.score)) return el('td', { class: 'num', text: '–', title: 'Insertions and deletions have no score.' });
+  if (!given(v.score)) return el('td', { class: 'num', text: '–', title: v.type === 'SNV' ? 'No score.' : 'No score: for an insertion or deletion seen this rarely the borrowed score says nothing.' });
   const score = Number(v.score);
-  return el('td', { class: 'num' }, explain(el('span', { class: 'hint-value', tabindex: '0', text: scoreText(score) }), el('span', {},
-    el('b', { text: `${scoreText(score)}: ${scoreWords(score)}` }),
+  const borrowed = v.score_basis === 'borrowed';
+  return el('td', { class: 'num' }, explain(el('span', { class: 'hint-value', tabindex: '0', text: `${borrowed ? '\u2265 ' : ''}${scoreText(score)}` }), el('span', {},
+    el('b', { text: `${borrowed ? 'At least ' : ''}${scoreText(score)}: ${scoreWords(score)}` }),
+    borrowed ? el('span', { text: 'Borrowed from the curve of single-base changes, as a lower bound: random insertions and deletions are found in population data far more rarely than random base changes.' }) : null,
     el('span', { text: `A base seen this often is ${score >= 1 ? `${scoreText(score)} times more typical of real variants than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of real variants`}.` }),
     given(v.score_low) ? el('span', { text: `The calibration knows this score to between ${scoreText(Number(v.score_low))} and ${scoreText(Number(v.score_high))}.` }) : null,
     given(v.chance) && number(v.support) > 0 ? el('span', { text: `${pct(Number(v.chance))} of all possible changes are supported at least as well.` }) : null)),

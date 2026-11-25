@@ -33,7 +33,7 @@ How that scores (exactly one):
 |---|---|
 | `low_score` | The score is at most `--confirm-score` (0.1): such support is at least ten times more typical of arbitrary base changes than of variants of trusted alleles. Verdict `needs_confirmation`. |
 | `intermediate_score` | The score lies between the two limits. Verdict `inconclusive`. |
-| `not_scored` | An insertion or deletion; these have no score, the verdict follows the first reason. |
+| `not_scored` | An insertion or deletion seen too rarely for the borrowed score to say anything; the verdict follows the first reason. |
 | `sequence_not_in_panel` | Applies to the whole allele. Every difference passes on its own, and the phased panel has all of them, yet none of its chromosomes carries exactly this sequence. Frequencies show that each difference exists, not that they occur together, so the allele is `inconclusive`. Typical of chimeras of two real alleles. |
 
 Typical pairs:

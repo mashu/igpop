@@ -109,8 +109,12 @@
       <ol id="steps" class="steps"></ol>
       <div class="bar" id="bar" role="progressbar" aria-label="Analysis in progress" aria-valuemin="0" aria-valuemax="100"><i></i></div>
       <p class="now"><span id="progress-now" aria-live="polite"></span> <span id="progress-time" class="muted"></span></p>
+      <table id="sources" class="sources" hidden>
+        <caption class="sr">Population data, source by source</caption>
+        <tbody></tbody>
+      </table>
       <details class="log-details">
-        <summary>Show every step</summary>
+        <summary>Steps so far</summary>
         <ol id="log" class="log"></ol>
       </details>
     </section>

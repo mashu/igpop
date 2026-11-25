@@ -453,3 +453,40 @@ fn load_panel(spec: &str, pedigree: &str, regions: &[Region], cache: Cache) -> R
     }
     Ok(panel)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An rsID and its frequencies belong to one exact change. A base
+    /// change recorded at the position of a deletion is another variant,
+    /// and of a record with several alternate alleles only the one that
+    /// is the same change counts.
+    #[test]
+    fn dbsnp_matches_the_exact_change_only() {
+        let mut db = Dbsnp::default();
+        db.add_line("chr14", "NC_000014.9\t106185188\trs1\tG\tA\t.\t.\tRS=1;VC=SNV;FREQ=TOPMED:0.5,0.5");
+        db.add_line(
+            "chr14",
+            "NC_000014.9\t106185188\trs2\tGAAC\tG\t.\t.\tRS=2;VC=DEL;FREQ=TOPMED:0.99,0.01",
+        );
+        // The repeat written out in full, as dbSNP does: three alleles.
+        db.add_line(
+            "chr14",
+            "NC_000014.9\t106116762\trs3\tAACTACT\tA,AACT,AACTACTACT\t.\t.\tRS=3;VC=INDEL;FREQ=TOPMED:0.9,0.01,0.02,0.07",
+        );
+        let at = |pos: u64, r: &str, a: &str| ("chr14".to_string(), (pos, r.as_bytes().to_vec(), a.as_bytes().to_vec()));
+        let rs = |pos, r, a| db.rsids.get(&at(pos, r, a)).map(String::as_str);
+        // The deletion of AAC after 106185188 is rs2, never the base change rs1.
+        assert_eq!(rs(106185188, "GAAC", "G"), Some("rs2"));
+        assert_eq!(rs(106185188, "G", "A"), Some("rs1"));
+        assert_eq!(db.freqs[&at(106185188, "GAAC", "G")], vec![("TOPMED".to_string(), 0.01)]);
+        // Another deletion at the same place has no record at all.
+        assert_eq!(rs(106185188, "GA", "G"), None);
+        // One repeat unit more, one less, two less: each its own allele.
+        assert_eq!(db.freqs[&at(106116762, "A", "AACT")], vec![("TOPMED".to_string(), 0.07)]);
+        assert_eq!(db.freqs[&at(106116762, "AACT", "A")], vec![("TOPMED".to_string(), 0.02)]);
+        assert_eq!(db.freqs[&at(106116762, "AACTACT", "A")], vec![("TOPMED".to_string(), 0.01)]);
+        assert_eq!(rs(106116762, "A", "C"), None);
+    }
+}

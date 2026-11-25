@@ -27,6 +27,16 @@ inside your browser tab:
 The page can also display results of the command-line program: drop the
 `.alleles.tsv` and `.variants.tsv` files (and any of the others) on it.
 
+## While it runs
+
+The page shows four steps. During the second, "Fetching population data",
+each source has its own line: how many of its regions are ready, how many
+were downloaded now and how many were already in this browser from an
+earlier run. A source that is new to the browser (gnomAD after an update,
+or the data of genes not analysed before) downloads in full while the
+others are taken from the browser. "Steps so far" lists what has been
+done.
+
 ## Differences from the command line
 
 - **gnomAD comes from its copy at Amazon.** Browsers may only read from

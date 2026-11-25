@@ -156,6 +156,14 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
             }
         })
         .col("score", |r: &R| r.v.score.map_or(".".to_string(), |x| format!("{x:.3}")))
+        .col("score_basis", |r: &R| {
+            match (r.v.score, r.v.score_borrowed) {
+                (None, _) => ".",
+                (Some(_), false) => "curve",
+                (Some(_), true) => "borrowed",
+            }
+            .to_string()
+        })
         .col("score_low", |r: &R| {
             r.v.score_interval.map_or(".".to_string(), |x| format!("{:.3}", x.0))
         })
