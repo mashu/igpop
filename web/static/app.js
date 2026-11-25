@@ -1941,7 +1941,31 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     return parts;
   };
   const marker = el('div', { class: 'aln-column', hidden: true });
-  const seqs = el('div', { class: 'aln-seqs', style: `width:${columns}ch` }, marker,
+  // A band over the columns of one region: shown while the pointer is on
+  // its label, and kept when the label is clicked.
+  const band = el('div', { class: 'aln-band', hidden: true });
+  let pinned = null;
+  const showBand = (region) => {
+    band.hidden = !region;
+    if (region) Object.assign(band.style, { left: `${region[1]}ch`, width: `${region[2] - region[1] + 1}ch` });
+  };
+  for (const [i, label] of (regionLine || []).slice(1).entries()) {
+    const region = regions[i];
+    Object.assign(label, { tabIndex: 0 });
+    label.setAttribute('role', 'button');
+    label.setAttribute('aria-pressed', 'false');
+    label.addEventListener('mouseenter', () => showBand(region));
+    label.addEventListener('mouseleave', () => showBand(pinned));
+    const toggle = (event) => {
+      event.stopPropagation();
+      pinned = pinned === region ? null : region;
+      for (const other of regionLine.slice(1)) other.setAttribute('aria-pressed', String(other === label && pinned === region));
+      showBand(pinned);
+    };
+    label.addEventListener('click', toggle);
+    label.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(event); } });
+  }
+  const seqs = el('div', { class: 'aln-seqs', style: `width:${columns}ch` }, marker, band,
     line('', 'aln-ruler', numbers.join('')), line('', 'aln-ruler', ruler),
     regionLine ? line('', 'aln-ruler aln-regions', regionLine) : null,
     names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '',
@@ -2048,7 +2072,7 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     own ? el('p', { class: 'muted', text: `${alleleName}: ${own.replace(/\s{2,}/g, ', ')}.` }) : null,
     el('p', { class: 'aln-where', text: aln.title.replace(/\s{2,}/g, ' · ') }),
     grid, tip,
-    regions ? el('p', { class: 'muted aln-foot', text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the three conserved residues of a V gene (two cysteines and a tryptophan) and can be off by a codon or two from the IMGT definition. A V gene holds only the first few bases of CDR3; the rest of it comes from the D and J genes and the joints between them, so it is not in a germline allele.' }) : null);
+    regions ? el('p', { class: 'muted aln-foot', text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the three conserved residues of a V gene (two cysteines and a tryptophan) and can be off by a codon or two from the IMGT definition. Point at a region to see its columns, or click it to keep them highlighted. A V gene holds only the first few bases of CDR3; the rest of it comes from the D and J genes and the joints between them, so it is not in a germline allele.' }) : null);
 }
 
 // ---- score and checks ------------------------------------------------------
