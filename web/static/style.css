@@ -360,19 +360,25 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 /* ---- what a difference was compared with ---- */
 .example { margin: 0.9rem 0 0; font-size: 0.95rem; }
 .evidence-part:nth-child(4) { grid-column: 1 / -1; }
-.compare { width: 100%; max-width: 760px; min-width: 560px; height: auto; display: block; margin: 0.4rem 0; }
-.compare .level { fill: color-mix(in srgb, var(--ink) 4%, transparent); }
-.compare .level.mine { fill: color-mix(in srgb, var(--accent) 16%, transparent); stroke: var(--accent); stroke-width: 1; }
-.compare .level-name { font-size: 9.5px; fill: var(--muted); }
-.compare .level-score { font-size: 10.5px; font-weight: 700; fill: var(--ink); }
-.compare .level-score.s-high { fill: var(--supported); }
-.compare .level-score.s-low { fill: var(--confirm); }
+.compare { width: 100%; max-width: 820px; min-width: 600px; height: auto; display: block; margin: 0.4rem 0; }
+.compare .panel { fill: color-mix(in srgb, var(--ink) 3%, transparent); }
+.compare .grid { stroke: var(--line); stroke-width: 1; }
+.compare .base { stroke: var(--line); stroke-width: 1; }
+.compare .limit { stroke-width: 1.2; stroke-dasharray: 5 4; }
+.compare .limit.high { stroke: var(--supported); }
+.compare .limit.low { stroke: var(--confirm); }
+.compare .limit-name { font-size: 10px; fill: var(--muted); }
+.compare .tick, .compare .row-name { font-size: 10px; fill: var(--muted); }
+.compare .axis-name { font-size: 10.5px; fill: var(--muted); }
+.compare .band { fill: var(--accent); opacity: 0.16; }
+.compare .curve { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .compare .real { fill: var(--accent); }
 .compare .arbitrary { fill: var(--grey); opacity: 0.75; }
-.compare .count { font-size: 9.5px; fill: var(--ink); }
-.compare .count.muted { fill: var(--muted); }
-.compare .this { stroke: var(--confirm); stroke-width: 2; }
-.compare .this-label { font-size: 10px; font-weight: 700; fill: var(--confirm); }
-.belief { border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.9rem; margin-top: 0.6rem; max-width: 760px; }
-.belief label { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; font-size: 0.9rem; }
-.belief input[type=range] { flex: 1 1 14rem; max-width: 22rem; accent-color: var(--accent); }
+.compare .count { font-size: 10px; fill: var(--ink); }
+.compare .this { stroke: var(--ink); stroke-width: 1.5; }
+.compare .this-dot { fill: var(--ink); stroke: var(--surface, #fff); stroke-width: 2; }
+.compare .this-label { font-size: 11px; font-weight: 700; fill: var(--ink); }
+.prior-setting { display: flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; align-items: center; margin: 0.5rem 0 0; font-size: 0.92rem; }
+.prior-setting input[type=number] { width: 4.2rem; }
+.prior-setting .link { font-size: inherit; }
+.probability { display: block; color: var(--muted); font-weight: 400; }

@@ -17,7 +17,8 @@ results/ighv.alleles.tsv             every allele: verdict, why it failed, haplo
 results/ighv.variants.tsv            one row per allele variant, all evidence
 results/ighv.alignments.txt          alignments to read by eye, one block per gene
 results/ighv.alignments.tsv          where each allele was placed
-results/ighv.score_calibration.tsv   the table behind the score
+results/ighv.score_model.tsv         the curve behind the score
+results/ighv.score_levels.tsv        the two groups counted per level of support
 results/ighv.haplotype_calibration.tsv  what a found haplotype is worth
 results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 ```
@@ -42,7 +43,7 @@ results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 |---|---|---|
 | `--candidate-marker` | `_S` | Alleles whose name contains this text are candidates, all others are named trusted. |
 | `--trusted` | none | File of trusted allele names, one per line; replaces the marker rule. |
-| `--calibration` | automatic | Use the `score_calibration.tsv` of an earlier run. See [Automatic calibration](calibration.md). |
+| `--calibration` | automatic | Use the `score_model.tsv` of an earlier run. See [Automatic calibration](calibration.md). |
 | `--common` | `0.01` | Allele frequency a variant must demonstrably reach in some population to be classed `common`. |
 | `--supported-score` | `10` | A variant with at least this score is `supported`. |
 | `--confirm-score` | `0.1` | A variant with at most this score is `needs_confirmation`. |
