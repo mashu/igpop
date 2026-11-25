@@ -525,3 +525,19 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .aln-line .nt { padding: 0; border-radius: 3px; }
 .aln-column { outline: 0; background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 1px 0 0 var(--accent), inset -1px 0 0 var(--accent); }
 .other-end { display: block; color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
+
+/* ---- an opened allele in sections ---- */
+.card-body { padding: 0 1.1rem 1.1rem; }
+.detail-section { padding: 1rem 0 0.2rem; border-top: 1px solid var(--line); }
+.detail-section:first-child { border-top: 0; }
+.detail-section > header { margin-bottom: 0.6rem; }
+.detail-section h4 { margin: 0; font-size: 1.02rem; }
+.detail-section > header p { margin: 0.1rem 0 0; font-size: 0.86rem; }
+.detail-section .reason { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; margin: 0 0 0.4rem; }
+.detail-section .aln, .detail-section .hap { margin-top: 0; }
+.hap-chart { margin: 0.8rem 0 0.4rem; padding: 0.8rem 1rem; border: 1px solid var(--line); border-radius: 10px; max-width: 46rem; }
+.hap-chart h5 { margin: 0; font-size: 0.95rem; }
+.hap-chart p { margin: 0.15rem 0 0.5rem; font-size: 0.88rem; }
+.hap-chart .bars { margin: 0; }
+.other-end { white-space: normal; max-width: 7.5rem; line-height: 1.25; }
+.hap-chart .bars th { white-space: nowrap; }

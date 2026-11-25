@@ -1240,19 +1240,36 @@ function placementNote(allele) {
   return el('p', { class: 'placement-note' }, lines);
 }
 
+/** Why the allele has this verdict and not the next one: the rule, with
+ *  the numbers of its weakest difference. */
+function verdictRule(allele, variants) {
+  if (!['inconclusive', 'needs_confirmation'].includes(allele.verdict) || allele.filters === 'sequence_not_in_panel') return null;
+  const open = variants.filter((v) => v.verdict === allele.verdict);
+  if (!open.length) return null;
+  const weakest = open.reduce((low, v) => (given(v.score) && (!given(low.score) || Number(v.score) < Number(low.score)) ? v : low), open[0]);
+  const name = given(weakest.rsid) ? weakest.rsid : `the ${changeWords(weakest)} at position ${weakest.aln_pos}`;
+  const scored = given(weakest.score) ? `${name} scores ${scoreText(Number(weakest.score))}` : `${name} has no score and ${weakest.class === 'absent' ? 'was never seen' : 'was seen too rarely to tell'}`;
+  const rule = allele.verdict === 'needs_confirmation'
+    ? `A score of ${CONFIRM} or less means the frequency is what an arbitrary base change looks like, so the allele needs confirmation.`
+    : `A score between ${CONFIRM} and ${state.limit} means the frequency cannot tell either way, so the allele is inconclusive.`;
+  return el('p', { class: 'muted', text: `An allele is only as well supported as its weakest difference: ${scored}. ${given(weakest.score) ? rule : ''} The limits are ${CONFIRM} for "needs confirmation" and ${state.limit} for "supported"; the haplotype check can still support an allele whose differences fall short.` });
+}
+
 function alleleDetail(allele) {
-  const parts = [el('p', { class: 'reason', text: allele.reason })];
   const placement = placementNote(allele);
-  if (placement) parts.push(placement);
-  if (given(allele.notes)) parts.push(el('p', { class: 'muted', text: `Keep in mind: ${allele.notes}.` }));
   const variants = state.variants.get(allele.allele_name) || [];
   // Genome position of each difference -> opens its evidence in the table.
   const opened = new Map();
-  if (variants.length) parts.push(variantTable(variants, opened));
+  const parts = [detailSection('Verdict', null,
+    el('p', { class: 'reason' }, badge(allele.verdict), ' ', idWords(allele.reason).replace(/variant\(s\)/g, variants.length === 1 ? 'difference' : 'differences').replace(/\bvariants\b/g, 'differences')),
+    verdictRule(allele, variants),
+    placement,
+    given(allele.notes) ? el('p', { class: 'muted', text: `Keep in mind: ${allele.notes.replace(/difference\(s\)/g, 'differences').replace(' (column kgp_site_qc says why)', '').replace(/1kGP_30x/g, '1000 Genomes 30x').replace(/1kGP_phase3/g, '1000 Genomes phase 3').replace(/gnomAD_v/g, 'gnomAD v')}.` }) : null)];
+  if (variants.length) parts.push(detailSection('Differences from the reference genome', 'Is each difference, taken by itself, carried by people?', variantTable(variants, opened)));
   const hap = haplotypePanel(allele);
   if (hap) parts.push(hap);
   const block = state.alignments.get(allele.gene);
-  if (block) parts.push(alignmentPanel(block, allele.allele_name, opened));
+  if (block) parts.push(detailSection('Alignment', 'Where do the differences lie, and what do the other alleles of the gene have there?', alignmentPanel(block, allele.allele_name, opened)));
   return parts;
 }
 
@@ -1749,7 +1766,7 @@ function variantTable(variants, opened) {
       el('th', { scope: 'row' }, rsLink(v),
         explain(el('span', { class: 'hint-value plain', tabindex: '0' }, el('small', { text: change(v) }), el('small', { text: `${v.contig}:${Number(v.genome_pos).toLocaleString('en')}` })), peoplePopup(v))),
       el('td', {}, v.aln_pos, given(v.aln_pos_genome_strand) && v.aln_pos_genome_strand !== v.aln_pos
-        ? el('small', { class: 'other-end', title: 'The same base counted along the forward strand of the genome, that is, from the other end of the allele. Tools that work on the genome strand, such as IgSNPer, report this number.', text: `${v.aln_pos_genome_strand} on the genome strand` }) : null),
+        ? el('small', { class: 'other-end', title: 'The same base counted along the forward strand of the genome, that is, from the other end of the allele. Tools that work on the genome strand, such as IgSNPer, report this number.', text: `${v.aln_pos_genome_strand} on genome strand` }) : null),
       el('td', {}, badge(v.verdict)),
       el('td', {}, chips(v.filters), siteQuality(v)),
       scoreCell(v),
@@ -1757,7 +1774,7 @@ function variantTable(variants, opened) {
       el('td', {}, button)), detail];
   });
   return el('div', { class: 'scroll' }, el('table', { class: 'variants' },
-    el('caption', { text: 'Differences from the reference genome' }),
+    el('caption', { class: 'sr', text: 'Differences from the reference genome' }),
     el('thead', {}, el('tr', {},
       ...['Variant', 'Position in allele', 'Verdict by frequency', 'Why'].map((h) => el('th', { scope: 'col', text: h })),
       el('th', { scope: 'col' }, 'Score ', hint('What the score means', scoreHint())),
@@ -1803,39 +1820,69 @@ function scoreCell(v) {
 
 // ---- haplotype check -----------------------------------------------------
 
+/** Variant ids of the tables, such as rs1(A>T:163,106805343), in words. */
+const idWords = (text) => text.replace(/([^\s;,(]+)\(([A-Z-]+)>([A-Z-]+):(\d+),\d+\)/g, (_, id, from, to, at) => `${id === '.' ? 'a difference without rsID' : id} (${from} to ${to} at position ${at})`).replace(/;/g, ', ');
+
+/** A part of an opened allele: a heading that says what it is about, a
+ *  line that says what question it answers, and its content. */
+function detailSection(title, question, ...content) {
+  return el('section', { class: 'detail-section' },
+    el('header', {}, el('h4', { text: title }), question ? el('p', { class: 'muted', text: question }) : null),
+    ...content.filter(Boolean));
+}
+
 function haplotypePanel(allele) {
   const info = HAPLOTYPES[allele.hap_status];
   if (!info || allele.hap_status === 'not_checked') return null;
-  const panel = el('div', { class: 'hap' }, el('h4', { text: 'Haplotype check' }), el('p', { text: info.help }));
+  const parts = [el('p', { text: info.help })];
   const which = given(allele.hap_exact) ? 'exact' : given(allele.hap_carrying) ? 'carrying' : null;
-  if (given(allele.hap_untested_str)) {
-    panel.append(el('p', { class: 'muted', text: `Tested ${allele.hap_tested} variants. Not in the phased panel: ${allele.hap_untested_str.replace(/;/g, ', ')}.` }));
+  const [tested, all] = (allele.hap_tested || '').split('/').map(Number);
+  // Which differences the phased panel has as sites, by name.
+  const absent = new Set([...(allele.hap_untested_str || '').matchAll(/,(\d+)\)/g)].map((m) => m[1]));
+  const label = (v) => (given(v.rsid) ? v.rsid : `the ${changeWords(v)} at position ${v.aln_pos}`);
+  const mine = state.variants.get(allele.allele_name) || [];
+  const [inPanel, notInPanel] = [mine.filter((v) => !absent.has(v.genome_pos)).map(label), mine.filter((v) => absent.has(v.genome_pos)).map(label)];
+  const listed = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || '');
+  if (notInPanel.length) {
+    parts.push(el('p', { class: 'muted', text: `The phased panel has ${inPanel.length ? listed(inPanel) : 'none of the differences'} as ${inPanel.length === 1 ? 'a site' : 'sites'}, but not ${listed(notInPanel)}. The panel records only variants found among its own people and kept by its quality filters, so a difference can be seen in other data and still be missing here; how often each one is seen is in the table above.` }));
   }
-  if (!which) return panel;
-  const total = number(allele[`hap_${which}`]);
-  const donors = given(allele.hap_exact_donors) ? `, in ${allele.hap_exact_donors} ${allele.hap_exact_donors === '1' ? 'person' : 'people'}` : '';
-  const caption = which === 'exact'
-    ? `${total} of ${allele.hap_total} founder chromosomes have exactly this sequence${donors}.`
-    : `${total} of ${allele.hap_total} founder chromosomes carry all tested variants.`;
-  const shares = POPS.map((pop) => {
-    const [count, size] = (allele[`hap_${which}_${pop}`] || '0/0').split('/').map(Number);
-    return { pop, count, size, share: size ? count / size : 0 };
-  });
-  const top = Math.max(...shares.map((s) => s.share), 1e-9);
-  panel.append(el('p', { text: caption }),
-    el('table', { class: 'bars' }, el('caption', { class: 'sr', text: 'Carrier chromosomes per superpopulation' }),
-      el('tbody', {}, shares.map((s) => el('tr', {},
-        el('th', { scope: 'row', text: POP_NAMES[s.pop] }),
-        el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * s.share) / top}%` })),
-        el('td', { class: 'num', text: `${s.count} / ${s.size} (${(100 * s.share).toFixed(s.share < 0.01 ? 2 : 1)}%)` }))))));
-  const coincidence = number(allele.hap_coincidence);
-  if (which === 'exact' && total > 0 && coincidence >= 0) {
-    const share = coincidence < 0.0005 ? 'fewer than 1 in 2000' : `${(100 * coincidence).toFixed(coincidence < 0.01 ? 2 : 1)}% of`;
-    panel.append(el('p', { class: 'muted', text: `For comparison: ${share} arbitrary single-base changes of a real chromosome are found on this many chromosomes.` }));
+  if (which) {
+    const total = number(allele[`hap_${which}`]);
+    const donors = given(allele.hap_exact_donors) ? `, in ${allele.hap_exact_donors} ${allele.hap_exact_donors === '1' ? 'person' : 'people'}` : '';
+    // What the bars count: the whole sequence, or only the part that
+    // could be looked up.
+    const title = which === 'exact' ? 'Phased chromosomes with exactly this sequence'
+      : inPanel.length === 1 ? `Phased chromosomes that carry ${inPanel[0]}`
+        : `Phased chromosomes that carry ${listed(inPanel)} together`;
+    const caption = which === 'exact'
+      ? `${total.toLocaleString('en')} of ${Number(allele.hap_total).toLocaleString('en')} chromosomes of unrelated people${donors}.`
+      : `${total.toLocaleString('en')} of ${Number(allele.hap_total).toLocaleString('en')} chromosomes of unrelated people.`;
+    const shares = POPS.map((pop) => {
+      const [count, size] = (allele[`hap_${which}_${pop}`] || '0/0').split('/').map(Number);
+      return { pop, count, size, share: size ? count / size : 0 };
+    });
+    const top = Math.max(...shares.map((s) => s.share), 1e-9);
+    parts.push(el('div', { class: 'hap-chart' },
+      el('h5', { text: title }),
+      el('p', { text: caption }),
+      el('table', { class: 'bars' }, el('caption', { class: 'sr', text: `${title}, per population group` }),
+        el('tbody', {}, shares.map((s) => el('tr', {},
+          el('th', { scope: 'row', text: POP_NAMES[s.pop] }),
+          el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * s.share) / top}%` })),
+          el('td', { class: 'num', text: `${s.count.toLocaleString('en')} of ${s.size.toLocaleString('en')}` }),
+          el('td', { class: 'num', text: `${(100 * s.share).toFixed(s.share < 0.01 ? 2 : 1)}%` }))))),
+      which === 'carrying' ? el('p', { class: 'muted', text: notInPanel.length
+        ? `This counts ${inPanel.length === 1 ? `${inPanel[0]} alone` : 'these differences only'}, not the allele: ${listed(notInPanel)} ${notInPanel.length === 1 ? 'is' : 'are'} not in the panel, so the check cannot say whether a chromosome carries all differences of the allele together.`
+        : 'Chromosomes that carry these differences also carry further variants inside the gene, so none has exactly the sequence of this allele.' }) : null));
+    const coincidence = number(allele.hap_coincidence);
+    if (which === 'exact' && total > 0 && coincidence >= 0) {
+      const share = coincidence < 0.0005 ? 'fewer than 1 in 2000' : `${(100 * coincidence).toFixed(coincidence < 0.01 ? 2 : 1)}% of`;
+      parts.push(el('p', { class: 'muted', text: `For comparison: ${share} arbitrary single-base changes of a real chromosome are found on this many chromosomes.` }));
+    }
+    const p = number(allele.hap_exact_pop_heterogeneity_p);
+    if (which === 'exact' && p < 0.001) parts.push(el('p', { class: 'muted', text: 'The frequency differs clearly between populations: this haplotype is population-specific.' }));
   }
-  const p = number(allele.hap_exact_pop_heterogeneity_p);
-  if (which === 'exact' && p < 0.001) panel.append(el('p', { class: 'muted', text: 'The frequency differs clearly between populations: this haplotype is population-specific.' }));
-  return panel;
+  return detailSection('Haplotype check', 'Does the whole sequence, with all its differences together, exist on single chromosomes of real people?', ...parts);
 }
 
 // ---- alignment -------------------------------------------------------------
@@ -2099,7 +2146,7 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     el('span', { text: 'Point at a column to see what is there; click a difference of the opened allele for its evidence. With the keyboard, the arrow keys jump between the differences of the opened allele (hold Shift to move one base).' }),
     regions ? el('span', { text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the conserved cysteines and tryptophan of a V gene, not from an IMGT alignment, and can be off by a codon or two. A V gene holds only the first bases of CDR3. Point at a region to see its columns; click it to keep them highlighted.' }) : null,
     aln.notes.size ? el('span', { text: 'Inserted bases have no column: they are listed in the table of differences.' }) : null);
-  return el('details', { class: 'aln' }, el('summary', { text: 'Alignment of this gene' }),
+  return el('details', { class: 'aln' }, el('summary', { text: 'Show the alignment of this gene' }),
     el('div', { class: 'aln-head' },
       el('span', { class: 'aln-title' }, el('b', { text: where ? where[1] : aln.title }),
         where ? el('span', { class: 'muted', text: `${where[2]} ${where[3]}:${Number(where[4]).toLocaleString('en')}–${Number(where[5]).toLocaleString('en')}, ${where[6] === '-' ? 'reverse' : 'forward'} strand, ${plural(names.length - 1, 'allele')}` }) : null,
