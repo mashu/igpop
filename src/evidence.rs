@@ -74,6 +74,10 @@ pub struct Dataset {
     pub reason: &'static str,
 }
 
+/// One allele of a dbSNP record with the frequencies reported for it, as
+/// (dataset, frequency).
+type Reported = (Lookup, Vec<(String, f64)>);
+
 /// What dbSNP holds for the regions read.
 #[derive(Default)]
 pub struct Dbsnp {
@@ -81,8 +85,11 @@ pub struct Dbsnp {
     /// Frequencies per variant allele, as (dataset, frequency).
     freqs: HashMap<Lookup, Vec<(String, f64)>>,
     /// Alleles carrying the COMMON flag: of a site with several alternate
-    /// alleles, only the most frequent one.
+    /// alleles, only the most frequent one. Decided in `select`.
     pub common: HashSet<Lookup>,
+    /// Records with the COMMON flag: their alleles, each with the
+    /// frequencies reported for it.
+    flagged: Vec<Vec<Reported>>,
     /// Per dataset: number of records, smallest non-zero frequency.
     seen: HashMap<String, (u64, f64)>,
     /// Decided once all lines are read, largest dataset first.
@@ -108,35 +115,21 @@ impl Dbsnp {
         }
         let alts: Vec<&str> = f[4].split(',').collect();
         let lookup = |alt: &str| (contig.to_string(), freq::trim(pos, f[3].as_bytes(), alt.as_bytes()));
-        if f.get(7).is_some_and(|info| info.split(';').any(|x| x == "COMMON")) {
-            // Frequency of each ALT: from 1000 Genomes if reported there
-            // (the flag is defined on it), otherwise the highest reported.
-            let of_alt = |i: usize| -> f64 {
-                let pick = |name: &str| {
-                    reported
-                        .iter()
-                        .find(|(d, _)| d == name)
-                        .and_then(|(_, v)| v.get(i + 1).copied().flatten())
-                };
-                pick("1000Genomes").or(pick("1000Genomes_30X")).unwrap_or_else(|| {
-                    reported
-                        .iter()
-                        .filter_map(|(_, v)| v.get(i + 1).copied().flatten())
-                        .fold(0.0, f64::max)
-                })
-            };
-            let top = (0..alts.len())
-                .max_by(|a, b| of_alt(*a).total_cmp(&of_alt(*b)).then(b.cmp(a)))
-                .unwrap_or(0);
-            self.common.insert(lookup(alts[top]));
-        }
+        let flagged = f.get(7).is_some_and(|info| info.split(';').any(|x| x == "COMMON"));
+        let mut alleles = Vec::new();
         for (i, alt) in alts.iter().enumerate() {
             let of_alt: Vec<(String, f64)> = reported
                 .iter()
                 .filter_map(|(dataset, values)| values.get(i + 1).copied().flatten().map(|v| (dataset.clone(), v)))
                 .collect();
             self.rsids.insert(lookup(alt), f[2].to_string());
+            if flagged {
+                alleles.push((lookup(alt), of_alt.clone()));
+            }
             self.freqs.insert(lookup(alt), of_alt);
+        }
+        if flagged {
+            self.flagged.push(alleles);
         }
     }
 
@@ -175,6 +168,35 @@ impl Dbsnp {
             .sort_by(|a, b| a.smallest_af.total_cmp(&b.smallest_af).then(a.name.cmp(&b.name)));
         self.used = (0..self.datasets.len()).filter(|i| self.datasets[*i].used).collect();
         self.used.sort_by(|a, b| self.datasets[*a].name.cmp(&self.datasets[*b].name));
+        // dbSNP flags a record, not an allele. The flag is given to the
+        // allele of the record with the highest frequency in any dataset
+        // large enough to show a frequency of `common`: a dataset of a few
+        // people reports half of everything it sees as frequent.
+        let large: HashSet<&str> = self
+            .datasets
+            .iter()
+            .filter(|d| informative(d.chromosomes, common) && !excluded.contains(&d.name))
+            .map(|d| d.name.as_str())
+            .collect();
+        let highest = |freqs: &[(String, f64)]| {
+            freqs
+                .iter()
+                .filter(|(dataset, _)| large.contains(dataset.as_str()))
+                .map(|(_, af)| *af)
+                .fold(0.0, f64::max)
+        };
+        self.common = self
+            .flagged
+            .iter()
+            .filter_map(|alleles| {
+                alleles
+                    .iter()
+                    .map(|(lookup, freqs)| (highest(freqs), lookup))
+                    .filter(|(af, _)| *af > 0.0)
+                    .max_by(|a, b| a.0.total_cmp(&b.0))
+                    .map(|(_, lookup)| lookup.clone())
+            })
+            .collect();
     }
 
     /// The datasets in use, in the order `Stratum::Dbsnp` numbers them.
@@ -488,5 +510,36 @@ mod tests {
         assert_eq!(db.freqs[&at(106116762, "AACT", "A")], vec![("TOPMED".to_string(), 0.02)]);
         assert_eq!(db.freqs[&at(106116762, "AACTACT", "A")], vec![("TOPMED".to_string(), 0.01)]);
         assert_eq!(rs(106116762, "A", "C"), None);
+    }
+
+    /// dbSNP flags a record, not an allele. The flag goes to the allele
+    /// that is most frequent in a dataset of adequate size, not to one
+    /// that a study of a few people happens to report at one half.
+    #[test]
+    fn common_flag_goes_to_the_frequent_allele() {
+        let mut db = Dbsnp::default();
+        // Sizes of the studies, as other records reveal them.
+        db.add_line("chr14", "NC_000014.9\t1\trs9\tA\tC\t.\t.\tRS=9;FREQ=1000Genomes_30X:0.9998,0.000156|TOMMO:0.9999,0.0000129|GoESP:0.9999,0.0000772|GnomAD_genomes:0.9999,0.0000067");
+        db.add_line(
+            "chr14",
+            "NC_000014.9\t106714751\trs1\tG\tA,C\t.\t.\tRS=1;FREQ=1000Genomes_30X:0.9861,0.0139,.|SGDP_PRJ:0.5,.,0.5|TOMMO:0.9553,0.04469,.;COMMON",
+        );
+        // The frequent allele has no 1000 Genomes frequency at all.
+        db.add_line(
+            "chr14",
+            "NC_000014.9\t106770643\trs2\tG\tA,C,T\t.\t.\tRS=2;FREQ=1000Genomes_30X:0.9948,0.005192,.,.|GnomAD_genomes:0.9489,.,0.05109,.|TOMMO:0.9364,.,0.06,.;COMMON",
+        );
+        db.add_line(
+            "chr14",
+            "NC_000014.9\t106770746\trs3\tC\tA,G,T\t.\t.\tRS=3;FREQ=1000Genomes_30X:0.9992,.,.,0.0007987|GoESP:0.9913,0.008701,.,.|SGDP_PRJ:0.5,.,.,0.5|TOMMO:0.8824,.,.,0.1176;COMMON",
+        );
+        db.select(&[], &[], 0.01);
+        let common = |pos: u64, r: &str, a: &str| {
+            db.common
+                .contains(&("chr14".to_string(), (pos, r.as_bytes().to_vec(), a.as_bytes().to_vec())))
+        };
+        assert!(common(106714751, "G", "A") && !common(106714751, "G", "C"));
+        assert!(common(106770643, "G", "C") && !common(106770643, "G", "A"));
+        assert!(common(106770746, "C", "T") && !common(106770746, "C", "A"));
     }
 }

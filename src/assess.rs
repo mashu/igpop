@@ -349,7 +349,11 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
     let corrected = best.map(|(p, stratum)| ((p * strata.len() as f64).min(1.0), ev.stratum_name(stratum)));
     let (class, basis) = match &corrected {
         Some((p, name)) if *p <= 0.05 => (Class::Common, Some(name.clone())),
-        _ if ev.dbsnp.common.contains(&lookup) => (Class::Common, Some("dbSNP:COMMON".to_string())),
+        // dbSNP's flag is second-hand. It does not count where the data read
+        // directly show the variant to be rare in every population.
+        _ if ev.dbsnp.common.contains(&lookup) && !rare_everywhere(&strata, limits.common) => {
+            (Class::Common, Some("dbSNP:COMMON".to_string()))
+        }
         _ if !observed.is_empty() => (Class::Uncommon, None),
         _ if ev.reads(&lookup.0) => (Class::Absent, None),
         _ => (Class::NotAssessed, None),

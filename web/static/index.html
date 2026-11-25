@@ -180,20 +180,28 @@
           </details>
           <details class="fold" id="fold-reading">
             <summary>Verdict settings<span id="fold-reading-state"></span></summary>
-            <div class="limit-setting" id="limit-setting" hidden>
-              <label for="limit">Count a difference as supported from a score of <b id="limit-value">10</b></label>
-              <input id="limit" type="range" min="0" max="13" step="1" value="8" aria-describedby="limit-note">
-              <button type="button" class="link" id="limit-reset" hidden>back to 10</button>
-              <p id="limit-note" class="muted" aria-live="polite"></p>
-            </div>
-            <div class="prior-setting">
-              <label><input id="prior-on" type="checkbox"> Also show a probability for each difference</label>
-              <span id="prior-box" hidden>
-                <label>assuming that, before looking at population data,
-                  <input id="prior-value" type="number" min="1" max="99" step="1" value="50" inputmode="numeric"> %
-                  of differences like these are real</label>
-                <span id="prior-note" class="muted"></span>
-              </span>
+            <div class="settings">
+              <section class="setting" id="limit-setting" hidden>
+                <div class="setting-head">
+                  <label for="limit">Count a difference as supported from a score of</label>
+                  <output id="limit-value" for="limit">10</output>
+                  <button type="button" class="link" id="limit-reset" hidden>Reset to 10</button>
+                </div>
+                <div class="slider">
+                  <span aria-hidden="true">2</span>
+                  <input id="limit" type="range" min="0" max="11" step="1" value="6" aria-describedby="limit-note">
+                  <span aria-hidden="true">100</span>
+                </div>
+                <div id="limit-note" class="facts" aria-live="polite"></div>
+              </section>
+              <section class="setting">
+                <label class="check"><input id="prior-on" type="checkbox"> Show the probability that a difference is real</label>
+                <div id="prior-box" class="prior-box" hidden>
+                  <label for="prior-value">Share of differences like these that I expect to be real, before looking at population data</label>
+                  <span class="nowrap"><input id="prior-value" type="number" min="1" max="99" step="1" value="50" inputmode="numeric"> %</span>
+                  <p id="prior-note" class="muted"></p>
+                </div>
+              </section>
             </div>
           </details>
         </div>
