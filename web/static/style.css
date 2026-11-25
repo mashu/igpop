@@ -392,3 +392,24 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .prior-setting input[type=checkbox] { margin-right: 0.35rem; vertical-align: -0.1em; }
 .limit-setting b { font-variant-numeric: tabular-nums; }
 .limit-setting label { white-space: nowrap; }
+
+/* ---- quieter start page, grouped controls ---- */
+.hero .lead { max-width: 54ch; }
+.example { display: flex; gap: 0.6rem; align-items: baseline; }
+.privacy { margin: 1.6rem 0 0; font-size: 0.9rem; }
+.folds { display: flex; flex-wrap: wrap; gap: 0.2rem 1.6rem; margin: 0.2rem 0 0.6rem; }
+.fold summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; width: fit-content; padding: 0.25rem 0; }
+.fold summary span { color: var(--ink); }
+.fold[open] { flex: 1 1 100%; order: 2; padding-bottom: 0.4rem; border-bottom: 1px solid var(--line); margin-bottom: 0.4rem; }
+.variants th[scope=row] { min-width: 8.5rem; font-weight: 400; }
+.variants th[scope=row] > a, .variants th[scope=row] > .muted { display: block; font-weight: 600; }
+.variants th[scope=row] small { display: block; color: var(--muted); }
+.variants + .legend { margin: 0.5rem 0 0; }
+.people-tip b + span { margin-top: -0.2rem; }
+.hint-value.plain { border-bottom: 0; display: block; cursor: default; }
+.hint:has(> .plain) { display: block; }
+.fold { border: 0; background: none; padding: 0; margin: 0; }
+.fold summary { border: 0; }
+.options { margin-top: 0.4rem; }
+.variants td:nth-child(4) { max-width: 14rem; white-space: normal; }
+.variants td:nth-child(4) .chip { margin: 0.1rem 0.2rem 0.1rem 0; display: inline-block; }

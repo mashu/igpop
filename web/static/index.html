@@ -21,20 +21,18 @@
   <main id="main">
     <section id="start" class="hero">
       <h1>Are your germline alleles seen in human populations?</h1>
-      <p class="lead">Drop a FASTA of human IGH alleles. Each one is aligned to its gene, and every
-        difference from the reference genome is looked up in 1000 Genomes and in the datasets
-        collected by dbSNP. You get a verdict per allele, the reasons, and the evidence.</p>
+      <p class="lead">Check immunoglobulin germline alleles against 1000 Genomes and dbSNP.
+        Each allele gets a verdict, with the evidence behind it.</p>
 
       <div id="drop" class="drop" tabindex="0" role="button" aria-describedby="drop-hint">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
-        <strong>Drop a FASTA file here</strong>
-        <span id="drop-hint">or press Enter to choose one. Names like <code>IGHV1-69*01</code>;
-          names containing <code>_S</code> are judged as novel candidates.</span>
+        <strong>Drop a FASTA file</strong>
+        <span id="drop-hint">or choose one from your computer</span>
         <input id="file" type="file" accept=".fa,.fasta,.fna,.txt,.tsv,.md" multiple hidden>
       </div>
 
-      <p class="example">No file at hand? <button type="button" class="link" id="example">Try the example: 566 human IGHV alleles of the KIARVA set</button>
-        <span class="muted">(174 database alleles and 392 candidates; the first run downloads about 100 MB and takes several minutes)</span></p>
+      <p class="example"><button type="button" class="link" id="example">Try an example</button>
+        <span class="muted">566 human IGHV alleles</span></p>
 
       <details class="options">
         <summary>Options</summary>
@@ -53,13 +51,7 @@
         </div>
       </details>
 
-      <ul class="facts">
-        <li><b>Private.</b> The analysis runs in this browser tab. Your sequences are not uploaded.</li>
-        <li><b>Data on demand.</b> Only the regions of your genes are downloaded: a few MB for J or D genes, roughly 100 MB and several minutes for a full V set. They are kept in this browser, so the next run on the same genes starts almost at once. <span id="stored"></span></li>
-        <li><b>Without gnomAD ancestry groups.</b> The gnomAD server does not allow access from web pages; its overall frequencies still arrive through dbSNP. The <a href="../installation.html">command-line program</a> reads gnomAD in full and is faster.</li>
-        <li><b>Gene names are checked first.</b> Before anything is downloaded, the page lists the genes of your file. A name it does not know can be matched to a gene, found by sequence or left out, and the gene list itself can be edited.</li>
-        <li><b>Already ran igpop?</b> Drop its <code>.tsv</code> output files here to browse them.</li>
-      </ul>
+      <p class="privacy muted">Runs in this browser tab. Your sequences are not uploaded. <span id="stored"></span></p>
     </section>
 
     <section id="check" class="panel" hidden>
@@ -153,19 +145,6 @@
           <label>Gene
             <select id="f-gene"><option value="">all genes</option></select>
           </label>
-          <label>Alleles
-            <select id="f-kind">
-              <option value="">trusted and candidates</option>
-              <option value="candidate">candidates only</option>
-              <option value="trusted">trusted only</option>
-            </select>
-          </label>
-          <label>Haplotype
-            <select id="f-hap"><option value="">any</option></select>
-          </label>
-          <label>Placement
-            <select id="f-place"><option value="">any</option></select>
-          </label>
           <label>Order
             <select id="f-order">
               <option value="">by gene</option>
@@ -174,23 +153,45 @@
             </select>
           </label>
         </div>
-        <div class="limit-setting" id="limit-setting" hidden>
-          <label for="limit">Count a difference as supported from a score of <b id="limit-value">10</b></label>
-          <input id="limit" type="range" min="0" max="13" step="1" value="8" aria-describedby="limit-note">
-          <button type="button" class="link" id="limit-reset" hidden>back to 10</button>
-          <p id="limit-note" class="muted" aria-live="polite"></p>
-        </div>
-        <div class="prior-setting">
-          <label><input id="prior-on" type="checkbox"> Also show a probability for each difference</label>
-          <span id="prior-box" hidden>
-            <label>assuming that, before looking at population data,
-              <input id="prior-value" type="number" min="1" max="99" step="1" value="50" inputmode="numeric"> %
-              of differences like these are real</label>
-            <span id="prior-note" class="muted"></span>
-          </span>
+        <div class="folds">
+          <details class="fold" id="fold-filters">
+            <summary>More filters<span id="fold-filters-state"></span></summary>
+            <div class="toolbar">
+              <label>Alleles
+                <select id="f-kind">
+                  <option value="">trusted and candidates</option>
+                  <option value="candidate">candidates only</option>
+                  <option value="trusted">trusted only</option>
+                </select>
+              </label>
+              <label>Haplotype
+                <select id="f-hap"><option value="">any</option></select>
+              </label>
+              <label>Placement
+                <select id="f-place"><option value="">any</option></select>
+              </label>
+            </div>
+          </details>
+          <details class="fold" id="fold-reading">
+            <summary>Verdict settings<span id="fold-reading-state"></span></summary>
+            <div class="limit-setting" id="limit-setting" hidden>
+              <label for="limit">Count a difference as supported from a score of <b id="limit-value">10</b></label>
+              <input id="limit" type="range" min="0" max="13" step="1" value="8" aria-describedby="limit-note">
+              <button type="button" class="link" id="limit-reset" hidden>back to 10</button>
+              <p id="limit-note" class="muted" aria-live="polite"></p>
+            </div>
+            <div class="prior-setting">
+              <label><input id="prior-on" type="checkbox"> Also show a probability for each difference</label>
+              <span id="prior-box" hidden>
+                <label>assuming that, before looking at population data,
+                  <input id="prior-value" type="number" min="1" max="99" step="1" value="50" inputmode="numeric"> %
+                  of differences like these are real</label>
+                <span id="prior-note" class="muted"></span>
+              </span>
+            </div>
+          </details>
         </div>
         <p id="count" class="muted" aria-live="polite"></p>
-        <div id="legend" class="legend"></div>
         <div id="alleles"></div>
       </div>
       <div id="view-data" role="tabpanel" aria-labelledby="tab-data" hidden></div>

@@ -153,13 +153,13 @@ function startWorker() {
 function showStored(bytes) {
   const box = $('stored');
   if (bytes == null) {
-    box.textContent = 'This browser does not keep downloaded data between visits (or igpop is open in another tab), so each run downloads again.';
+    box.textContent = 'This browser does not keep downloaded data between visits, so each run downloads again.';
     return;
   }
   const size = bytes < 1e6 ? `${Math.round(bytes / 1e3)} kB` : `${(bytes / 1e6).toFixed(0)} MB`;
   box.replaceChildren(
-    `Downloaded data kept in this browser: ${bytes ? size : 'none yet'}. `,
-    bytes ? el('button', { type: 'button', class: 'link', text: 'Delete it', onclick: () => worker.postMessage({ type: 'clear' }) }) : '',
+    bytes ? `${size} of population data kept in this browser. ` : '',
+    bytes ? el('button', { type: 'button', class: 'link', text: 'Delete', onclick: () => worker.postMessage({ type: 'clear' }) }) : '',
   );
 }
 
@@ -220,13 +220,13 @@ function logLine(message) {
   const text = message.replace(/https?:\/\/\S+\/([^/\s]+)/g, '$1');
   const step = STEPS.findIndex((s) => s.starts.test(text.trim()));
   if (step >= 0) setStep(step);
-  const counted = text.match(/^progress: (\d+) of (\d+)/);
+  const counted = text.match(/^progress: (\d+) of (\d+)(?: regions ready, (\d+) kept)?/);
   if (counted) {
-    // One line per downloaded region: shown as the bar, not as text.
-    const [done, total] = [Number(counted[1]), Number(counted[2])];
+    // One line per region: shown as the bar, not as text.
+    const [done, total, kept] = [Number(counted[1]), Number(counted[2]), Number(counted[3] || 0)];
     if (run.step === 1) {
       setBar(done / total);
-      $('progress-now').textContent = `Downloaded ${done} of ${total} regions. Regions kept in this browser from an earlier run are not downloaded again.`;
+      $('progress-now').textContent = `${done} of ${total} regions ready: ${done - kept} downloaded, ${kept} already in this browser.`;
     }
     return;
   }
@@ -810,7 +810,6 @@ function display(files, warnings, summary = []) {
   renderTiles();
   renderWarnings(warnings);
   renderFilters();
-  renderLegend();
   renderPriorNote();
   renderLimit();
   renderAlleles();
@@ -963,7 +962,7 @@ function renderTiles() {
   const total = state.alleles.length;
   for (const [verdict, info] of Object.entries(VERDICTS)) {
     const rows = state.alleles.filter((a) => a.verdict === verdict);
-    if (!rows.length && verdict === 'not_assessed') continue;
+    if (!rows.length && state.verdict !== verdict) continue;
     const candidates = rows.filter(isCandidate).length;
     tiles.append(el('button', {
       type: 'button', class: `tile v-${verdict}`, 'aria-pressed': String(state.verdict === verdict), 'data-verdict': verdict, title: info.help,
@@ -1013,19 +1012,26 @@ function showPlacement(status) {
   renderTiles();
   for (const id of ['f-search', 'f-gene', 'f-kind', 'f-hap']) $(id).value = '';
   $('f-place').value = status;
+  $('fold-filters').open = true;
   selectTab('tab-alleles');
   renderAlleles();
   $('f-place').scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
-function renderLegend() {
-  $('legend').replaceChildren(
-    el('span', { text: 'Frequency marks: ' }),
+/** The key to the frequency lines, shown with each table of differences. */
+function frequencyLegend() {
+  return el('div', { class: 'legend' },
     el('span', { class: 'key' }, mark('kgp', 6, 6), ' 1000 Genomes population'),
     el('span', { class: 'key' }, mark('gnomad', 6, 6), ' gnomAD group'),
     el('span', { class: 'key' }, mark('dbsnp', 6, 6), ' dataset in dbSNP'),
-    el('span', { class: 'key' }, el('i', { class: 'line' }), ' 1% line'),
-  );
+    el('span', { class: 'key' }, el('i', { class: 'line' }), ' 1% line'));
+}
+
+/** What the folded controls are set to, so that nothing set is hidden. */
+function renderFolds() {
+  const active = ['f-kind', 'f-hap', 'f-place'].filter((id) => $(id).value).length;
+  $('fold-filters-state').textContent = active ? `: ${active} set` : '';
+  $('fold-reading-state').textContent = `: supported from a score of ${state.limit}${state.prior ? `, probability shown` : ''}`;
 }
 
 function visibleAlleles() {
@@ -1089,6 +1095,7 @@ function renderPriorNote() {
 
 function renderAlleles() {
   const rows = visibleAlleles();
+  renderFolds();
   const list = $('alleles');
   list.replaceChildren();
   $('count').textContent = `Showing ${rows.length} of ${state.alleles.length} alleles.`;
@@ -1625,6 +1632,23 @@ function comparison(v) {
     el('p', { class: 'muted', text: 'The limits for the verdict (10 for "supported" unless you move it above the list of alleles, 0.1 for "needs confirmation") are conventions for strong evidence, as in other fields that use likelihood ratios; they are not measured. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.' }));
 }
 
+/** The population data of one difference, briefly, for a popup. */
+function peoplePopup(v) {
+  const groups = populations(v);
+  const support = number(v.support);
+  const lines = groups.map((g) => {
+    const top = [...g.rows].filter((r) => (r.af ?? (r.an ? r.ac / r.an : 0)) > 0)
+      .sort((x, y) => (y.af ?? y.ac / y.an) - (x.af ?? x.ac / x.an)).slice(0, 3);
+    return el('span', {},
+      el('b', { text: g.total && g.total.an > 0 ? `${g.source}: ${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')} chromosomes` : g.source }),
+      top.length ? el('span', { class: 'hint-list' }, top.map((r) => el('span', { text: `${r.name}: ${Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}, ` : ''}${percent(r.af ?? r.ac / r.an)}` })))
+        : el('span', { text: 'not seen' }));
+  });
+  return el('span', { class: 'people-tip' },
+    lines.length ? lines : el('span', { text: 'No source has a record of this base at this position.' }),
+    support > 0 ? el('span', { text: `Guaranteed frequency: at least ${percent(support)}${given(v.support_from) ? ` (${stratumWords(v.support_from)})` : ''}.${given(v.score) ? ` Score ${scoreText(Number(v.score))}.` : ''}` }) : null);
+}
+
 function variantTable(variants, opened) {
   const rsLink = (v) => (given(v.rsid)
     ? el('a', { href: `https://www.ncbi.nlm.nih.gov/snp/${v.rsid}`, target: '_blank', rel: 'noopener', text: v.rsid })
@@ -1633,23 +1657,24 @@ function variantTable(variants, opened) {
   const change = (v) => `${kind[v.type] || v.type} ${v.query_variant}`;
   const rows = variants.flatMap((v) => {
     const detail = el('tr', { class: 'evidence-row', hidden: true }, el('td', { colspan: '7' }));
-    const button = el('button', { type: 'button', class: 'link', 'aria-expanded': 'false', text: 'populations and reasons' });
+    const button = el('button', { type: 'button', class: 'link', 'aria-expanded': 'false', text: 'show', 'aria-label': 'Show populations and reasons' });
     const toggle = (open) => {
       detail.hidden = !open;
       button.setAttribute('aria-expanded', String(open));
-      button.textContent = open ? 'hide' : 'populations and reasons';
+      button.textContent = open ? 'hide' : 'show';
       if (open && !detail.firstElementChild.childElementCount) detail.firstElementChild.append(evidencePanel(v));
     };
     button.addEventListener('click', () => toggle(detail.hidden));
     // The alignment opens the evidence of the difference under the pointer.
     if (opened) opened.set(Number(v.genome_pos), () => { toggle(true); detail.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
     return [el('tr', {},
-      el('th', { scope: 'row' }, rsLink(v), el('small', { text: ` ${change(v)}, ${v.contig}:${v.genome_pos}` })),
+      el('th', { scope: 'row' }, rsLink(v),
+        explain(el('span', { class: 'hint-value plain', tabindex: '0' }, el('small', { text: change(v) }), el('small', { text: `${v.contig}:${Number(v.genome_pos).toLocaleString('en')}` })), peoplePopup(v))),
       el('td', { text: v.aln_pos }),
       el('td', {}, badge(v.verdict)),
       el('td', {}, chips(v.filters), siteQuality(v)),
       scoreCell(v),
-      el('td', {}, strip(v)),
+      el('td', {}, explain(el('span', { class: 'hint-value plain', tabindex: '0' }, strip(v)), peoplePopup(v))),
       el('td', {}, button)), detail];
   });
   return el('div', { class: 'scroll' }, el('table', { class: 'variants' },
@@ -1659,7 +1684,7 @@ function variantTable(variants, opened) {
       el('th', { scope: 'col' }, 'Score ', hint('What the score means', scoreHint())),
       el('th', { scope: 'col' }, 'How common in people ', hint('How to read the frequency line', stripHint())),
       el('th', { scope: 'col', text: 'Details' }))),
-    el('tbody', {}, rows)));
+    el('tbody', {}, rows)), frequencyLegend());
 }
 
 // Why the 1000 Genomes genotypes at a position are less reliable: the

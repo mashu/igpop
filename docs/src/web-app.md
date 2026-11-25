@@ -120,7 +120,12 @@ passes on are listed underneath, with their estimated sizes.
 
 ## The evidence behind one difference
 
-In an opened allele, "populations and reasons" on a difference (or a click
+Pointing at a difference in the table (its description or its frequency
+line) shows a short summary: how many chromosomes carry it in each source,
+the three populations where it is most frequent, the guaranteed frequency
+and the score. The full evidence opens with "show".
+
+In an opened allele, "show" in the Details column of a difference (or a click
 on it in the alignment) shows:
 
 - **Where**: its position in your sequence and on the genome, and the two
@@ -145,6 +150,11 @@ on it in the alignment) shows:
   above it. See [The score](score.md).
 
 ## The score first, the limit as a setting
+
+The list of alleles shows search, gene and order; the remaining filters
+(trusted or candidate, haplotype, placement) are under **More filters**,
+and the two settings below under **Verdict settings**. Both fold away and
+say in their title what is set.
 
 Every allele shows its weakest score as a number with a dot on a
 continuous colour scale (from the colour of "needs confirmation" at 0.01
