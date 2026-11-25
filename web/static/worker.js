@@ -16,7 +16,7 @@ const ready = Promise.all([import(at('./pkg/igpop_web.js')), import(at('./store.
   igpop = module;
   store = await Store.open();
   igpop.use_store(store);
-  postMessage({ type: 'ready', version: igpop.version(), stored: store ? store.size : null, geneList: igpop.gene_list(), aliases: igpop.gene_aliases() });
+  postMessage({ type: 'ready', version: igpop.version(), stored: store ? store.size : null, reading: Boolean(store && !store.writer), geneList: igpop.gene_list(), aliases: igpop.gene_aliases() });
 });
 ready.catch((error) => postMessage({ type: 'error', message: `The analysis module could not be loaded (${error && error.message ? error.message : error}). Reload the page and try again.` }));
 
@@ -25,7 +25,7 @@ self.onmessage = async (event) => {
   await ready;
   if (job.type === 'clear') {
     if (store) store.clear();
-    postMessage({ type: 'stored', stored: store ? store.size : null });
+    postMessage({ type: 'stored', stored: store ? store.size : null, reading: Boolean(store && !store.writer) });
     return;
   }
   if (job.type === 'check') {
@@ -40,7 +40,7 @@ self.onmessage = async (event) => {
   }
   try {
     const output = await igpop.run(job, (message) => postMessage({ type: 'log', message }));
-    postMessage({ type: 'done', output, stored: store ? store.size : null });
+    postMessage({ type: 'done', output, stored: store ? store.size : null, reading: Boolean(store && !store.writer) });
   } catch (error) {
     postMessage({ type: 'error', message: String(error && error.message ? error.message : error) });
   } finally {

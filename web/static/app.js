@@ -141,7 +141,7 @@ function startWorker() {
     }
     if (message.type === 'checked' && message.id === names.asked) renderCheck(message.genes);
     if (message.type === 'check-failed' && message.id === names.asked) checkFailed(message.message);
-    if ('stored' in message) showStored(message.stored);
+    if ('stored' in message) showStored(message.stored, message.reading);
     if (message.type === 'log') logLine(message.message);
     else if (message.type === 'error') fail(message.message);
     else if (message.type === 'done') display(message.output.files, message.output.warnings, message.output.summary);
@@ -150,16 +150,22 @@ function startWorker() {
 }
 
 /** How much downloaded data this browser keeps, with a way to delete it. */
-function showStored(bytes) {
+function showStored(bytes, reading) {
   const box = $('stored');
+  // The same in a few words, for the progress view.
+  run.store = bytes == null ? 'Downloaded data cannot be kept in this browser, so this run downloads everything.'
+    : reading ? 'igpop is open in another tab: data kept in this browser are used here, and what this tab downloads is kept until it is closed.'
+      : '';
   if (bytes == null) {
     box.textContent = 'This browser does not keep downloaded data between visits, so each run downloads again.';
     return;
   }
   const size = bytes < 1e6 ? `${Math.round(bytes / 1e3)} kB` : `${(bytes / 1e6).toFixed(0)} MB`;
+  run.kept = bytes ? `${size} of population data are kept in this browser from earlier runs` : 'No population data are kept in this browser yet';
   box.replaceChildren(
     bytes ? `${size} of population data kept in this browser. ` : '',
-    bytes ? el('button', { type: 'button', class: 'link', text: 'Delete', onclick: () => worker.postMessage({ type: 'clear' }) }) : '',
+    reading ? 'igpop is also open in another tab: what this tab downloads is kept only until it is closed. ' : '',
+    bytes && !reading ? el('button', { type: 'button', class: 'link', text: 'Delete', onclick: () => worker.postMessage({ type: 'clear' }) }) : '',
   );
 }
 
@@ -171,16 +177,17 @@ const STEPS = [
   { id: 'read', label: 'Reading frequencies and haplotypes', now: 'Looking up every difference in the population data.', starts: /^(1kGP|gnomAD|dbSNP|phased panel)/ },
   { id: 'judge', label: 'Judging the alleles', now: 'Scoring every difference and writing the results.', starts: /^score:/ },
 ];
-const run = { step: -1, started: 0, timer: null, sources: new Map() };
+const run = { step: -1, started: 0, timer: null, sources: new Map(), store: '', kept: '' };
 
 function startProgress() {
   run.step = -1;
   run.sources = new Map();
   $('sources').hidden = true;
+  $('progress-store').textContent = run.store;
   run.started = Date.now();
   $('steps').replaceChildren(...STEPS.map((step, i) => el('li', { id: `step-${step.id}` },
     el('span', { class: 'step-mark', 'aria-hidden': 'true', text: String(i + 1) }), el('span', { text: step.label }))));
-  $('log').replaceChildren();
+  $('log').replaceChildren(el('li', { class: 'done', text: run.store || run.kept || 'Downloaded data are kept in this browser' }));
   setBar(null);
   setStep(0);
   clearInterval(run.timer);

@@ -37,6 +37,21 @@ or the data of genes not analysed before) downloads in full while the
 others are taken from the browser. "Steps so far" lists what has been
 done.
 
+## Data kept in the browser
+
+Downloaded pieces of the population files are kept in the browser, so a
+later run on the same genes needs little or no downloading. They belong
+to the site, not to a version of the app: an update does not remove them.
+The start page says how much is kept and offers to delete it.
+
+Several tabs can use the kept data at once. One tab adds to them; a
+second tab reads them, sees what the first one adds, and keeps its own
+downloads only until it is closed (the page says so). Data are downloaded
+again when the genes are different (neighbouring genes are fetched as one
+region, so another set of genes gives other regions), when the kept data
+are older than 180 days or larger than 1.5 GB, or when the browser's site
+data are cleared.
+
 ## Differences from the command line
 
 - **gnomAD comes from its copy at Amazon.** Browsers may only read from
