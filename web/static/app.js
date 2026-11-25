@@ -1641,8 +1641,8 @@ function evidencePanel(v) {
   return el('div', { class: 'evidence' },
     el('div', { class: 'evidence-part' },
       el('h4', { text: 'Where' }),
-      el('p', {}, `Base ${v.aln_pos} of your sequence (counted from its first base), ${v.build || ''} ${v.contig}:${Number(v.genome_pos).toLocaleString('en')} on the genome. `,
-        `A ${kind}: the reference genome has ${v.vcf_ref}, this allele has ${v.vcf_alt.split(',').length > 1 ? v.query_variant : v.vcf_alt}`,
+      el('p', {}, `Base ${v.aln_pos} of your sequence (counted from its first base${given(v.aln_pos_genome_strand) && v.aln_pos_genome_strand !== v.aln_pos ? `; base ${v.aln_pos_genome_strand} when the allele is read along the forward strand of the genome, because this gene lies on the reverse strand` : ''}), ${v.build || ''} ${v.contig}:${Number(v.genome_pos).toLocaleString('en')} on the genome. `,
+        `A ${kind}: the reference genome has ${referenceBases(v) || v.vcf_ref}, this allele has ${v.query_variant}`,
         el('span', { class: 'muted', text: ' (written on the forward strand of the genome, as in the population files; the alignment below shows the gene in its own direction).' }))),
     el('div', { class: 'evidence-part' },
       el('h4', { text: 'Who carries it' }),
@@ -1682,6 +1682,20 @@ function comparison(v) {
     el('p', { class: 'muted', text: `The limits for the verdict (${state.limit} for "supported", which you can move above the list of alleles, and 0.1 for "needs confirmation") are conventions, not measurements. Where likelihood ratios are used, 1 to 3 is usually read as weak, 3 to 10 as positive and 10 or more as strong evidence. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.` }));
 }
 
+/** The bases of the reference genome a difference replaces, on the
+ *  forward strand. */
+const referenceBases = (v) => (given(v.reference_bases) ? v.reference_bases : v.vcf_ref && v.vcf_ref !== '-' && !v.vcf_alt.includes(',') ? v.vcf_ref : '');
+
+/** A difference in words: from what to what. */
+function changeWords(v) {
+  const [from, to] = [referenceBases(v), v.query_variant];
+  if (v.type === 'SNV') return from ? `base change ${from} to ${to}` : `base change to ${to}`;
+  // Insertions and deletions are written with the base before them.
+  if (v.type === 'DEL') return from ? `deletion of ${from.slice(to.length)}` : `deletion, leaving ${to}`;
+  if (v.type === 'INS') return from ? `insertion of ${to.slice(from.length)}` : `insertion, ${to}`;
+  return `${v.type} ${to}`;
+}
+
 /** The population data of one difference, briefly, for a popup: per
  *  source the chromosomes that carry it, and the populations where it is
  *  most frequent as bars on the scale of the frequency line. */
@@ -1718,8 +1732,7 @@ function variantTable(variants, opened) {
   const rsLink = (v) => (given(v.rsid)
     ? el('a', { href: `https://www.ncbi.nlm.nih.gov/snp/${v.rsid}`, target: '_blank', rel: 'noopener', text: v.rsid })
     : el('span', { class: 'muted', text: 'no rsID' }));
-  const kind = { SNV: 'base change to', INS: 'insertion,', DEL: 'deletion, leaving' };
-  const change = (v) => `${kind[v.type] || v.type} ${v.query_variant}`;
+  const change = changeWords;
   const rows = variants.flatMap((v) => {
     const detail = el('tr', { class: 'evidence-row', hidden: true }, el('td', { colspan: '7' }));
     const button = el('button', { type: 'button', class: 'link', 'aria-expanded': 'false', text: 'show', 'aria-label': 'Show populations and reasons' });
@@ -1735,7 +1748,8 @@ function variantTable(variants, opened) {
     return [el('tr', {},
       el('th', { scope: 'row' }, rsLink(v),
         explain(el('span', { class: 'hint-value plain', tabindex: '0' }, el('small', { text: change(v) }), el('small', { text: `${v.contig}:${Number(v.genome_pos).toLocaleString('en')}` })), peoplePopup(v))),
-      el('td', { text: v.aln_pos }),
+      el('td', {}, v.aln_pos, given(v.aln_pos_genome_strand) && v.aln_pos_genome_strand !== v.aln_pos
+        ? el('small', { class: 'other-end', title: 'The same base counted along the forward strand of the genome, that is, from the other end of the allele. Tools that work on the genome strand, such as IgSNPer, report this number.', text: `${v.aln_pos_genome_strand} on the genome strand` }) : null),
       el('td', {}, badge(v.verdict)),
       el('td', {}, chips(v.filters), siteQuality(v)),
       scoreCell(v),
@@ -1904,9 +1918,8 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
   const geneFirst = ends ? Math.max(0, aln.positions.indexOf(ends[0])) : 0;
   const geneLast = ends && aln.positions.indexOf(ends[1]) >= 0 ? aln.positions.indexOf(ends[1]) : columns - 1;
   const inGene = (c) => c - geneFirst + 1;
-  const ruler = Array.from({ length: columns }, (_, c) => (c < geneFirst || c > geneLast ? ' ' : inGene(c) % 10 === 0 ? '|' : inGene(c) % 5 === 0 ? ':' : '·')).join('');
-  const numbers = Array.from({ length: columns }, () => ' ');
-  for (let n = 10; geneFirst + n - 1 <= geneLast; n += 10) [...String(n)].reverse().forEach((digit, k) => { numbers[geneFirst + n - 1 - k] = digit; });
+  const numbers = [];
+  for (let n = 10; geneFirst + n - 1 <= geneLast; n += 10) numbers.push(el('span', { class: 'aln-number', style: `left:${geneFirst + n - 0.5}ch`, text: String(n) }));
   const regions = /^IGHV/.test(aln.title) ? regionsOf(aln.rows.get('reference') || '', geneFirst, geneLast) : null;
   const regionAt = (c) => (regions || []).find(([, from, to]) => c >= from && c <= to);
   const regionLine = regions ? [
@@ -1966,14 +1979,23 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     label.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(event); } });
   }
   const seqs = el('div', { class: 'aln-seqs', style: `width:${columns}ch` }, marker, band,
-    line('', 'aln-ruler', numbers.join('')), line('', 'aln-ruler', ruler),
+    line('', 'aln-ruler aln-numbers', numbers),
+    el('div', { class: 'aln-line aln-ruler aln-ticks', style: `--from:${geneFirst}ch;--length:${geneLast - geneFirst + 1}ch` }),
     regionLine ? line('', 'aln-ruler aln-regions', regionLine) : null,
     names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '',
       name === 'reference' ? aln.rows.get(name) : coloured(aln.rows.get(name) || '', name))));
   const labels = el('div', { class: 'aln-names' },
-    line('', 'aln-ruler', 'position in gene'), line('', 'aln-ruler', ' '),
-    regionLine ? line('', 'aln-ruler aln-regions', 'region (approximate)') : null,
-    names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '', name)));
+    line('', 'aln-ruler aln-numbers', 'position'), line('', 'aln-ruler aln-ticks', ' '),
+    regionLine ? line('', 'aln-ruler aln-regions', 'region') : null,
+    names.map((name) => {
+      // Each allele carries its verdict as a small mark before its name.
+      const allele = state.alleles.find((a) => a.allele_name === name);
+      const verdict = allele ? VERDICTS[allele.verdict] : null;
+      return line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '', [
+        el('i', { class: `aln-verdict${allele ? ` v-${allele.verdict}` : ''}`, title: verdict ? verdict.label : '', 'aria-hidden': 'true' }),
+        name === 'reference' ? 'reference genome' : name,
+        verdict ? el('span', { class: 'sr', text: `, ${verdict.label}` }) : null]);
+    }));
   const tip = el('div', { class: 'aln-tip', role: 'status', hidden: true });
   const grid = el('div', { class: 'aln-grid', tabindex: '0', role: 'group', 'aria-label': `Alignment of ${names.length - 1} alleles of this gene. Use the left and right arrow keys to move along it.` }, labels, seqs);
   const at = { col: -1, name: alleleName };
@@ -2066,13 +2088,25 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     else do { col += step; } while (col >= 0 && col < columns && !/[A-Za-z-]/.test(own[col] || ''));
     point(Math.min(Math.max(col, 0), columns - 1), alleleName, true);
   });
-  const own = aln.notes.get(alleleName);
+  const own = aln.notes.get(alleleName) || '';
+  const identity = own.match(/identity ([\d.]+)/);
+  const where = aln.title.match(/^(\S+)\s+(\S+)\s+(\S+):(\d+)-(\d+)\s+strand\s+(\S)/);
+  const key = (cls, words) => el('span', { class: 'aln-key' }, el('b', { class: `nt nt-A ${cls}`, text: 'A' }), words);
+  const help = el('span', {},
+    el('b', { text: 'How to read the alignment' }),
+    el('span', { text: 'Every allele of the gene under the reference genome, read 5′ to 3′. A dot is the same base as the reference, a coloured letter is a difference, a dash is a missing base, and an empty place is not covered by the allele.' }),
+    el('span', { text: 'A difference that is not supported is marked: underlined when it is inconclusive or has no population data, framed when it needs confirmation. The mark before a name is the verdict of the whole allele.' }),
+    el('span', { text: 'Point at a column to see what is there; click a difference of the opened allele for its evidence. With the keyboard, the arrow keys jump between the differences of the opened allele (hold Shift to move one base).' }),
+    regions ? el('span', { text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the conserved cysteines and tryptophan of a V gene, not from an IMGT alignment, and can be off by a codon or two. A V gene holds only the first bases of CDR3. Point at a region to see its columns; click it to keep them highlighted.' }) : null,
+    aln.notes.size ? el('span', { text: 'Inserted bases have no column: they are listed in the table of differences.' }) : null);
   return el('details', { class: 'aln' }, el('summary', { text: 'Alignment of this gene' }),
-    el('p', { class: 'muted', text: 'Every allele of the gene under the reference, read 5′ to 3′. A dot is the same base as the reference, a coloured letter is a difference, a dash is a missing base. A difference that is not supported is marked: underlined when inconclusive or without data, framed when it needs confirmation. This allele is the highlighted row. Point at a column to see what is there; with the keyboard, the arrow keys jump between the differences of this allele (hold Shift to move one base).' }),
-    own ? el('p', { class: 'muted', text: `${alleleName}: ${own.replace(/\s{2,}/g, ', ')}.` }) : null,
-    el('p', { class: 'aln-where', text: aln.title.replace(/\s{2,}/g, ' · ') }),
-    grid, tip,
-    regions ? el('p', { class: 'muted aln-foot', text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the three conserved residues of a V gene (two cysteines and a tryptophan) and can be off by a codon or two from the IMGT definition. Point at a region to see its columns, or click it to keep them highlighted. A V gene holds only the first few bases of CDR3; the rest of it comes from the D and J genes and the joints between them, so it is not in a germline allele.' }) : null);
+    el('div', { class: 'aln-head' },
+      el('span', { class: 'aln-title' }, el('b', { text: where ? where[1] : aln.title }),
+        where ? el('span', { class: 'muted', text: `${where[2]} ${where[3]}:${Number(where[4]).toLocaleString('en')}–${Number(where[5]).toLocaleString('en')}, ${where[6] === '-' ? 'reverse' : 'forward'} strand, ${plural(names.length - 1, 'allele')}` }) : null,
+        identity ? el('span', { class: 'muted', text: `this allele ${(100 * Number(identity[1])).toFixed(1)}% identical` }) : null),
+      el('span', { class: 'aln-legend' }, key('', 'supported'), key('nv-inconclusive', 'inconclusive'), key('nv-needs_confirmation', 'needs confirmation'),
+        hint('How to read the alignment', help))),
+    grid, tip);
 }
 
 // ---- score and checks ------------------------------------------------------

@@ -26,7 +26,10 @@ identical to the reference has no rows here (it still appears in
 | `contig` | Reference contig. |
 | `genome_pos` | 1-based reference position. For insertions and deletions this is the base before the event, as in VCF. |
 | `aln_pos` | 1-based position in the allele sequence as supplied. |
+| `aln_pos_genome_strand` | The same base counted along the forward strand of the genome. Equal to `aln_pos` for a gene on the forward strand; for a gene on the reverse strand it counts from the other end of the allele (allele length - `aln_pos` + 1). IgSNPer reported this number. |
+| `strand` | `+` or `-`: the strand of the gene. |
 | `type` | `SNV`, `INS` or `DEL`. |
+| `reference_bases` | The bases of the reference genome that the difference replaces, on the reference strand. For an insertion or deletion they begin with the base before it, as in VCF. |
 | `query_variant` | The allele's base(s), written on the **reference strand** (for a minus-strand gene this is the complement of what the allele FASTA shows). |
 | `vcf_ref`, `vcf_alt` | REF and ALT fields of the matching 1000 Genomes record, `-` if there is none. `vcf_alt` lists every ALT at the site. |
 

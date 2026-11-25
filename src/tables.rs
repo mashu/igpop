@@ -137,7 +137,10 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
         .col("contig", |r: &R| r.allele.placed.contig().to_string())
         .col("genome_pos", |r: &R| r.called.key.0.to_string())
         .col("aln_pos", |r: &R| r.called.allele_pos.to_string())
+        .col("aln_pos_genome_strand", |r: &R| r.called.strand_pos.to_string())
+        .col("strand", |r: &R| if r.called.reverse { "-" } else { "+" }.to_string())
         .col("type", |r: &R| r.called.kind.as_str().to_string())
+        .col("reference_bases", move |r: &R| text(&r.called.key.1))
         .col("query_variant", move |r: &R| text(&r.called.key.2))
         .col("vcf_ref", |r: &R| {
             r.ev.kgp.get(&r.v.lookup).map_or("-".to_string(), |s| s.vcf_ref.clone())

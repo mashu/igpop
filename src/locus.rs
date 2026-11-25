@@ -116,6 +116,11 @@ pub struct Called {
     pub kind: Kind,
     /// 1-based position in the allele as supplied.
     pub allele_pos: usize,
+    /// The same base counted along the forward strand of the genome: for
+    /// a gene on the reverse strand, from the other end of the allele.
+    pub strand_pos: usize,
+    /// The gene lies on the reverse strand.
+    pub reverse: bool,
 }
 
 /// Where and how well an allele aligned.
@@ -423,6 +428,8 @@ fn place(
             variants.push(Called {
                 kind: v.kind(),
                 allele_pos: if reverse { query.len() - v.query_index } else { v.query_index + 1 },
+                strand_pos: v.query_index + 1,
+                reverse,
                 key: (own.start + v.offset as u64, v.reference, v.alternate),
             });
         }
