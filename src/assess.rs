@@ -334,9 +334,16 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         (ev.sources.gnomad_name, ev.gnomad.get(&lookup).is_some_and(|s| s.total.ac > 0)),
         ("dbSNP", !ev.dbsnp.relayed(&lookup).is_empty()),
     ]
-    .iter()
+    .into_iter()
+    .chain(
+        ev.sources
+            .extras
+            .iter()
+            .zip(&ev.extras)
+            .map(|(extra, sites)| (extra.name, sites.get(&lookup).is_some_and(|counts| counts.iter().any(|c| c.ac > 0)))),
+    )
     .filter(|(_, seen)| *seen)
-    .map(|(name, _)| *name)
+    .map(|(name, _)| name)
     .collect();
 
     // Class: the best stratum among those where the allele was seen at

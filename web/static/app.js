@@ -1433,6 +1433,25 @@ const MORE_SOURCES = {
   WBBC: { title: 'the Westlake BioBank for Chinese', group: (g) => `people from ${g}` },
 };
 
+/** The continental group a population belongs to, which gives its bar a
+ *  colour; mixed and unplaced populations have none. */
+const ANCESTRIES = [['eur', 'European'], ['afr', 'African'], ['eas', 'East Asian'], ['mid', 'Middle Eastern'], ['sas', 'South Asian'], ['amr', 'American']];
+const ANCESTRY_OF = [
+  [/^(Other|Other Asian|Oceanian)$/, ''],
+  [/African/, 'afr'],
+  [/American/, 'amr'],
+  [/South Asian/, 'sas'],
+  [/East Asian|Northeast Asian|Southeast Asian|Japanese|China|Lingnan|^(KOREAN|Korea\w*|TOMMO|Vietnamese)$/, 'eas'],
+  [/Middle Eastern|^Qatari$/, 'mid'],
+  [/Europ|Finnish|Amish|Ashkenazi|West Eurasian|^(GoNL|TWINSUK|ALSPAC|Estonian|NorthernSweden|FINRISK|GENOME_DK)$/, 'eur'],
+];
+const ancestry = (name) => (ANCESTRY_OF.find(([pattern]) => pattern.test(name)) || [0, ''])[1];
+function ancestryLegend() {
+  return el('p', { class: 'legend ancestry-key' },
+    ...ANCESTRIES.map(([key, name]) => el('span', { class: 'key' }, el('i', { class: `swatch a-${key}` }), ` ${name}`)),
+    el('span', { class: 'key' }, el('i', { class: 'swatch' }), ' mixed or other'));
+}
+
 /** Every population that looked at a variant, with its counts:
  *  [{ source, total: {ac, an}, note, rows: [{ name, ac, an, estimated }] }]. */
 function populations(v) {
@@ -1689,7 +1708,7 @@ function evidencePanel(v) {
     const af = r.af ?? (r.an ? r.ac / r.an : 0);
     return el('tr', { class: af > 0 ? '' : 'zero' },
       el('th', { scope: 'row', text: r.name }),
-      el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * af) / top}%` })),
+      el('td', {}, el('span', { class: `bar-fill a-${ancestry(r.name)}`, style: `--share:${(100 * af) / top}%` })),
       el('td', { class: 'num', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
       el('td', { class: 'num', text: percent(af) }));
   };
@@ -1708,7 +1727,8 @@ function evidencePanel(v) {
         el('thead', { class: 'sr' }, el('tr', {}, ...['Population', 'Share', 'Chromosomes with it', 'Frequency'].map((h) => el('th', { scope: 'col', text: h })))),
         el('tbody', {}, g.rows.sort((a, b) => (b.af ?? b.ac / b.an) - (a.af ?? a.ac / a.an)).map(bar))))
         : el('p', { class: 'muted', text: 'No source has a record of this base at this position.' }),
-      groups.length ? el('p', { class: 'muted', text: 'Each person has two chromosomes, so the counts are of chromosomes. Bars are drawn relative to the population where the base is most frequent.' }) : null),
+      groups.length ? ancestryLegend() : null,
+      groups.length ? el('p', { class: 'muted', text: 'Each person has two chromosomes, so the counts are of chromosomes. Bars are drawn relative to the population where the base is most frequent; their colour is the continental group.' }) : null),
     el('div', { class: 'evidence-part' },
       el('h4', { text: 'Why this verdict and score' }),
       el('ol', {}, whyScore(v).map((step) => el('li', { text: step })))),
@@ -1770,7 +1790,7 @@ function peoplePopup(v) {
         g.total && g.total.an > 0 ? el('span', { text: `${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')}` }) : null),
       top.length ? el('span', { class: 'tip-rows' }, top.flatMap((r) => [
         el('span', { class: 'tip-name', text: r.name }),
-        el('span', { class: 'tip-track' }, el('i', { style: `width:${width(share(r))}` })),
+        el('span', { class: 'tip-track' }, el('i', { class: `a-${ancestry(r.name)}`, style: `width:${width(share(r))}` })),
         el('span', { class: 'tip-count', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? '~' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
         el('span', { class: 'tip-share', text: percent(share(r)) }),
       ])) : el('span', { class: 'tip-none', text: 'not seen' }),
