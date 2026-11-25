@@ -1433,6 +1433,25 @@ const MORE_SOURCES = {
   WBBC: { title: 'the Westlake BioBank for Chinese', group: (g) => `people from ${g}` },
 };
 
+/** The continental group a population belongs to, which gives its bar a
+ *  colour; mixed and unplaced populations have none. */
+const ANCESTRIES = [['eur', 'European'], ['afr', 'African'], ['eas', 'East Asian'], ['mid', 'Middle Eastern'], ['sas', 'South Asian'], ['amr', 'American']];
+const ANCESTRY_OF = [
+  [/^(Other|Other Asian|Oceanian)$/, ''],
+  [/African/, 'afr'],
+  [/American/, 'amr'],
+  [/South Asian/, 'sas'],
+  [/East Asian|Northeast Asian|Southeast Asian|Japanese|China|Lingnan|^(KOREAN|Korea\w*|TOMMO|Vietnamese)$/, 'eas'],
+  [/Middle Eastern|^Qatari$/, 'mid'],
+  [/Europ|Finnish|Amish|Ashkenazi|West Eurasian|^(GoNL|TWINSUK|ALSPAC|Estonian|NorthernSweden|FINRISK|GENOME_DK)$/, 'eur'],
+];
+const ancestry = (name) => (ANCESTRY_OF.find(([pattern]) => pattern.test(name)) || [0, ''])[1];
+function ancestryLegend() {
+  return el('p', { class: 'legend ancestry-key' },
+    ...ANCESTRIES.map(([key, name]) => el('span', { class: 'key' }, el('i', { class: `swatch a-${key}` }), ` ${name}`)),
+    el('span', { class: 'key' }, el('i', { class: 'swatch' }), ' mixed or other'));
+}
+
 /** Every population that looked at a variant, with its counts:
  *  [{ source, total: {ac, an}, note, rows: [{ name, ac, an, estimated }] }]. */
 function populations(v) {
@@ -1500,6 +1519,18 @@ function populations(v) {
 function supportLevel(support) {
   if (!(support > 0)) return 'none';
   return ['<0.001%', '0.001-0.01%', '0.01-0.1%', '0.1-1%', '1-10%', '>=10%'][[1e-5, 1e-4, 1e-3, 1e-2, 1e-1].filter((edge) => support >= edge).length];
+}
+
+/** Why a difference has its verdict, as a few facts. */
+function whyBrief(v) {
+  const support = number(v.support);
+  const fact = (name, value) => el('div', {}, el('dt', { text: name }), el('dd', {}, value));
+  return el('dl', { class: 'why' },
+    fact('Best evidence', support > 0 && given(v.support_from) ? stratumWords(v.support_from).replace(/^the /, '') : 'never seen'),
+    support > 0 ? fact('Guaranteed frequency', `at least ${percent(support)}`) : null,
+    fact('Score', given(v.score) ? `${v.score_basis === 'borrowed' ? 'at least ' : ''}${scoreText(Number(v.score))}` : 'none'),
+    fact('Common (1% or more)', v.class === 'common' ? 'yes' : 'no'),
+    fact('Verdict', badge(v.verdict)));
 }
 
 /** Why a difference has its verdict and score, step by step. */
@@ -1599,20 +1630,33 @@ function comparisonChart(v) {
   const model = scoreModel();
   if (!model) return null;
   const support = v ? number(v.support) : NaN;
-  const [W, H] = [700, 318];
+  const W = 700;
   const [slot0, slot1, x0, x1] = [52, 104, 122, 688];
+  // Three plots under each other: the same axis of support, an axis of
+  // its own for each.
+  const SCORE = { top: 40, bottom: 170 };
+  const REAL = { top: 212, bottom: 268 };
+  const ALL = { top: 310, bottom: 366 };
+  const H = ALL.bottom + 38;
   const xOf = (s) => (s > 0 ? x0 + ((Math.log10(Math.min(1, Math.max(1e-6, s))) + 6) / 6) * (x1 - x0) : (slot0 + slot1) / 2);
-  const [top, bottom, yLow, yHigh] = [26, 168, Math.log10(0.002), Math.log10(300)];
-  const yOf = (score) => bottom - ((Math.log10(Math.min(300, Math.max(0.002, score))) - yLow) / (yHigh - yLow)) * (bottom - top);
+  const [yLow, yHigh] = [Math.log10(0.002), Math.log10(300)];
+  const yOf = (score) => SCORE.bottom - ((Math.log10(Math.min(300, Math.max(0.002, score))) - yLow) / (yHigh - yLow)) * (SCORE.bottom - SCORE.top);
   const picture = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'compare', role: 'img',
     'aria-label': v
-      ? `The score rises smoothly with support. This difference has a support of ${support > 0 ? percent(support) : 'zero (never seen)'} and a score of ${scoreText(Number(v.score))}.`
-      : 'The score as a smooth curve of support, with the real variants and all possible changes it was made from.' });
+      ? `Three plots over the same axis of support: the score, the real variants and all possible changes. This difference has a support of ${support > 0 ? percent(support) : 'zero (never seen)'} and a score of ${scoreText(Number(v.score))}.`
+      : 'Three plots over the same axis of support: the score as a smooth curve, the real variants and all possible changes it was made from.' });
   const text = (x, y, cls, words, anchor = 'middle') => svg('text', { x, y, class: cls, 'text-anchor': anchor }, words);
+  const frame = (plot, title) => {
+    picture.append(svg('rect', { x: slot0, y: plot.top, width: slot1 - slot0, height: plot.bottom - plot.top, class: 'panel' }));
+    picture.append(svg('rect', { x: x0, y: plot.top, width: x1 - x0, height: plot.bottom - plot.top, class: 'panel' }));
+    picture.append(text(slot0, plot.top - 8, 'plot-title', title, 'start'));
+    for (let decade = -6; decade <= 0; decade += 1) {
+      picture.append(svg('line', { x1: xOf(10 ** decade), x2: xOf(10 ** decade), y1: plot.top, y2: plot.bottom, class: 'grid' }));
+    }
+  };
 
-  // Frame: the slot for "never seen", then the axis of support.
-  picture.append(svg('rect', { x: slot0, y: top, width: slot1 - slot0, height: bottom - top, class: 'panel' }));
-  picture.append(svg('rect', { x: x0, y: top, width: x1 - x0, height: bottom - top, class: 'panel' }));
+  // 1. The score.
+  frame(SCORE, 'Score');
   for (const tick of [0.01, 0.1, 1, 10, 100]) {
     picture.append(svg('line', { x1: slot0, x2: x1, y1: yOf(tick), y2: yOf(tick), class: tick === 0.1 ? 'limit low' : 'grid' }));
     picture.append(text(slot0 - 5, yOf(tick) + 3, 'tick', String(tick), 'end'));
@@ -1620,16 +1664,6 @@ function comparisonChart(v) {
   picture.append(svg('line', { x1: slot0, x2: x1, y1: yOf(state.limit), y2: yOf(state.limit), class: 'limit high' }));
   picture.append(text(x0 + 6, yOf(state.limit) - 4, 'limit-name high', `supported from ${state.limit}`, 'start'));
   picture.append(text(x1 - 4, yOf(0.1) + 11, 'limit-name low', 'needs confirmation up to 0.1', 'end'));
-  picture.append(text(slot0, top - 9, 'axis-name', 'score', 'start'));
-  for (let decade = -6; decade <= 0; decade += 1) {
-    const x = xOf(10 ** decade);
-    picture.append(svg('line', { x1: x, x2: x, y1: top, y2: H - 30, class: 'grid' }));
-    if (decade > -6) picture.append(text(x, H - 18, 'tick', `${Number((100 * 10 ** decade).toPrecision(1))}%`, decade === 0 ? 'end' : 'middle'));
-  }
-  picture.append(text((slot0 + slot1) / 2, H - 18, 'tick', 'never seen'));
-  picture.append(text((x0 + x1) / 2, H - 4, 'axis-name', 'support: the frequency the data guarantee in the best population'));
-
-  // The curve, with the range the real variants leave open.
   const samples = Array.from({ length: 121 }, (_, i) => 10 ** (-6 + i / 20));
   const band = [...samples.map((s) => `${xOf(s).toFixed(1)},${yOf(model.interval(s)[1]).toFixed(1)}`),
     ...samples.reverse().map((s) => `${xOf(s).toFixed(1)},${yOf(model.interval(s)[0]).toFixed(1)}`)];
@@ -1638,45 +1672,65 @@ function comparisonChart(v) {
   picture.append(svg('polyline', { points: samples.map((s) => `${xOf(s).toFixed(1)},${yOf(model.score(s)).toFixed(1)}`).join(' '), class: 'curve' }));
   picture.append(svg('line', { x1: slot0 + 8, x2: slot1 - 8, y1: yOf(model.never), y2: yOf(model.never), class: 'curve' }));
 
-  // The real variants: one dot each, at its own support.
-  const dotBase = 222;
-  picture.append(text(slot0 - 5, dotBase - 14, 'row-name', 'real', 'end'));
-  picture.append(text(slot0 - 5, dotBase - 4, 'row-name', 'variants', 'end'));
-  const stack = new Map();
-  for (const variant of model.real) {
-    const column = Math.round(xOf(variant.support) / 4.4);
-    const n = stack.get(column) || 0;
-    stack.set(column, n + 1);
-    const dot = svg('circle', { cx: column * 4.4, cy: dotBase - 3 - (n % 10) * 4.2, r: 1.9, class: 'real' });
-    dot.append(svg('title', {}, `${variant.label}: at least ${percent(variant.support)}, score ${scoreText(model.score(variant.support))}`));
-    picture.append(dot);
-  }
-  picture.append(svg('line', { x1: slot0, x2: x1, y1: dotBase, y2: dotBase, class: 'base' }));
-
-  // All possible changes: their share in each eighth of a step of ten.
-  const barBase = H - 32;
-  const shares = model.tail.map((t, k) => t.share - (model.tail[k + 1] ? model.tail[k + 1].share : 0));
-  const tallest = Math.max(...shares, 1e-9);
-  picture.append(text(slot0 - 5, barBase - 14, 'row-name', 'possible', 'end'));
-  picture.append(text(slot0 - 5, barBase - 4, 'row-name', 'changes', 'end'));
+  // 2 and 3. How the two groups spread over support: the share of the
+  // group in each eighth of a step of ten, and the share never seen.
   const step = (x1 - x0) / 48;
-  shares.forEach((share, k) => {
-    if (!(share > 0) || k === shares.length - 1) return;
-    const tall = Math.max(1, (share / tallest) * 40);
-    const bar = svg('rect', { x: xOf(model.tail[k].support) + 0.5, y: barBase - tall, width: step - 1, height: tall, class: 'arbitrary' });
-    bar.append(svg('title', {}, `${pct(share)} of all possible changes have a support from ${percent(model.tail[k].support)}`));
-    picture.append(bar);
-  });
-  picture.append(svg('rect', { x: slot0 + 10, y: barBase - 40, width: slot1 - slot0 - 20, height: 40, class: 'arbitrary' }));
-  picture.append(text((slot0 + slot1) / 2, barBase - 44, 'count', pct(1 - model.seenShare)));
+  const histogram = (plot, title, shares, never, cls, noun) => {
+    frame(plot, title);
+    const tall = plot.bottom - plot.top;
+    // The axis ends at a round share just above the tallest bar.
+    const most = Math.max(...shares, 1e-9);
+    const top = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1].find((edge) => edge >= most) || 1;
+    for (const [share, y] of [[0, plot.bottom], [top, plot.top]]) picture.append(text(slot0 - 5, y + (share ? 8 : 0), 'tick', `${Number((100 * share).toPrecision(1))}%`, 'end'));
+    shares.forEach((share, k) => {
+      if (!(share > 0)) return;
+      const height = Math.max(1, (share / top) * tall);
+      const bar = svg('rect', { x: x0 + k * step + 0.5, y: plot.bottom - height, width: step - 1, height, class: cls });
+      bar.append(svg('title', {}, `${pct(share)} of ${noun} have a support from ${percent(10 ** (-6 + k / 8))}`));
+      picture.append(bar);
+    });
+    // Never seen: a bar of its own, with its share written on it.
+    const height = never > 0 ? Math.max(1, Math.min(1, never / top) * (tall - 12)) : 0;
+    if (height) picture.append(svg('rect', { x: slot0 + 10, y: plot.bottom - height, width: slot1 - slot0 - 20, height, class: cls }));
+    picture.append(text((slot0 + slot1) / 2, plot.bottom - height - 3, 'count', never > 0 ? pct(never) : 'none'));
+    picture.append(svg('line', { x1: slot0, x2: x1, y1: plot.bottom, y2: plot.bottom, class: 'base' }));
+  };
+  const realShares = Array(48).fill(0);
+  let realNever = 0;
+  for (const variant of model.real) {
+    if (!(variant.support > 0)) realNever += 1;
+    else realShares[Math.min(47, Math.max(0, Math.floor((Math.log10(variant.support) + 6) * 8 + 1e-9)))] += 1;
+  }
+  const reals = Math.max(1, model.real.length);
+  histogram(REAL, `Real variants (${model.real.length.toLocaleString('en')})`, realShares.map((n) => n / reals), realNever / reals, 'real', 'the real variants');
+  const allShares = model.tail.slice(0, 48).map((t, k) => t.share - (model.tail[k + 1] ? model.tail[k + 1].share : 0));
+  while (allShares.length < 48) allShares.push(0);
+  histogram(ALL, `All possible changes (${model.counts.arbitrary.toLocaleString('en')})`, allShares, 1 - model.seenShare, 'arbitrary', 'all possible changes');
+
+  // The axis they share.
+  for (let decade = -5; decade <= 0; decade += 1) {
+    picture.append(text(xOf(10 ** decade), ALL.bottom + 14, 'tick', `${Number((100 * 10 ** decade).toPrecision(1))}%`, decade === 0 ? 'end' : 'middle'));
+  }
+  picture.append(text((slot0 + slot1) / 2, ALL.bottom + 14, 'tick', 'never seen'));
+  picture.append(text((x0 + x1) / 2, ALL.bottom + 30, 'axis-name', 'Support: the frequency the data guarantee in the best population'));
 
   if (v) {
     const at = xOf(support);
-    picture.append(svg('line', { x1: at, x2: at, y1: top, y2: barBase, class: 'this' }));
+    for (const plot of [SCORE, REAL, ALL]) picture.append(svg('line', { x1: at, x2: at, y1: plot.top, y2: plot.bottom, class: 'this' }));
     picture.append(svg('circle', { cx: at, cy: yOf(Number(v.score)), r: 4.5, class: 'this-dot' }));
-    picture.append(text(Math.min(Math.max(at, 70), W - 70), top - 9, 'this-label', `this difference: score ${scoreText(Number(v.score))}`));
+    picture.append(text(Math.min(Math.max(at, 150), W - 70), SCORE.top - 8, 'this-label', `this difference: score ${scoreText(Number(v.score))}`));
   }
   return picture;
+}
+
+/** What the marks of the comparison mean. */
+function comparisonLegend(v) {
+  return el('p', { class: 'legend compare-key' },
+    el('span', { class: 'key' }, el('i', { class: 'swatch line-score' }), ' score'),
+    el('span', { class: 'key' }, el('i', { class: 'swatch band-score' }), ' its 95% range'),
+    el('span', { class: 'key' }, el('i', { class: 'swatch real' }), ' real variants'),
+    el('span', { class: 'key' }, el('i', { class: 'swatch' }), ' all possible changes'),
+    v ? el('span', { class: 'key' }, el('i', { class: 'swatch this-mark' }), ' this difference') : null);
 }
 
 const pct = (x) => (x >= 0.995 ? '100%' : `${Number((100 * x).toPrecision(2))}%`);
@@ -1689,7 +1743,7 @@ function evidencePanel(v) {
     const af = r.af ?? (r.an ? r.ac / r.an : 0);
     return el('tr', { class: af > 0 ? '' : 'zero' },
       el('th', { scope: 'row', text: r.name }),
-      el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * af) / top}%` })),
+      el('td', {}, el('span', { class: `bar-fill a-${ancestry(r.name)}`, style: `--share:${(100 * af) / top}%` })),
       el('td', { class: 'num', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
       el('td', { class: 'num', text: percent(af) }));
   };
@@ -1701,17 +1755,17 @@ function evidencePanel(v) {
         `A ${kind}: the reference genome has ${referenceBases(v) || v.vcf_ref}, this allele has ${v.query_variant}`,
         el('span', { class: 'muted', text: ' (written on the forward strand of the genome, as in the population files; the alignment below shows the gene in its own direction).' }))),
     el('div', { class: 'evidence-part' },
-      el('h4', { text: 'Who carries it' }),
+      el('h4', {}, 'Who carries it ', hint('How to read the bars', el('span', { class: 'help-text' }, el('span', { text: 'Each person has two chromosomes, so the counts are of chromosomes.' }), el('span', { text: 'Bars are drawn relative to the population where the base is most frequent. Their colour is the continental group of the population.' })))),
       groups.length ? groups.map((g) => el('table', { class: 'people' },
         el('caption', {}, el('b', { text: g.source }), g.total && g.total.an > 0 ? `: ${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')} chromosomes carry it` : '',
           g.note ? el('small', { class: 'muted', text: ` ${g.note}` }) : null),
         el('thead', { class: 'sr' }, el('tr', {}, ...['Population', 'Share', 'Chromosomes with it', 'Frequency'].map((h) => el('th', { scope: 'col', text: h })))),
         el('tbody', {}, g.rows.sort((a, b) => (b.af ?? b.ac / b.an) - (a.af ?? a.ac / a.an)).map(bar))))
         : el('p', { class: 'muted', text: 'No source has a record of this base at this position.' }),
-      groups.length ? el('p', { class: 'muted', text: 'Each person has two chromosomes, so the counts are of chromosomes. Bars are drawn relative to the population where the base is most frequent.' }) : null),
+      groups.length ? ancestryLegend() : null),
     el('div', { class: 'evidence-part' },
-      el('h4', { text: 'Why this verdict and score' }),
-      el('ol', {}, whyScore(v).map((step) => el('li', { text: step })))),
+      el('h4', {}, 'Why this verdict ', hint('The reasoning step by step', el('span', { class: 'help-text' }, whyScore(v).map((step, i) => el('span', { text: `${i + 1}. ${step}` }))))),
+      whyBrief(v)),
     comparison(v));
 }
 
@@ -1727,15 +1781,18 @@ function comparison(v) {
     : score > 1 ? 'That speaks for a real variant, the more so the higher the score, but is not strong evidence by itself. "Inconclusive" means exactly that, not "ruled out".'
       : score > 0.1 ? 'That speaks mildly against a real variant without ruling it out.'
         : 'That is what an arbitrary change looks like: the difference needs confirmation from other data.';
+  const help = el('span', { class: 'help-text' },
+    el('span', { text: model.own
+      ? `The real variants are the ${model.real.length} distinct single-base variants of the ${model.alleles} alleles (${plural(model.genes, 'gene')}) that this run accepts as real, namely the database alleles and the candidates whose whole sequence was found on several phased chromosomes. All possible changes are the ${model.counts.arbitrary.toLocaleString('en')} single-base changes that are possible in the genes of the run, which is what an arbitrary error looks like. The line is the score: how much more typical a support is of real variants than of possible changes. It is fitted to all of them at once, so it has no steps.`
+      : `The scores of this run come from igpop's built-in curve, because the run has too few established alleles to make its own. The curve was made from ${model.counts.trusted} real variants and ${model.counts.arbitrary.toLocaleString('en')} possible changes in human IGHV genes.` }),
+    el('span', { text: 'The three plots share the axis of support. The upper one is the score; the two below show how the real variants and all possible changes spread over support, each as a share of its own group.' }),
+    el('span', { text: `The limits for the verdict (${state.limit} for "supported", which you can move above the list of alleles, and 0.1 for "needs confirmation") are conventions, not measurements. Where likelihood ratios are used, 1 to 3 is usually read as weak, 3 to 10 as positive and 10 or more as strong evidence. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.` }));
   return el('div', { class: 'evidence-part' },
-    el('h4', { text: 'What it was compared with' }),
-    el('p', {}, model.own
-      ? `Blue dots: the ${model.real.length} distinct single-base variants of the ${model.alleles} alleles (${plural(model.genes, 'gene')}) that this run accepts as real, namely the database alleles and the candidates whose whole sequence was found on several phased chromosomes. Point at a dot to see which variant it is. Grey bars: all ${model.counts.arbitrary.toLocaleString('en')} single-base changes that are possible in the genes of the run, which is what an arbitrary error looks like. The line is the score: how much more typical a support is of the dots than of the bars. It is fitted to all of them at once, so it has no steps.`
-      : `The scores of this run come from igpop's built-in curve, because the run has too few established alleles to make its own. The curve was made from ${model.counts.trusted} real variants (blue dots) and ${model.counts.arbitrary.toLocaleString('en')} possible changes (grey bars) in human IGHV genes.`),
+    el('h4', {}, 'Score against support ', hint('How to read this figure', help)),
+    el('p', {}, `Score ${scoreText(score)} (95% range ${scoreText(low)} to ${scoreText(high)}). ${reading}`),
+    comparisonLegend(v),
     el('div', { class: 'scroll' }, comparisonChart(v)),
-    v.score_basis === 'borrowed' ? el('p', { text: 'This difference is an insertion or deletion, and the picture is made from single-base changes. Its score is read from the same line as a lower bound.' }) : null,
-    el('p', {}, `This difference has a score of ${scoreText(score)}. The shaded band shows how well the real variants pin the line down here: between ${scoreText(low)} and ${scoreText(high)}. ${reading}`),
-    el('p', { class: 'muted', text: `The limits for the verdict (${state.limit} for "supported", which you can move above the list of alleles, and 0.1 for "needs confirmation") are conventions, not measurements. Where likelihood ratios are used, 1 to 3 is usually read as weak, 3 to 10 as positive and 10 or more as strong evidence. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.` }));
+    v.score_basis === 'borrowed' ? el('p', { class: 'muted', text: 'An insertion or deletion: its score is read from the same line as a lower bound.' }) : null);
 }
 
 /** The bases of the reference genome a difference replaces, on the
@@ -1770,7 +1827,7 @@ function peoplePopup(v) {
         g.total && g.total.an > 0 ? el('span', { text: `${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')}` }) : null),
       top.length ? el('span', { class: 'tip-rows' }, top.flatMap((r) => [
         el('span', { class: 'tip-name', text: r.name }),
-        el('span', { class: 'tip-track' }, el('i', { style: `width:${width(share(r))}` })),
+        el('span', { class: 'tip-track' }, el('i', { class: `a-${ancestry(r.name)}`, style: `width:${width(share(r))}` })),
         el('span', { class: 'tip-count', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? '~' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
         el('span', { class: 'tip-share', text: percent(share(r)) }),
       ])) : el('span', { class: 'tip-none', text: 'not seen' }),

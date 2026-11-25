@@ -541,3 +541,33 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .hap-chart .bars { margin: 0; }
 .other-end { white-space: normal; max-width: 7.5rem; line-height: 1.25; }
 .hap-chart .bars th { white-space: nowrap; }
+
+/* ---- continental groups: one colour each, the same in every source ---- */
+:root { --a-eur: #2a78d6; --a-afr: #eb6834; --a-eas: #1baf7a; --a-mid: #eda100; --a-sas: #e87ba4; --a-amr: #008300; }
+@media (prefers-color-scheme: dark) {
+  :root { --a-eur: #3987e5; --a-afr: #d95926; --a-eas: #199e70; --a-mid: #c98500; --a-sas: #d55181; --a-amr: #0ca30c; }
+}
+.people .bar-fill, .tip-track i, .swatch { background: var(--grey); }
+.people .bar-fill.a-eur, .tip-track i.a-eur, .swatch.a-eur { background: var(--a-eur); }
+.people .bar-fill.a-afr, .tip-track i.a-afr, .swatch.a-afr { background: var(--a-afr); }
+.people .bar-fill.a-eas, .tip-track i.a-eas, .swatch.a-eas { background: var(--a-eas); }
+.people .bar-fill.a-mid, .tip-track i.a-mid, .swatch.a-mid { background: var(--a-mid); }
+.people .bar-fill.a-sas, .tip-track i.a-sas, .swatch.a-sas { background: var(--a-sas); }
+.people .bar-fill.a-amr, .tip-track i.a-amr, .swatch.a-amr { background: var(--a-amr); }
+.swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 3px; vertical-align: -0.05rem; }
+.ancestry-key { margin: 0 0 0.4rem; }
+
+/* ---- three plots over one axis; help behind a question mark ---- */
+.compare .plot-title { font-size: 11px; font-weight: 700; fill: var(--ink); }
+.compare .this { stroke-width: 1.2; }
+.swatch.real { background: var(--accent); }
+.swatch.line-score { background: var(--accent); height: 2px; width: 1rem; vertical-align: 0.25rem; border-radius: 0; }
+.swatch.band-score { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.swatch.this-mark { background: var(--ink); width: 2px; border-radius: 0; }
+.compare-key { margin: 0.2rem 0; }
+.help-text { display: grid; gap: 0.5rem; max-width: 30rem; font-weight: 400; }
+.evidence h4 .hint { font-weight: 400; }
+.why { display: grid; gap: 0.3rem; margin: 0.2rem 0 0; }
+.why > div { display: grid; grid-template-columns: 11rem 1fr; gap: 0.6rem; }
+.why dt { color: var(--muted); }
+.why dd { margin: 0; font-weight: 600; }
