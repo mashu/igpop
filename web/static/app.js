@@ -228,6 +228,10 @@ function setBar(share) {
 /** The source a data file belongs to, in the words of the results. */
 function sourceOf(url) {
   const u = url.toLowerCase();
+  if (u.includes('population_frequency')) return 'ALFA, by population';
+  if (u.includes('ga100k')) return 'GenomeAsia pilot';
+  if (u.includes('tommo')) return 'ToMMo 61KJPN (Japan)';
+  if (u.includes('wbbc')) return 'Westlake BioBank (China)';
   if (u.includes('gnomad')) return /2\.1/.test(u) ? 'gnomAD v2.1 (GRCh37)' : 'gnomAD v4.1';
   if (/\/snp\/|gcf_/.test(u)) return u.includes('gcf_000001405.25') ? 'dbSNP (GRCh37)' : 'dbSNP';
   if (u.includes('phase3')) return '1000 Genomes phase 3 (GRCh37)';
@@ -263,7 +267,7 @@ const STEP_WORDS = [
   [/^finding the gene of (\d+) alleles by sequence/, (m) => `Gene of ${m[1]} alleles found by sequence`],
   [/^downloading (\d+) regions from (\d+) servers.*/, (m) => `Population data for ${m[1]} regions of the genome`],
   [/^phased panel: .*/, () => 'Phased chromosomes read'],
-  [/^(1kGP\w*|gnomAD\S*|dbSNP): .*/, (m) => `${sourceTitle(m[1])} read`],
+  [/^(1kGP\w*|gnomAD\S*|dbSNP|ALFA|GenomeAsia|ToMMo_61k|WBBC): .*/, (m) => `${sourceTitle(m[1])} read`],
   [/^(\d+) founders, (\d+) haplotypes/, (m) => `${Number(m[2]).toLocaleString('en')} chromosomes of ${Number(m[1]).toLocaleString('en')} unrelated people`],
   [/^(\d+) regions, (\d+) from cache/, (m) => `${m[1]} regions`],
   [/^score: calibrated from (.*)/, (m) => `Score calibrated from ${m[1].replace(/^this run: /, '')}`],
@@ -295,7 +299,7 @@ function logLine(message) {
     return;
   }
   if (run.step !== 1) $('sources').hidden = true;
-  const dataset = text.match(/^(1kGP\w*|gnomAD\S*|dbSNP|phased panel):/);
+  const dataset = text.match(/^(1kGP\w*|gnomAD\S*|dbSNP|ALFA|GenomeAsia|ToMMo_61k|WBBC|phased panel):/);
   if (dataset && run.step === 2) $('progress-now').textContent = `Reading ${dataset[1] === 'phased panel' ? 'the phased chromosomes' : sourceTitle(dataset[1])}.`;
   const aligning = text.match(/^aligning (\d+) alleles to (\d+) loci on (\S+)/);
   if (aligning && run.step === 0) $('progress-now').textContent = `Aligning ${aligning[1]} alleles to ${aligning[2]} genes on ${aligning[3]}.`;
@@ -1122,7 +1126,7 @@ function frequencyLegend() {
   return el('div', { class: 'legend' },
     el('span', { class: 'key' }, mark('kgp', 6, 6), ' 1000 Genomes population'),
     el('span', { class: 'key' }, mark('gnomad', 6, 6), ' gnomAD group'),
-    el('span', { class: 'key' }, mark('dbsnp', 6, 6), ' dataset in dbSNP'),
+    el('span', { class: 'key' }, mark('dbsnp', 6, 6), ' another study'),
     el('span', { class: 'key' }, el('i', { class: 'line' }), ' 1% line'));
 }
 
@@ -1360,6 +1364,13 @@ function frequencies(v) {
   }
   const gnomad = number(v.gnomad_max_group_AF);
   if (gnomad > 0) out.push({ kind: 'gnomad', name: `gnomAD ${v.gnomad_max_group}`, af: gnomad });
+  if (given(v.more_groups)) {
+    for (const entry of v.more_groups.split(';')) {
+      const [source, group, counts] = entry.split(':');
+      const [ac, an] = counts.split('/').map(Number);
+      if (ac > 0) out.push({ kind: 'dbsnp', name: `${source.replace('_', ' ')} ${group}`, af: ac / an });
+    }
+  }
   if (given(v.dbsnp_freq)) {
     for (const entry of v.dbsnp_freq.split(';')) {
       const [name, af] = entry.split(':');
@@ -1403,14 +1414,24 @@ function strip(v) {
 }
 
 const GNOMAD_NAMES = { afr: 'African / African American', ami: 'Amish', amr: 'Admixed American', asj: 'Ashkenazi Jewish', eas: 'East Asian', fin: 'Finnish', mid: 'Middle Eastern', nfe: 'European (non-Finnish)', sas: 'South Asian' };
-const sourceTitle = (name) => ({ '1kGP_30x': '1000 Genomes, 30x', '1kGP_phase3': '1000 Genomes, phase 3', dbSNP: 'dbSNP' }[name] || name.replace('gnomAD_v', 'gnomAD v'));
+const sourceTitle = (name) => ({ '1kGP_30x': '1000 Genomes, 30x', '1kGP_phase3': '1000 Genomes, phase 3', dbSNP: 'dbSNP', ALFA: 'ALFA by population', GenomeAsia: 'the GenomeAsia pilot', ToMMo_61k: 'ToMMo 61KJPN', WBBC: 'the Westlake BioBank for Chinese' }[name] || name.replace('gnomAD_v', 'gnomAD v'));
 /** A stratum such as `1kGP_30x:AFR` in words. */
 function stratumWords(stratum) {
   const [source, population] = stratum.split(':');
   if (source.startsWith('1kGP')) return `${POP_NAMES[population] || population} people of ${sourceTitle(source)}`;
   if (source.startsWith('gnomAD')) return `the ${GNOMAD_NAMES[population] || population} group of ${sourceTitle(source)}`;
+  if (MORE_SOURCES[source]) return `${MORE_SOURCES[source].group(population)} of ${MORE_SOURCES[source].title}`;
   return `the study ${population}`;
 }
+
+/** The further datasets read beside 1000 Genomes and gnomAD, by the name
+ *  the tables use. */
+const MORE_SOURCES = {
+  ALFA: { title: 'ALFA (NCBI)', group: (g) => `the ${g} group` },
+  GenomeAsia: { title: 'the GenomeAsia pilot', group: (g) => `the ${g} group` },
+  ToMMo_61k: { title: 'ToMMo 61KJPN', group: (g) => `${g} people` },
+  WBBC: { title: 'the Westlake BioBank for Chinese', group: (g) => `people from ${g}` },
+};
 
 /** Every population that looked at a variant, with its counts:
  *  [{ source, total: {ac, an}, note, rows: [{ name, ac, an, estimated }] }]. */
@@ -1440,6 +1461,24 @@ function populations(v) {
         return { name: GNOMAD_NAMES[group] || group, ac, an };
       }),
     });
+  }
+  if (given(v.more_groups)) {
+    const bySource = new Map();
+    for (const entry of v.more_groups.split(';')) {
+      const [source, group, counts] = entry.split(':');
+      const [ac, an] = counts.split('/').map(Number);
+      if (!bySource.has(source)) bySource.set(source, []);
+      bySource.get(source).push({ name: group, ac, an });
+    }
+    for (const [source, rows] of bySource) {
+      const title = MORE_SOURCES[source] ? MORE_SOURCES[source].title.replace(/^the /, '') : source;
+      out.push({
+        source: title[0].toUpperCase() + title.slice(1),
+        total: { ac: rows.reduce((sum, r) => sum + r.ac, 0), an: rows.reduce((sum, r) => sum + r.an, 0) },
+        note: '',
+        rows,
+      });
+    }
   }
   if (given(v.dbsnp_freq)) {
     const sizes = new Map((state.files['dbsnp_datasets.tsv'] ? parseTSV(state.files['dbsnp_datasets.tsv']) : []).map((d) => [d.dataset, Number(d.implied_chromosomes)]));

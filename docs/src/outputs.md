@@ -98,6 +98,17 @@ Counts are from the 2,504 unrelated samples only.
 | `gnomad_any_group_AF_upper95` | Largest upper bound over the groups. |
 | `gnomad_groups` | Copies and chromosomes in every genetic ancestry group, as `group:AC/AN;...`. |
 
+### Further datasets
+
+| Column | Meaning |
+|---|---|
+| `more_groups` | Copies and chromosomes in every group of ALFA, GenomeAsia, ToMMo 61KJPN and WBBC that examined the position, as `dataset:group:AC/AN;...`. `.` if none did. |
+
+These groups count as evidence exactly like the populations of 1000
+Genomes and gnomAD, and appear in `support_from` and `class_basis` as
+`ALFA:European`, `GenomeAsia:Southeast Asian`, `ToMMo_61k:Japanese` or
+`WBBC:South China`.
+
 ### Frequencies relayed by dbSNP
 
 | Column | Meaning |

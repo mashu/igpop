@@ -205,6 +205,7 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
             names(&["dbsnp_common", "dbsnp_datasets", "dbsnp_max_dataset", "dbsnp_max_AF", "dbsnp_freq"]),
             dbsnp_cells,
         )
+        .col("more_groups", more_cell)
         .col("locus_status", |r: &R| r.allele.placed.status.as_str().to_string())
         .col("shares_locus_with", |r: &R| r.allele.placed.shared())
 }
@@ -332,6 +333,29 @@ fn gnomad_cells(r: &VariantRow) -> Vec<String> {
             out
         }
         None => dots(11),
+    }
+}
+
+/// The further datasets: every group that examined the position, as
+/// `dataset:group:count/chromosomes`.
+fn more_cell(r: &VariantRow) -> String {
+    let cells: Vec<String> =
+        r.ev.extras
+            .iter()
+            .zip(&r.ev.sources.extras)
+            .filter_map(|(sites, extra)| Some((extra, sites.get(&r.v.lookup)?)))
+            .flat_map(|(extra, counts)| {
+                extra
+                    .groups
+                    .iter()
+                    .zip(counts)
+                    .filter(|(_, c)| c.an > 0)
+                    .map(|(group, c)| format!("{}:{group}:{}/{}", extra.name, c.ac, c.an))
+            })
+            .collect();
+    match cells.is_empty() {
+        true => ".".to_string(),
+        false => cells.join(";"),
     }
 }
 

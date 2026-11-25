@@ -136,6 +136,21 @@ fn datasets_of(build: &str, ev: &Evidence) -> Vec<(String, String, String)> {
             ),
         ));
     }
+    for (extra, sites) in ev.sources.extras.iter().zip(&ev.extras) {
+        out.push((
+            extra.title.to_string(),
+            extra.spec.to_string(),
+            format!(
+                "allele counts in {}: {}; {} variants of the regions read",
+                match extra.groups.len() {
+                    1 => "one group".to_string(),
+                    n => format!("{n} groups"),
+                },
+                extra.groups.join(", "),
+                sites.len()
+            ),
+        ));
+    }
     if let (Some(spec), Some(panel)) = (&ev.sources.phased, &ev.panel) {
         out.push((
             if phase3 {

@@ -6,6 +6,7 @@
 //! dbSNP. Everything downstream (class, support, score) is computed from
 //! the strata of a variant and nothing else.
 
+use crate::extra::Extra;
 use crate::fetch::{fetch_vcf, merge_regions, Cache, Region};
 use crate::freq::{self, GnomadSite, Key, KgpRelease, PopCount, Site, GNOMAD_GROUPS, POPS};
 use crate::hap::Panel;
@@ -26,6 +27,8 @@ pub enum Stratum {
     Gnomad(usize),
     /// Dataset relayed by dbSNP (index into the datasets in use).
     Dbsnp(usize),
+    /// Group of a further dataset: which dataset, which group.
+    Extra(usize, usize),
 }
 
 /// Where each source is read from; `None` = not used in this run.
@@ -37,6 +40,8 @@ pub struct Sources {
     pub gnomad: Option<String>,
     pub gnomad_name: &'static str,
     pub dbsnp: Option<String>,
+    /// Further datasets with counts per group.
+    pub extras: Vec<Extra>,
     pub phased: Option<String>,
     pub pedigree: String,
     /// dbSNP datasets left out by name.
@@ -282,8 +287,10 @@ pub fn downloads(sources: &Sources, windows: &[Window], placed: &[Placed]) -> Ve
     let mut out: Vec<Download> = [&sources.kgp, &sources.gnomad, &sources.dbsnp]
         .into_iter()
         .flatten()
+        .cloned()
+        .chain(sources.extras.iter().map(|extra| extra.spec.to_string()))
         .map(|spec| Download {
-            spec: spec.clone(),
+            spec,
             regions: frequency.clone(),
         })
         .collect();
@@ -309,6 +316,9 @@ pub struct Evidence {
     pub gnomad_full: [u32; 9],
     pub gnomad_full_total: u32,
     pub dbsnp: Dbsnp,
+    /// Per further dataset that was read, in the order of
+    /// `sources.extras`: the counts of its groups per variant.
+    pub extras: Vec<HashMap<Lookup, Vec<PopCount>>>,
     pub panel: Option<Panel>,
 }
 
@@ -326,11 +336,33 @@ impl Evidence {
             gnomad_full: [0; 9],
             gnomad_full_total: 0,
             dbsnp: Dbsnp::default(),
+            extras: Vec::new(),
             panel: None,
         };
         if ev.regions.is_empty() {
             (ev.sources.kgp, ev.sources.gnomad, ev.sources.dbsnp) = (None, None, None);
+            ev.sources.extras.clear();
         }
+        // Further datasets add evidence; one that cannot be read is left
+        // out and the run continues.
+        let mut read = Vec::new();
+        for extra in std::mem::take(&mut ev.sources.extras) {
+            note!("{}: {}", extra.name, extra.spec);
+            match fetch_vcf(extra.spec, &ev.regions, cache) {
+                Ok(lines) => {
+                    let mut sites = HashMap::new();
+                    for (contig, line) in lines {
+                        for (key, counts) in extra.parse(&line) {
+                            sites.insert((contig.clone(), key), counts);
+                        }
+                    }
+                    ev.extras.push(sites);
+                    read.push(extra);
+                }
+                Err(e) => note!("warning: {} could not be read and is left out: {e:#}", extra.title),
+            }
+        }
+        ev.sources.extras = read;
 
         if let Some(spec) = &ev.sources.kgp {
             note!("{}: {spec}", ev.sources.kgp_name);
@@ -376,6 +408,7 @@ impl Evidence {
             if ev.sources.gnomad.is_some() {
                 duplicated.push("GnomAD_genomes");
             }
+            duplicated.extend(ev.sources.extras.iter().flat_map(|extra| extra.replaces.iter().copied()));
             ev.dbsnp.select(&ev.sources.dbsnp_exclude, &duplicated, ev.sources.common);
         }
 
@@ -414,7 +447,7 @@ impl Evidence {
 
     /// True if at least one source with allele counts was consulted.
     pub fn counted(&self) -> bool {
-        self.kgp_read() || self.gnomad_read() || self.dbsnp.used().next().is_some()
+        self.kgp_read() || self.gnomad_read() || self.dbsnp.used().next().is_some() || self.extras.iter().any(|sites| !sites.is_empty())
     }
 
     /// True if the population data of this run cover the contig: a variant
@@ -440,6 +473,11 @@ impl Evidence {
             out.extend(site.groups.iter().enumerate().map(|(i, c)| (Stratum::Gnomad(i), *c)));
         }
         out.extend(self.dbsnp.strata(lookup));
+        for (k, sites) in self.extras.iter().enumerate() {
+            if let Some(counts) = sites.get(lookup) {
+                out.extend(counts.iter().enumerate().map(|(i, c)| (Stratum::Extra(k, i), *c)));
+            }
+        }
         out.retain(|(_, c)| c.an > 0);
         out
     }
@@ -450,6 +488,7 @@ impl Evidence {
             Stratum::Kgp(i) => format!("{}:{}", self.sources.kgp_name, POPS[i]),
             Stratum::Gnomad(i) => format!("{}:{}", self.sources.gnomad_name, GNOMAD_GROUPS[i]),
             Stratum::Dbsnp(k) => format!("dbSNP:{}", self.dbsnp.used().nth(k).map_or("?", |d| d.name.as_str())),
+            Stratum::Extra(k, i) => format!("{}:{}", self.sources.extras[k].name, self.sources.extras[k].groups[i]),
         }
     }
 }

@@ -92,6 +92,9 @@ struct Args {
     /// Do not use dbSNP.
     #[arg(long)]
     no_dbsnp: bool,
+    /// For evaluation only: leave out ALFA, GenomeAsia, ToMMo and WBBC.
+    #[arg(long, hide = true)]
+    no_more_datasets: bool,
     /// dbSNP frequency datasets left out of the evidence, comma-separated.
     /// Default: SGDP_PRJ, whose per-site samples are often one or two
     /// genomes. Re-reports of a source read directly in the same run
@@ -169,6 +172,7 @@ impl Args {
         config.kgp = choice(&self.vcf, false);
         config.gnomad = choice(&self.gnomad, self.no_gnomad);
         config.dbsnp = choice(&self.dbsnp, self.no_dbsnp);
+        config.more_datasets = !self.no_more_datasets;
         config.phased = choice(&self.phased_vcf, self.no_haplotypes);
         config.pedigree = self.pedigree.clone();
         config.dbsnp_exclude = self

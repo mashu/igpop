@@ -11,8 +11,9 @@ populations, and how often?
 
 igpop aligns each allele (IGH out of the box; IGK, IGL and TR with your own
 coordinates) to the locus of its gene, calls its differences from the
-reference genome, and judges each against 1000 Genomes 30x, gnomAD and the
-datasets relayed by dbSNP. Every allele gets a verdict in words, the reasons
+reference genome, and judges each against 1000 Genomes 30x, gnomAD, the
+datasets relayed by dbSNP, and further populations (ALFA, GenomeAsia,
+Japanese ToMMo, Chinese WBBC). Every allele gets a verdict in words, the reasons
 when it does not pass, and a check whether its whole combination of variants
 occurs on one chromosome in phased genomes. Only the regions needed are
 downloaded.
