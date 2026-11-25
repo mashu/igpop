@@ -237,6 +237,9 @@ gene under the reference, 5' to 3'.
   the usual ones (8, 9 or 10 and 7, 8, 9 or 10 codons).
 - Pointing at a column shows what is there; a click on a difference of the
   opened allele shows its evidence.
+- The header gives the gene, its place on the genome and a key to the
+  marks; the "?" beside it holds the full explanation. The dot before
+  each allele's name is the verdict of the whole allele.
 
 ## Alleles that were not placed cleanly
 
