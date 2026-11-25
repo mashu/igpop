@@ -91,8 +91,9 @@ Some points on it:
 
 Read the line for 3% as: a variant shown to reach 3% in some population is
 16 times more typical of real variants than of arbitrary changes, and only
-1.5% of all possible changes are supported that well. The score reaches 10
-at a support of 1.7% and falls to 0.1 at 0.018%.
+1.5% of all possible changes are supported that well. The score reaches 2,
+the default limit for `supported`, at a support of 0.28%; it reaches 10 at
+1.7% and falls to 0.1 at 0.018%.
 
 The curve itself is written to `<prefix>.score_model.tsv`; the two groups
 counted in seven levels of support, for reading, to
@@ -129,9 +130,9 @@ are still shown, as a ruler; they no longer decide anything.
 - **Small allele sets.** D and J sets have too few variants to calibrate;
   igpop then uses its built-in human IGHV curve, or one you pass with
   `--calibration`. See [Automatic calibration](calibration.md).
-- **From score to verdict.** At least 10: `supported`. At most 0.1:
-  `needs_confirmation`. In between: `inconclusive`. Ten to one is the
-  usual mark for strong evidence in either direction.
+- **From score to verdict.** At least 2: `supported`. At most 0.1:
+  `needs_confirmation`. In between: `inconclusive`. Both limits can be
+  changed; see below for what they mean and cost.
 - **From score to probability.** Probability = prior x score /
   (prior x score + 1 - prior), where the prior is the share of such
   variants you expect to be real (`--prior`).
@@ -186,23 +187,31 @@ are still shown, as a ruler; they no longer decide anything.
 - **The curve is measured.** It comes from the real variants and the
   possible changes of the run (or, for small runs, from the built-in IGHV
   curve). Nothing about it is set by hand.
-- **The limits 10 and 0.1 are conventions.** A ratio of ten or more is the
-  usual reading of "strong evidence" for likelihood ratios; nothing in the
-  data singles it out. They can be changed (`--supported-score`,
+- **The limits 2 and 0.1 are choices.** Nothing in the data singles them
+  out. Where likelihood ratios are used, 1 to 3 is usually read as weak
+  evidence, 3 to 10 as positive and 10 or more as strong. The default of 2
+  asks that a difference be at least twice as typical of real variants as
+  of arbitrary changes: it leaves out what is close to 1, where the
+  frequency cannot tell, without asking strong evidence of every single
+  difference. Both limits can be changed (`--supported-score`,
   `--confirm-score`). Because the score is smooth, a limit is a line drawn
-  across a slope, not a step: a variant scoring 9 is nearly as well
-  supported as one scoring 11, and the table shows the number so that you
-  can read it that way. In the IGHV example a limit of 5 instead of 10
-  supports 407 instead of 390 alleles, and a limit of 3 supports 421; the
-  share of artificial substitutions that pass rises from 1.3% to
-  1.6% and 2.3% (3.0% at a limit of 2, with 439 alleles supported). The web app has a slider for the limit that shows
-  these consequences while you move it.
+  across a slope, not a step, and the table shows the number so that you
+  can read it that way. What a limit costs, in the IGHV example:
 
-So a score of 3 or 5 is not a rejection. It says that such support is
-three or five times more typical of real variants than of arbitrary
-changes. That speaks for the difference without being strong evidence, and
-is reported as `inconclusive`, which means "the population data do not
-settle it".
+  | Limit for `supported` | Reached at a support of | IGHV alleles supported (of 519) | Artificial substitutions supported (of 2,995) |
+  |---:|---:|---:|---:|
+  | 2 (default) | 0.28% | 439 | 3.0% |
+  | 3 | 0.43% | 421 | 2.3% |
+  | 5 | 0.75% | 407 | 1.6% |
+  | 10 | 1.7% | 390 | 1.3% |
+
+  The web app has a control for the limit that shows these consequences
+  while you move it.
+
+So a score of 1.5 is not a rejection, and a score of 3 is not proof. A
+score just under the limit says that such support is somewhat more typical
+of real variants than of arbitrary changes; it is reported as
+`inconclusive`, which means "the population data do not settle it".
 
 ## From a score to a probability
 

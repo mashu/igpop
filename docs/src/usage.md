@@ -45,7 +45,7 @@ results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 | `--trusted` | none | File of trusted allele names, one per line; replaces the marker rule. |
 | `--calibration` | automatic | Use the `score_model.tsv` of an earlier run. See [Automatic calibration](calibration.md). |
 | `--common` | `0.01` | Allele frequency a variant must demonstrably reach in some population to be classed `common`. |
-| `--supported-score` | `10` | A variant with at least this score is `supported`. |
+| `--supported-score` | `2` | A variant with at least this score is `supported`. |
 | `--confirm-score` | `0.1` | A variant with at most this score is `needs_confirmation`. |
 | `--coincidence` | `0.05` | An allele found as an exact haplotype is `supported` if fewer than this share of arbitrary changes are found as often. |
 | `--prior` | none | Share of variants like yours expected to be real (between 0 and 1); fills `probability_real`. |

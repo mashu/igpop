@@ -155,6 +155,7 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
                 r.v.filters.iter().map(|f| f.as_str()).collect::<Vec<_>>().join(",")
             }
         })
+        .col("data_show", |r: &R| r.v.shows.map_or(".".to_string(), |f| f.as_str().to_string()))
         .col("score", |r: &R| r.v.score.map_or(".".to_string(), |x| format!("{x:.3}")))
         .col("score_basis", |r: &R| {
             match (r.v.score, r.v.score_borrowed) {

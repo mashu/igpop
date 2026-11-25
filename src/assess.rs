@@ -293,6 +293,9 @@ pub struct VariantResult {
     /// that are supported at least as well as this variant.
     pub chance: Option<f64>,
     pub verdict: Verdict,
+    /// What the data show about a variant that is not common; the first
+    /// of `filters` when the variant is not supported.
+    pub shows: Option<Filter>,
     pub filters: Vec<Filter>,
     /// 1000 Genomes site criteria the variant's site fails.
     pub site_qc: Vec<String>,
@@ -375,16 +378,20 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
     let score = scored.map(|(x, _, _)| x);
     let verdict = variant_verdict(class, score, limits);
 
+    // What the data show about a variant that is not common, whatever
+    // its verdict: the verdict depends on a limit, this does not.
+    let most = strata.iter().map(|(_, c)| c.ac).max().unwrap_or(0);
+    let shows = match class {
+        Class::Common => None,
+        Class::NotAssessed => Some(Filter::NoPopulationData),
+        Class::Absent => Some(Filter::NeverObserved),
+        _ if most <= 1 => Some(Filter::SingleObservation),
+        _ if rare_everywhere(&strata, limits.common) => Some(Filter::RareInEveryPopulation),
+        _ => Some(Filter::CommonNotDemonstrated),
+    };
     let mut filters = Vec::new();
     if verdict != Verdict::Supported {
-        let most = strata.iter().map(|(_, c)| c.ac).max().unwrap_or(0);
-        filters.push(match class {
-            Class::NotAssessed => Filter::NoPopulationData,
-            Class::Absent => Filter::NeverObserved,
-            _ if most <= 1 => Filter::SingleObservation,
-            _ if rare_everywhere(&strata, limits.common) => Filter::RareInEveryPopulation,
-            _ => Filter::CommonNotDemonstrated,
-        });
+        filters.extend(shows);
         match score {
             Some(x) if x <= limits.confirm => filters.push(Filter::LowScore),
             Some(_) => filters.push(Filter::IntermediateScore),
@@ -408,6 +415,7 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         score_interval: scored.map(|(_, interval, _)| interval),
         chance: scored.map(|(_, _, chance)| chance),
         verdict,
+        shows,
         filters,
         site_qc,
     }

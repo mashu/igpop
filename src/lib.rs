@@ -187,7 +187,7 @@ impl Config {
             calibration: None,
             limits: Limits {
                 common: 0.01,
-                supported: 10.0,
+                supported: 2.0,
                 confirm: 0.1,
                 coincidence: 0.05,
             },

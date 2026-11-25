@@ -59,7 +59,7 @@ struct Args {
     #[arg(long, default_value_t = 0.01)]
     common: f64,
     /// A variant with at least this score is `supported`.
-    #[arg(long, default_value_t = 10.0)]
+    #[arg(long, default_value_t = 2.0)]
     supported_score: f64,
     /// A variant with at most this score is `needs_confirmation`.
     #[arg(long, default_value_t = 0.1)]
