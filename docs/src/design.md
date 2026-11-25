@@ -68,7 +68,7 @@ program instead of writing a shifted table. To add a column, add one
 |---|---|
 | `align`, `variant` | Semi-global affine alignment; left-aligned, trimmed variants. |
 | `freq` | Allele counts, exact (Clopper-Pearson) bounds, exact binomial test, heterogeneity test; parsers for the 1000 Genomes and gnomAD records. |
-| `score` | Support levels, the likelihood-ratio table, the built-in table. |
+| `score` | The likelihood-ratio curve (logistic regression on log support), its interval, the built-in curve. |
 | `hap` | Phased panel as bit sets per variant; counting carrier chromosomes of founders. |
 | `io`, `tabix`, `fetch`, `net` | FASTA and coordinates; tabix index; region cache; the pluggable transport. |
 | `log`, `par` | Progress messages; parallel map. |

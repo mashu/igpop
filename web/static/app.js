@@ -65,7 +65,7 @@ const HAPLOTYPES = {
 };
 const POPS = ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'];
 const POP_NAMES = { AFR: 'African', AMR: 'American', EAS: 'East Asian', EUR: 'European', SAS: 'South Asian' };
-const OUTPUTS = ['report.md', 'final.tsv', 'alleles.tsv', 'variants.tsv', 'alignments.tsv', 'alignments.txt', 'score_calibration.tsv', 'haplotype_calibration.tsv', 'dbsnp_datasets.tsv'];
+const OUTPUTS = ['report.md', 'final.tsv', 'alleles.tsv', 'variants.tsv', 'alignments.tsv', 'alignments.txt', 'score_model.tsv', 'score_levels.tsv', 'haplotype_calibration.tsv', 'dbsnp_datasets.tsv'];
 const ROUTES = {
   frequency: { label: 'by frequency', help: 'Each difference is an established population variant.' },
   haplotype: { label: 'by haplotype', help: 'The exact sequence is established on phased chromosomes; by frequency alone it would not pass.' },
@@ -78,7 +78,8 @@ const FILE_NOTES = {
   'variants.tsv': 'Every difference with all population evidence',
   'alignments.tsv': 'Where each allele was placed',
   'alignments.txt': 'Alignments to read by eye',
-  'score_calibration.tsv': 'The table behind the score',
+  'score_model.tsv': 'The curve behind the score',
+  'score_levels.tsv': 'Real variants and possible changes counted per level of support',
   'haplotype_calibration.tsv': 'How often an arbitrary change is found on phased chromosomes',
   'dbsnp_datasets.tsv': 'dbSNP datasets and whether each was used',
 };
@@ -108,7 +109,7 @@ function parseAlignments(text) {
 
 // ---- state ---------------------------------------------------------------
 
-const state = { prefix: 'igpop', marker: '_S', build: '', files: {}, alleles: [], variants: new Map(), alignments: new Map(), verdict: '' };
+const state = { limit: 10, prefix: 'igpop', marker: '_S', build: '', files: {}, alleles: [], variants: new Map(), alignments: new Map(), verdict: '' };
 let worker = null;
 
 function show(section) {
@@ -428,17 +429,26 @@ function decide(group, value) {
   askCheck();
 }
 
-/** The choices for a group or an allele, as a select. */
+/** The choices for a group or an allele, as a select. The list of all
+ *  genes is long, and there can be hundreds of these selects: the genes
+ *  are added when the select is first used. */
 function decisionSelect(label, current, similarTo, onChange) {
-  const all = [...new Set(geneRows().map((r) => r.gene))].sort(sortGenes);
-  const near = all.filter((g) => g.startsWith(similarTo) || similarTo.startsWith(g) || g.replace(/[A-Z]$/, '') === similarTo);
-  const select = el('select', { 'aria-label': label },
-    el('option', { value: '', text: 'As the name says' }),
-    el('option', { value: BY_SEQUENCE, text: 'Find the gene by sequence' }),
-    el('option', { value: LEFT_OUT, text: 'Leave out of the analysis' }),
-    near.length ? el('optgroup', { label: 'Genes with a similar name' }, near.map((n) => el('option', { value: n, text: `Alleles of ${n}` }))) : null,
-    el('optgroup', { label: 'All genes of the list' }, all.filter((n) => !near.includes(n)).map((n) => el('option', { value: n, text: `Alleles of ${n}` }))));
+  const fixed = [['', 'As the name says'], [BY_SEQUENCE, 'Find the gene by sequence'], [LEFT_OUT, 'Leave out of the analysis']];
+  const select = el('select', { 'aria-label': label }, fixed.map(([value, text]) => el('option', { value, text })));
+  if (current && !fixed.some(([value]) => value === current)) select.append(el('option', { value: current, text: `Alleles of ${current}` }));
   select.value = current || '';
+  const fill = () => {
+    if (select.dataset.filled) return;
+    select.dataset.filled = 'yes';
+    const all = [...new Set(geneRows().map((r) => r.gene))].sort(sortGenes);
+    const near = all.filter((g) => g.startsWith(similarTo) || similarTo.startsWith(g) || g.replace(/[A-Z]$/, '') === similarTo);
+    const chosen = select.value;
+    for (const option of [...select.options].slice(fixed.length)) option.remove();
+    if (near.length) select.append(el('optgroup', { label: 'Genes with a similar name' }, near.map((n) => el('option', { value: n, text: `Alleles of ${n}` }))));
+    select.append(el('optgroup', { label: 'All genes of the list' }, all.filter((n) => !near.includes(n)).map((n) => el('option', { value: n, text: `Alleles of ${n}` }))));
+    select.value = chosen;
+  };
+  for (const event of ['pointerdown', 'focus', 'keydown']) select.addEventListener(event, fill, { once: true });
   select.addEventListener('change', () => onChange(select.value));
   return select;
 }
@@ -529,16 +539,23 @@ function updateNameEditor() {
     const state = linkOf(allele, known.get(allele.gene));
     if (document.activeElement !== line.input) line.input.value = allele.name;
     line.row.className = `n-${state}${first !== allele.name ? ' n-changed' : ''}`;
-    line.status.replaceChildren(
+    const shownAs = `${state}\n${allele.named}\n${allele.gene}`;
+    if (line.status.dataset.shown !== shownAs) line.status.replaceChildren(
       el('span', { class: `name-mark k-${state}`, 'aria-hidden': 'true', text: state === 'none' ? '×' : state === 'out' ? '–' : state === 'sequence' ? '?' : '✓' }),
       state === 'none' ? `no gene called ${allele.named}` : state === 'out' ? 'left out' : state === 'sequence' ? 'found by sequence during the run'
         : `${allele.gene}${state === 'rule' ? ' (built-in rule)' : state === 'yours' ? ' (your match)' : ''}`);
-    line.choice.replaceChildren(decisionSelect(`What to do with ${allele.name}`, names.mapping[allele.name], allele.named, (value) => {
-      if (value) names.mapping[allele.name] = value;
-      else delete names.mapping[allele.name];
-      keepNames();
-      askCheck();
-    }));
+    line.status.dataset.shown = shownAs;
+    // The select of a line is built once per name and decision, not on every check.
+    const made = `${allele.name}\n${names.mapping[allele.name] || ''}`;
+    if (line.choice.dataset.made !== made) {
+      line.choice.dataset.made = made;
+      line.choice.replaceChildren(decisionSelect(`What to do with ${allele.name}`, names.mapping[allele.name], allele.named, (value) => {
+        if (value) names.mapping[allele.name] = value;
+        else delete names.mapping[allele.name];
+        keepNames();
+        askCheck();
+      }));
+    }
     line.was.replaceChildren(...(first !== allele.name ? [`was ${first} `, el('button', { type: 'button', class: 'link', text: 'undo', onclick: () => { rename(first, first); askCheck(); } })] : []));
     if (first !== allele.name) changed += 1;
     const visible = (!show || (show === 'open' && state === 'none') || (show === 'changed' && first !== allele.name))
@@ -713,6 +730,15 @@ function setGeneList(rows) {
 
 function wireGeneList() {
   $('check-run').addEventListener('click', runChecked);
+  $('example').addEventListener('click', async () => {
+    try {
+      const response = await fetch(new URL(`./example_KIARVA_IGHV.fasta${new URL(import.meta.url).search}`, import.meta.url));
+      if (!response.ok) throw new Error(`status ${response.status}`);
+      await handleFiles([new File([await response.text()], 'KIARVA_IGHV.fasta', { type: 'text/plain' })]);
+    } catch (error) {
+      fail(`The example could not be loaded (${error.message}).`);
+    }
+  });
   for (const id of ['opt-build', 'opt-hap']) $(id).addEventListener('change', askCheck);
   $('gene-filter').addEventListener('input', renderGeneList);
   $('gene-reset').addEventListener('click', () => setGeneList(null));
@@ -761,6 +787,8 @@ function display(files, warnings, summary = []) {
   state.files = files;
   state.alleles = parseTSV(files['alleles.tsv']);
   state.placements = null;
+  state.calibration = null;
+  state.model = undefined;
   // The build most alleles were judged on is the build of the run.
   const builds = new Map();
   for (const a of state.alleles) if (given(a.build)) builds.set(a.build, (builds.get(a.build) || 0) + 1);
@@ -771,6 +799,7 @@ function display(files, warnings, summary = []) {
     state.variants.get(row.allele_name).push(row);
   }
   state.alignments = parseAlignments(files['alignments.txt']);
+  rememberVerdicts(files);
   state.verdict = '';
   state.marker = $('opt-marker').value || '_S';
 
@@ -782,6 +811,8 @@ function display(files, warnings, summary = []) {
   renderWarnings(warnings);
   renderFilters();
   renderLegend();
+  renderPriorNote();
+  renderLimit();
   renderAlleles();
   renderData();
   renderMethod();
@@ -800,6 +831,132 @@ function badge(verdict) {
   return el('span', { class: `badge v-${verdict}`, title: v.help }, el('i', { 'aria-hidden': 'true', text: v.icon }), v.label);
 }
 
+// ---- the limit for "supported": a setting, not part of the evidence ---------
+
+const LIMITS = [1, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100];
+const RUN_LIMIT = 10; // the limit the analysis itself was run with
+const CONFIRM = 0.1;
+const FILTER_ORDER = ['no_population_data', 'never_observed', 'single_observation', 'rare_in_every_population', 'common_not_demonstrated', 'low_score', 'intermediate_score', 'not_scored'];
+const SCORE_FILTERS = ['low_score', 'intermediate_score', 'not_scored'];
+
+/** Keep what the analysis decided, so that the limit can be moved and
+ *  moved back. */
+function rememberVerdicts(files) {
+  state.limit = RUN_LIMIT;
+  state.runFiles = { 'alleles.tsv': files['alleles.tsv'], 'variants.tsv': files['variants.tsv'], 'final.tsv': files['final.tsv'] };
+  for (const a of state.alleles) a.run = { verdict: a.verdict, supported_by: a.supported_by, filters: a.filters, reason: a.reason };
+  for (const rows of state.variants.values()) for (const v of rows) v.run = { verdict: v.verdict, filters: v.filters };
+}
+
+/** The verdict of one difference by frequency, as the program decides it. */
+function variantVerdict(v, limit) {
+  if (v.class === 'common') return 'supported';
+  if (v.class === 'not_assessed') return 'not_assessed';
+  if (given(v.score)) return Number(v.score) >= limit ? 'supported' : Number(v.score) <= CONFIRM ? 'needs_confirmation' : 'inconclusive';
+  return v.class === 'absent' ? 'needs_confirmation' : 'inconclusive';
+}
+
+/** Judge every difference and allele again with another limit for
+ *  "supported". Scores, haplotype checks and everything measured stay as
+ *  they are; only the reading changes. */
+function applyLimit(limit) {
+  state.limit = limit;
+  const rerun = limit === RUN_LIMIT;
+  for (const a of state.alleles) {
+    const variants = state.variants.get(a.allele_name) || [];
+    for (const v of variants) {
+      v.verdict = rerun ? v.run.verdict : variantVerdict(v, limit);
+      if (rerun || v.verdict === v.run.verdict) v.filters = v.run.filters;
+      else if (v.verdict === 'supported') v.filters = '.';
+      else {
+        // What the data show stays; how that scores is read again.
+        const shown = given(v.run.filters) ? v.run.filters.split(',').filter((f) => !SCORE_FILTERS.includes(f)) : ['common_not_demonstrated'];
+        v.filters = [...shown, given(v.score) ? (Number(v.score) <= CONFIRM ? 'low_score' : 'intermediate_score') : 'not_scored'].join(',');
+      }
+    }
+    if (rerun || ['not_placed', 'matches_reference'].includes(a.run.verdict)) { Object.assign(a, a.run); continue; }
+    const verdicts = variants.map((v) => v.verdict);
+    const byFrequency = ['needs_confirmation', 'inconclusive', 'not_assessed'].find((x) => verdicts.includes(x)) || 'supported';
+    // Known from the run: whether the haplotype check supports the allele,
+    // and whether a complete lookup found its sequence on no chromosome.
+    const haplotype = (a.run.supported_by || '').includes('haplotype');
+    const absent = given(a.hap_exact) && Number(a.hap_exact) === 0;
+    const words = { needs_confirmation: 'without population support', inconclusive: 'with weak population support', not_assessed: 'without population data' };
+    const weakest = variants.filter((v) => v.verdict === byFrequency);
+    const frequencyReason = byFrequency === 'supported'
+      ? `all variants (${variants.length}) have population support`
+      : `${weakest.length} of ${variants.length} variant(s) ${words[byFrequency]}: ${weakest.map((v) => (given(v.rsid) ? v.rsid : `${v.contig}:${v.genome_pos}`)).join(';')}`;
+    const counted = FILTER_ORDER.map((f) => [f, variants.filter((v) => given(v.filters) && v.filters.split(',').includes(f)).length]).filter(([, k]) => k > 0);
+    if (byFrequency === 'supported' && absent) {
+      Object.assign(a, { verdict: 'inconclusive', supported_by: '.', filters: 'sequence_not_in_panel', reason: `every variant has population support, but none of the ${given(a.hap_total) ? a.hap_total : ''} phased chromosomes has this exact sequence` });
+    } else if (byFrequency !== 'supported' && haplotype) {
+      Object.assign(a, { verdict: 'supported', supported_by: 'haplotype', filters: counted.map(([f, k]) => `${f}:${k}`).join(',') || '.',
+        reason: a.run.supported_by === 'haplotype' ? a.run.reason : `exact sequence on phased chromosomes; by frequency alone: ${frequencyReason}` });
+    } else {
+      Object.assign(a, { verdict: byFrequency, supported_by: byFrequency === 'supported' ? (haplotype ? 'frequency+haplotype' : 'frequency') : '.',
+        filters: counted.map(([f, k]) => `${f}:${k}`).join(',') || '.', reason: frequencyReason });
+    }
+  }
+  // The tables to download follow the limit.
+  if (rerun) Object.assign(state.files, state.runFiles);
+  else {
+    const table = (text, rows) => {
+      const header = text.split('\n')[0].split('\t');
+      return `${[header.join('\t'), ...rows.map((row) => header.map((column) => row[column] ?? '.').join('\t'))].join('\n')}\n`;
+    };
+    state.files['alleles.tsv'] = table(state.runFiles['alleles.tsv'], state.alleles);
+    state.files['final.tsv'] = table(state.runFiles['final.tsv'] || state.runFiles['alleles.tsv'], state.alleles.filter((a) => ['supported', 'matches_reference'].includes(a.verdict)));
+    state.files['variants.tsv'] = table(state.runFiles['variants.tsv'], state.alleles.flatMap((a) => state.variants.get(a.allele_name) || []));
+  }
+}
+
+/** The setting itself, and what the chosen limit costs and gains. */
+function renderLimit() {
+  const model = scoreModel();
+  $('limit-setting').hidden = !model;
+  if (!model) return;
+  $('limit').value = String(LIMITS.indexOf(state.limit));
+  $('limit-value').textContent = String(state.limit);
+  $('limit-reset').hidden = state.limit === RUN_LIMIT;
+  const at = model.supportAt(state.limit);
+  const supported = state.alleles.filter((a) => a.verdict === 'supported').length;
+  const before = state.alleles.filter((a) => a.run.verdict === 'supported').length;
+  const change = supported === before ? '' : ` (${supported > before ? `${supported - before} more` : `${before - supported} fewer`} than at ${RUN_LIMIT})`;
+  $('limit-note').textContent = Number.isFinite(at)
+    ? `A score of ${state.limit} is reached at a support of ${percent(at)}. ${pct(model.chance(at))} of all possible single-base changes in these genes score this high, which is how often an arbitrary change would pass. ${supported} alleles are supported${change}. ${state.limit === RUN_LIMIT ? '10 is the usual mark for strong evidence; the scores themselves do not depend on it.' : 'Verdicts, counts and the tables under Files follow this limit; the report describes the run at 10.'}`
+    : `No support reaches a score of ${state.limit} in this run. ${supported} alleles are supported${change}.`;
+}
+
+function wireLimit() {
+  const move = (limit) => {
+    applyLimit(limit);
+    renderTiles();
+    renderLimit();
+    renderAlleles();
+    renderMethod();
+    renderFiles();
+  };
+  $('limit').addEventListener('input', () => {
+    // While dragging, only the number moves; the list follows on release.
+    $('limit-value').textContent = String(LIMITS[Number($('limit').value)]);
+  });
+  $('limit').addEventListener('change', () => move(LIMITS[Number($('limit').value)]));
+  $('limit-reset').addEventListener('click', () => move(RUN_LIMIT));
+  $('f-order').addEventListener('input', renderAlleles);
+}
+
+/** The weakest score of an allele as a number on a continuous colour
+ *  scale: from the colour of "needs confirmation" at 0.01 through grey at 1
+ *  to the colour of "supported" at 100. */
+function scorePill(allele) {
+  if (!given(allele.min_score)) return null;
+  const score = Number(allele.min_score);
+  const t = Math.max(-1, Math.min(1, Math.log10(score) / 2));
+  const tone = `color-mix(in srgb, var(${t >= 0 ? '--supported' : '--confirm'}) ${Math.round(100 * Math.abs(t))}%, var(--grey))`;
+  return el('span', { class: 'score-pill', style: `--tone:${tone}`, title: `Weakest score among the differences of this allele: ${scoreText(score)} (${scoreWords(score)}). An allele is only as well supported by frequency as its weakest difference.` },
+    el('i', { 'aria-hidden': 'true' }), `score ${scoreText(score)}`);
+}
+
 function renderTiles() {
   const tiles = $('tiles');
   tiles.replaceChildren();
@@ -809,7 +966,7 @@ function renderTiles() {
     if (!rows.length && verdict === 'not_assessed') continue;
     const candidates = rows.filter(isCandidate).length;
     tiles.append(el('button', {
-      type: 'button', class: `tile v-${verdict}`, 'aria-pressed': 'false', 'data-verdict': verdict, title: info.help,
+      type: 'button', class: `tile v-${verdict}`, 'aria-pressed': String(state.verdict === verdict), 'data-verdict': verdict, title: info.help,
       onclick: (event) => {
         state.verdict = state.verdict === verdict ? '' : verdict;
         for (const tile of tiles.children) tile.setAttribute('aria-pressed', String(tile.dataset.verdict === state.verdict));
@@ -889,11 +1046,61 @@ function visibleAlleles() {
   });
 }
 
+/** The one setting that turns scores into probabilities, for the whole
+ *  result: off unless the user turns it on. */
+function wirePrior() {
+  const [on, box, value, note] = [$('prior-on'), $('prior-box'), $('prior-value'), $('prior-note')];
+  try {
+    const kept = JSON.parse(localStorage.getItem('igpop-prior') || 'null');
+    if (kept) { on.checked = Boolean(kept.on); value.value = String(kept.percent); }
+  } catch (error) { /* storage is off */ }
+  const apply = () => {
+    const percentage = Math.min(99, Math.max(1, Number(value.value) || 50));
+    box.hidden = !on.checked;
+    state.prior = on.checked ? percentage / 100 : null;
+    try { localStorage.setItem('igpop-prior', JSON.stringify({ on: on.checked, percent: percentage })); } catch (error) { /* storage is off */ }
+    if (state.alleles.length) renderAlleles();
+  };
+  on.addEventListener('change', apply);
+  value.addEventListener('change', apply);
+  note.addEventListener('click', (event) => {
+    const use = event.target.closest('button[data-percent]');
+    if (!use) return;
+    value.value = use.dataset.percent;
+    apply();
+  });
+  box.hidden = !on.checked;
+  state.prior = on.checked ? Math.min(99, Math.max(1, Number(value.value) || 50)) / 100 : null;
+}
+
+/** Something to hold on to when choosing the setting: how many candidates
+ *  of this run turned out to exist on phased chromosomes. */
+function renderPriorNote() {
+  const note = $('prior-note');
+  const looked = state.alleles.filter((a) => a.trusted === 'no' && ['found_exact', 'found_with_extra', 'not_found'].includes(a.hap_status));
+  const found = looked.filter((a) => a.hap_status === 'found_exact').length;
+  note.replaceChildren('This is your judgement of the method that produced the alleles; the score then moves it up or down.');
+  if (looked.length >= 20) {
+    const share = Math.min(99, Math.max(1, Math.round((100 * found) / looked.length)));
+    note.append(` For orientation: of the ${looked.length} candidates in this run whose whole sequence could be looked up on phased chromosomes, ${found} were found there. `,
+      el('button', { type: 'button', class: 'link', 'data-percent': String(share), text: `Use ${share}%` }));
+  }
+}
+
 function renderAlleles() {
   const rows = visibleAlleles();
   const list = $('alleles');
   list.replaceChildren();
   $('count').textContent = `Showing ${rows.length} of ${state.alleles.length} alleles.`;
+  const order = $('f-order').value;
+  if (order) {
+    // By weakest score: one list; alleles without a score come last.
+    const key = (a) => (given(a.min_score) ? Number(a.min_score) : NaN);
+    const sorted = [...rows].sort((x, y) => (Number.isNaN(key(x)) ? 1 : 0) - (Number.isNaN(key(y)) ? 1 : 0) || (order === 'low' ? key(x) - key(y) : key(y) - key(x)));
+    list.append(el('section', { class: 'gene' }, sorted.map(alleleCard)));
+    if (!rows.length) list.append(el('p', { class: 'muted', text: 'No allele matches these filters.' }));
+    return;
+  }
   let gene = null;
   let group = null;
   for (const allele of rows) {
@@ -935,6 +1142,7 @@ function alleleCard(allele) {
     el('summary', {},
       el('span', { class: 'name', text: allele.allele_name }),
       badge(allele.verdict),
+      scorePill(allele),
       routeTag(allele),
       isCandidate(allele) ? el('span', { class: 'tag', text: 'candidate' }) : null,
       given(allele.build) && allele.build !== state.build ? el('span', { class: 'tag', title: `This gene is not on ${state.build}: the allele was judged with the data of ${allele.build}.`, text: allele.build }) : null,
@@ -1022,30 +1230,17 @@ function scoreWords(score) {
   return 'typical of arbitrary changes';
 }
 
-const times = (score) => (score >= 1
-  ? `${score >= 10 ? Math.round(score) : score.toFixed(1)} times more often among real variants`
-  : `${Math.round(1 / score)} times more often among arbitrary changes`);
-
-/** The score explained, with the levels of this run's calibration. */
+/** The score explained, with a few points of this run's curve. */
 function scoreHint() {
-  const rows = state.files['score_calibration.tsv'] ? parseTSV(state.files['score_calibration.tsv']).filter((r) => given(r.score)) : [];
-  const levels = { none: 'never seen', '>=10%': 'seen in 10% or more of a population' };
-  const brief = (score) => (score >= 10 ? Math.round(score) : score >= 1 ? score.toFixed(1) : Number(score.toPrecision(2)));
-  // Levels with the same score are one line.
-  const lines = [];
-  for (const row of rows.reverse()) {
-    const name = levels[row.support] || `seen in ${row.support.replace('<', 'under ').replace('-', ' to ')}`;
-    const last = lines[lines.length - 1];
-    if (last && last.score === row.score) last.names.push(name);
-    else lines.push({ score: row.score, names: [name] });
-  }
+  const model = scoreModel();
+  const points = model ? [[0, 'never seen in any dataset'], [1e-4, 'shown to reach 0.01% in a population'], [1e-3, 'shown to reach 0.1%'], [1e-2, 'shown to reach 1%'], [1e-1, 'shown to reach 10%']] : [];
   return el('span', {},
     el('b', { text: 'How to read the score' }),
-    el('span', { text: 'Take all variants seen as often as this one. The score says how much more often such a variant belongs to a real allele than is an arbitrary base change (what an error would give).' }),
-    lines.length ? el('span', { class: 'hint-table' }, lines.map((line) => el('span', {},
-      el('b', { text: brief(Number(line.score)) }),
-      el('span', { text: `${line.names.reverse().join(', or ')}: ${scoreWords(Number(line.score))}` })))) : null,
-    el('span', { text: '10 or more counts as supported, 0.1 or less as needing confirmation. Around 1 the frequency cannot tell.' }));
+    el('span', { text: 'The score says how much more typical the frequency of this base is of the variants of real alleles than of an arbitrary base change (what an error would give). It rises smoothly with the frequency the data guarantee:' }),
+    points.length ? el('span', { class: 'hint-table' }, points.map(([support, words]) => el('span', {},
+      el('b', { text: scoreText(model.score(support)) }),
+      el('span', { text: `${words}: ${scoreWords(model.score(support))}` })))) : null,
+    el('span', { text: `${state.limit} or more counts as supported (the limit you can set above the list), 0.1 or less as needing confirmation. These limits are conventions for strong evidence; around 1 the frequency cannot tell.` }));
 }
 
 // ---- variants: one row each, with a frequency strip -------------------------
@@ -1190,21 +1385,185 @@ function supportLevel(support) {
 function whyScore(v) {
   const steps = [];
   const support = number(v.support);
-  const pct = (x) => `${(100 * x).toPrecision(2).replace(/\.?0+$/, '')}%`;
   if (!(support > 0)) steps.push('No population of any source has seen this base, so no frequency is guaranteed.');
   else if (given(v.support_from)) steps.push(`The strongest evidence comes from ${stratumWords(v.support_from)}. Its counts guarantee, with 95% confidence, a frequency of at least ${percent(support)} there. This guaranteed frequency is what igpop calls the support; it is lower than the observed frequency, the more so the fewer people were examined.`);
   else steps.push(`The counts guarantee, with 95% confidence, a frequency of at least ${percent(support)} in some population.`);
-  const level = supportLevel(support);
-  const row = (state.files['score_calibration.tsv'] ? parseTSV(state.files['score_calibration.tsv']) : []).find((r) => r.support === level);
-  if (given(v.score) && row) {
-    steps.push(`That puts it in the support level "${level === 'none' ? 'never seen' : level.replace('>=', 'at least ').replace('<', 'below ')}". In this run, ${pct(Number(row.trusted_fraction))} of the variants of real alleles are at this level and ${pct(Number(row.arbitrary_fraction))} of all possible single-base changes. The score is the ratio of the two${row.pooled_group && parseTSV(state.files['score_calibration.tsv']).filter((r) => r.pooled_group === row.pooled_group).length > 1 ? ', taken together with the neighbouring level' : ''}: ${Number(v.score) < 1 ? Number(v.score).toFixed(3) : Number(v.score).toFixed(1)}.`);
-  } else if (!given(v.score)) steps.push('Insertions and deletions get no score, because the comparison with arbitrary changes is made for single-base changes only.');
+  if (given(v.score)) {
+    const model = scoreModel();
+    const score = Number(v.score);
+    const known = given(v.score_low) ? ` How well the real variants pin the curve down at this point: between ${scoreText(Number(v.score_low))} and ${scoreText(Number(v.score_high))}.` : '';
+    steps.push(support > 0
+      ? `On the curve of this run, a base with this support is ${score >= 1 ? `${scoreText(score)} times more typical of the variants of real alleles than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of the variants of real alleles`}: a score of ${scoreText(score)}.${known}`
+      : `${model ? `${pct(1 - model.seenShare)} of all possible single-base changes in these genes have never been seen either, but ${model.counts.trusted - model.counts.trusted_seen === 0 ? 'none' : model.counts.trusted - model.counts.trusted_seen} of the ${model.counts.trusted} variants of real alleles. ` : ''}That gives a score of ${scoreText(score)}.${known}`);
+    if (given(v.chance) && support > 0) steps.push(`How often does chance do as well? Of all ${model ? model.counts.arbitrary.toLocaleString('en') : ''} single-base changes that are possible in the genes of the run, ${pct(Number(v.chance))} are supported at least as well as this one.`);
+  } else steps.push('Insertions and deletions get no score, because the comparison with arbitrary changes is made for single-base changes only.');
   if (v.class === 'common') steps.push(given(v.class_basis) && v.class_basis !== 'dbSNP:COMMON'
     ? `Apart from the score, a test shows that the frequency reaches 1% in ${stratumWords(v.class_basis)}${given(v.class_p) ? ` (p = ${Number(v.class_p).toPrecision(2)} after correction for the number of populations)` : ''}. A common variant is supported whatever its score.`
     : 'dbSNP marks this base as common. A common variant is supported whatever its score.');
-  else if (support > 0) steps.push(`No population shows a frequency of 1% or more${given(v.class_p) ? ` (best test: p = ${Number(v.class_p).toPrecision(2)})` : ''}, so the verdict follows the score: 10 or more is supported, 0.1 or less needs confirmation, in between inconclusive.`);
+  else if (support > 0) steps.push(`No population shows a frequency of 1% or more${given(v.class_p) ? ` (best test: p = ${Number(v.class_p).toPrecision(2)})` : ''}, so the verdict follows the score: ${state.limit} or more is supported, 0.1 or less needs confirmation, in between inconclusive.`);
   return steps;
 }
+
+const scoreText = (x) => (x >= 10 ? x.toFixed(0) : x >= 1 ? x.toFixed(1) : x >= 0.1 ? x.toFixed(2) : x.toPrecision(1));
+
+/** The curve the scores of this run come from (score_model.tsv), with the
+ *  real variants it was drawn through. Worked out once per result. */
+function scoreModel() {
+  if (state.model !== undefined) return state.model;
+  state.model = null;
+  const text = state.files['score_model.tsv'];
+  if (!text) return null;
+  const lines = text.split('\n').map((line) => line.split('\t'));
+  const value = (key) => (lines.find((f) => f[0] === key) || [])[1];
+  const beta = ['b0', 'b1', 'b2'].map((key) => Number(value(key)));
+  const never = Number(value('never'));
+  const c = (value('cov') || '').split(',').map(Number);
+  if (!Number.isFinite(never) || beta.some((b) => !Number.isFinite(b)) || c.length !== 6) return null;
+  const cov = [[c[0], c[1], c[2]], [c[1], c[3], c[4]], [c[2], c[4], c[5]]];
+  const counts = Object.fromEntries(['arbitrary', 'arbitrary_seen', 'trusted', 'trusted_seen'].map((key) => [key, Number(value(key))]));
+  const curve = (support) => {
+    const x = Math.log10(Math.min(1, Math.max(1e-6, support)));
+    const basis = [1, x, x * x];
+    const log = basis.reduce((sum, b, i) => sum + b * beta[i], 0);
+    let variance = 0;
+    for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) variance += basis[i] * cov[i][j] * basis[j];
+    return [log, Math.sqrt(Math.max(0, variance))];
+  };
+  const score = (support) => (support > 0 ? Math.max(never, Math.exp(curve(support)[0])) : never);
+  const interval = (support) => {
+    const [log, se] = curve(support);
+    return [Math.max(Math.min(never, score(support)), Math.exp(log - 1.96 * se)), Math.max(never, Math.exp(log + 1.96 * se))];
+  };
+  // The real variants: with their names when this run made the curve
+  // itself, otherwise only their supports as kept with the curve.
+  const levels = state.files['score_levels.tsv'] ? parseTSV(state.files['score_levels.tsv']) : [];
+  const own = levels.some((r) => r.score_source === 'run');
+  const accepted = new Set(state.alleles.filter((a) => given(a.yardstick)).map((a) => a.allele_name));
+  const named = new Map();
+  if (own) for (const name of accepted) for (const v of state.variants.get(name) || []) {
+    if (v.type === 'SNV' && v.build === state.build) named.set(`${v.contig}|${v.genome_pos}|${v.query_variant}`, v);
+  }
+  const real = own && named.size
+    ? [...named.values()].map((v) => ({ support: number(v.support), label: `${given(v.rsid) ? v.rsid : 'no rsID'} in ${v.gene}` }))
+    : lines.filter((f) => f[0] === 'real').map((f) => ({ support: Number(f[1]), label: 'a variant of a real allele' }));
+  const tail = lines.filter((f) => f[0] === 'tail').map((f) => ({ support: Number(f[1]), share: Number(f[2]) }));
+  // Share of all possible changes supported at least this well.
+  const chance = (support) => (support > 0 ? (tail.filter((t) => t.support <= support * (1 + 1e-9)).pop() || { share: 1 }).share : 1);
+  // The smallest support whose score reaches a limit.
+  const supportAt = (limit) => {
+    if (score(1) < limit) return NaN;
+    let [low, high] = [-6, 0];
+    for (let i = 0; i < 50; i += 1) {
+      const middle = (low + high) / 2;
+      if (score(10 ** middle) >= limit) high = middle; else low = middle;
+    }
+    return 10 ** high;
+  };
+  state.model = {
+    never, beta, counts, score, interval, real, own, levels, chance, supportAt,
+    tail,
+    seenShare: counts.arbitrary_seen / counts.arbitrary,
+    alleles: accepted.size,
+    genes: new Set(state.alleles.filter((a) => accepted.has(a.allele_name)).map((a) => a.gene)).size,
+  };
+  return state.model;
+}
+
+/** A picture of what a difference was compared with. On one axis of
+ *  support: the score curve with its uncertainty and the two limits, the
+ *  real variants as dots, and all possible changes as bars. `v` marks one
+ *  difference; without it the picture shows the curve alone. */
+function comparisonChart(v) {
+  const model = scoreModel();
+  if (!model) return null;
+  const support = v ? number(v.support) : NaN;
+  const [W, H] = [700, 318];
+  const [slot0, slot1, x0, x1] = [52, 104, 122, 688];
+  const xOf = (s) => (s > 0 ? x0 + ((Math.log10(Math.min(1, Math.max(1e-6, s))) + 6) / 6) * (x1 - x0) : (slot0 + slot1) / 2);
+  const [top, bottom, yLow, yHigh] = [26, 168, Math.log10(0.002), Math.log10(300)];
+  const yOf = (score) => bottom - ((Math.log10(Math.min(300, Math.max(0.002, score))) - yLow) / (yHigh - yLow)) * (bottom - top);
+  const picture = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'compare', role: 'img',
+    'aria-label': v
+      ? `The score rises smoothly with support. This difference has a support of ${support > 0 ? percent(support) : 'zero (never seen)'} and a score of ${scoreText(Number(v.score))}.`
+      : 'The score as a smooth curve of support, with the real variants and all possible changes it was made from.' });
+  const text = (x, y, cls, words, anchor = 'middle') => svg('text', { x, y, class: cls, 'text-anchor': anchor }, words);
+
+  // Frame: the slot for "never seen", then the axis of support.
+  picture.append(svg('rect', { x: slot0, y: top, width: slot1 - slot0, height: bottom - top, class: 'panel' }));
+  picture.append(svg('rect', { x: x0, y: top, width: x1 - x0, height: bottom - top, class: 'panel' }));
+  for (const tick of [0.01, 0.1, 1, 10, 100]) {
+    picture.append(svg('line', { x1: slot0, x2: x1, y1: yOf(tick), y2: yOf(tick), class: tick === 0.1 ? 'limit low' : 'grid' }));
+    picture.append(text(slot0 - 5, yOf(tick) + 3, 'tick', String(tick), 'end'));
+  }
+  picture.append(svg('line', { x1: slot0, x2: x1, y1: yOf(state.limit), y2: yOf(state.limit), class: 'limit high' }));
+  picture.append(text(x0 + 6, yOf(state.limit) - 4, 'limit-name high', `supported from ${state.limit}`, 'start'));
+  picture.append(text(x1 - 4, yOf(0.1) + 11, 'limit-name low', 'needs confirmation up to 0.1', 'end'));
+  picture.append(text(slot0, top - 9, 'axis-name', 'score', 'start'));
+  for (let decade = -6; decade <= 0; decade += 1) {
+    const x = xOf(10 ** decade);
+    picture.append(svg('line', { x1: x, x2: x, y1: top, y2: H - 30, class: 'grid' }));
+    if (decade > -6) picture.append(text(x, H - 18, 'tick', `${Number((100 * 10 ** decade).toPrecision(1))}%`, decade === 0 ? 'end' : 'middle'));
+  }
+  picture.append(text((slot0 + slot1) / 2, H - 18, 'tick', 'never seen'));
+  picture.append(text((x0 + x1) / 2, H - 4, 'axis-name', 'support: the frequency the data guarantee in the best population'));
+
+  // The curve, with the range the real variants leave open.
+  const samples = Array.from({ length: 121 }, (_, i) => 10 ** (-6 + i / 20));
+  const band = [...samples.map((s) => `${xOf(s).toFixed(1)},${yOf(model.interval(s)[1]).toFixed(1)}`),
+    ...samples.reverse().map((s) => `${xOf(s).toFixed(1)},${yOf(model.interval(s)[0]).toFixed(1)}`)];
+  samples.reverse();
+  picture.append(svg('polygon', { points: band.join(' '), class: 'band' }));
+  picture.append(svg('polyline', { points: samples.map((s) => `${xOf(s).toFixed(1)},${yOf(model.score(s)).toFixed(1)}`).join(' '), class: 'curve' }));
+  picture.append(svg('line', { x1: slot0 + 8, x2: slot1 - 8, y1: yOf(model.never), y2: yOf(model.never), class: 'curve' }));
+
+  // The real variants: one dot each, at its own support.
+  const dotBase = 222;
+  picture.append(text(slot0 - 5, dotBase - 14, 'row-name', 'real', 'end'));
+  picture.append(text(slot0 - 5, dotBase - 4, 'row-name', 'variants', 'end'));
+  const stack = new Map();
+  for (const variant of model.real) {
+    const column = Math.round(xOf(variant.support) / 4.4);
+    const n = stack.get(column) || 0;
+    stack.set(column, n + 1);
+    const dot = svg('circle', { cx: column * 4.4, cy: dotBase - 3 - (n % 10) * 4.2, r: 1.9, class: 'real' });
+    dot.append(svg('title', {}, `${variant.label}: at least ${percent(variant.support)}, score ${scoreText(model.score(variant.support))}`));
+    picture.append(dot);
+  }
+  picture.append(svg('line', { x1: slot0, x2: x1, y1: dotBase, y2: dotBase, class: 'base' }));
+
+  // All possible changes: their share in each eighth of a step of ten.
+  const barBase = H - 32;
+  const shares = model.tail.map((t, k) => t.share - (model.tail[k + 1] ? model.tail[k + 1].share : 0));
+  const tallest = Math.max(...shares, 1e-9);
+  picture.append(text(slot0 - 5, barBase - 14, 'row-name', 'possible', 'end'));
+  picture.append(text(slot0 - 5, barBase - 4, 'row-name', 'changes', 'end'));
+  const step = (x1 - x0) / 48;
+  shares.forEach((share, k) => {
+    if (!(share > 0) || k === shares.length - 1) return;
+    const tall = Math.max(1, (share / tallest) * 40);
+    const bar = svg('rect', { x: xOf(model.tail[k].support) + 0.5, y: barBase - tall, width: step - 1, height: tall, class: 'arbitrary' });
+    bar.append(svg('title', {}, `${pct(share)} of all possible changes have a support from ${percent(model.tail[k].support)}`));
+    picture.append(bar);
+  });
+  picture.append(svg('rect', { x: slot0 + 10, y: barBase - 40, width: slot1 - slot0 - 20, height: 40, class: 'arbitrary' }));
+  picture.append(text((slot0 + slot1) / 2, barBase - 44, 'count', pct(1 - model.seenShare)));
+
+  if (v) {
+    const at = xOf(support);
+    picture.append(svg('line', { x1: at, x2: at, y1: top, y2: barBase, class: 'this' }));
+    picture.append(svg('circle', { cx: at, cy: yOf(Number(v.score)), r: 4.5, class: 'this-dot' }));
+    picture.append(text(Math.min(Math.max(at, 70), W - 70), top - 9, 'this-label', `this difference: score ${scoreText(Number(v.score))}`));
+  }
+  return picture;
+}
+
+const pct = (x) => (x >= 0.995 ? '100%' : `${Number((100 * x).toPrecision(2))}%`);
+/** A probability in words: never a flat 0% or 100%. */
+const chanceText = (p) => (p > 0.99 ? 'more than 99%' : p < 0.01 ? 'less than 1%' : `${Math.round(100 * p)}%`);
+
+/** The probability that a difference is real, if a share `prior` of such
+ *  differences is real before looking at population data. */
+const afterEvidence = (prior, score) => (prior * score) / (prior * score + (1 - prior));
 
 /** Everything behind one difference: where it is, who carries it, and why
  *  it has its score. */
@@ -1237,7 +1596,33 @@ function evidencePanel(v) {
       groups.length ? el('p', { class: 'muted', text: 'Each person has two chromosomes, so the counts are of chromosomes. Bars are drawn relative to the population where the base is most frequent.' }) : null),
     el('div', { class: 'evidence-part' },
       el('h4', { text: 'Why this verdict and score' }),
-      el('ol', {}, whyScore(v).map((step) => el('li', { text: step })))));
+      el('ol', {}, whyScore(v).map((step) => el('li', { text: step })))),
+    comparison(v));
+}
+
+/** The part of the evidence panel that shows what a single-base difference
+ *  was compared with, and what its score is worth. */
+function comparison(v) {
+  if (v.type !== 'SNV' || !given(v.score)) return null;
+  const model = scoreModel();
+  if (!model) return null;
+  const score = Number(v.score);
+  const [low, high] = given(v.score_low) ? [Number(v.score_low), Number(v.score_high)] : model.interval(number(v.support));
+  const reading = score >= state.limit ? (state.limit >= 10 ? 'That is strong evidence for a real variant.' : 'That is above the limit you set for a supported difference.')
+    : score > 1 ? 'That speaks for a real variant, the more so the higher the score, but is not strong evidence by itself. "Inconclusive" means exactly that, not "ruled out".'
+      : score > 0.1 ? 'That speaks mildly against a real variant without ruling it out.'
+        : 'That is what an arbitrary change looks like: the difference needs confirmation from other data.';
+  return el('div', { class: 'evidence-part' },
+    el('h4', { text: 'What it was compared with' }),
+    el('p', {}, model.own
+      ? `Blue dots: the ${model.real.length} distinct single-base variants of the ${model.alleles} alleles (${plural(model.genes, 'gene')}) that this run accepts as real, namely the database alleles and the candidates whose whole sequence was found on several phased chromosomes. Point at a dot to see which variant it is. Grey bars: all ${model.counts.arbitrary.toLocaleString('en')} single-base changes that are possible in the genes of the run, which is what an arbitrary error looks like. The line is the score: how much more typical a support is of the dots than of the bars. It is fitted to all of them at once, so it has no steps.`
+      : `The scores of this run come from igpop's built-in curve, because the run has too few established alleles to make its own. The curve was made from ${model.counts.trusted} real variants (blue dots) and ${model.counts.arbitrary.toLocaleString('en')} possible changes (grey bars) in human IGHV genes.`),
+    el('div', { class: 'scroll' }, comparisonChart(v)),
+    el('p', {}, `This difference has a score of ${scoreText(score)}. The shaded band shows how well the real variants pin the line down here: between ${scoreText(low)} and ${scoreText(high)}. ${reading}`),
+    state.prior
+      ? el('p', {}, `With your setting that ${Math.round(100 * state.prior)}% of such differences are real before looking at population data, this one is real with a probability of `, el('b', { text: chanceText(afterEvidence(state.prior, score)) }), ` (between ${chanceText(afterEvidence(state.prior, low))} and ${chanceText(afterEvidence(state.prior, high))}, given how well the score is known).`)
+      : null,
+    el('p', { class: 'muted', text: 'The limits for the verdict (10 for "supported" unless you move it above the list of alleles, 0.1 for "needs confirmation") are conventions for strong evidence, as in other fields that use likelihood ratios; they are not measured. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.' }));
 }
 
 function variantTable(variants, opened) {
@@ -1303,10 +1688,12 @@ function siteQuality(v) {
 function scoreCell(v) {
   if (!given(v.score)) return el('td', { class: 'num', text: '–', title: 'Insertions and deletions have no score.' });
   const score = Number(v.score);
-  const text = score < 1 ? score.toFixed(3) : score.toFixed(1);
-  return el('td', { class: 'num' }, explain(el('span', { class: 'hint-value', tabindex: '0', text }), el('span', {},
-    el('b', { text: `${text}: ${scoreWords(score)}` }),
-    el('span', { text: `Variants seen as often as this one occur ${times(score)}.` }))));
+  return el('td', { class: 'num' }, explain(el('span', { class: 'hint-value', tabindex: '0', text: scoreText(score) }), el('span', {},
+    el('b', { text: `${scoreText(score)}: ${scoreWords(score)}` }),
+    el('span', { text: `A base seen this often is ${score >= 1 ? `${scoreText(score)} times more typical of real variants than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of real variants`}.` }),
+    given(v.score_low) ? el('span', { text: `The calibration knows this score to between ${scoreText(Number(v.score_low))} and ${scoreText(Number(v.score_high))}.` }) : null,
+    given(v.chance) && number(v.support) > 0 ? el('span', { text: `${pct(Number(v.chance))} of all possible changes are supported at least as well.` }) : null)),
+  state.prior ? el('small', { class: 'probability', text: `${chanceText(afterEvidence(state.prior, score)).replace('more than ', '>').replace('less than ', '<')} real` }) : null);
 }
 
 // ---- haplotype check -----------------------------------------------------
@@ -1588,26 +1975,28 @@ function renderData() {
 function renderMethod() {
   const view = $('view-method');
   view.replaceChildren();
-  const text = state.files['score_calibration.tsv'];
-  if (!text) {
-    view.append(el('p', { class: 'muted', text: 'No score table in these results.' }));
+  const model = scoreModel();
+  if (!model) {
+    view.append(el('p', { class: 'muted', text: 'No score in these results.' }));
     return;
   }
-  const rows = parseTSV(text);
-  const source = { run: 'calibrated on this run', 'built-in': 'the built-in human IGHV table (this run has too few trusted variants of its own)', file: 'a table from an earlier run' }[rows[0].score_source] || rows[0].score_source;
+  const source = model.own ? 'calibrated on this run' : model.levels.some((r) => r.score_source === 'file') ? 'a curve from an earlier run' : 'the built-in human IGHV curve (this run has too few trusted variants of its own)';
+  const points = [0, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1];
   view.append(
     el('h3', { text: 'How the score was made' }),
-    el('p', { text: 'The score of a difference is a likelihood ratio: how many times more often its level of population support is found among the variants of real alleles than among arbitrary single-base changes in the same genes. Above 1 the data speak for a real variant, below 1 against; near 1 they say nothing either way. Real alleles are the named trusted ones and those confirmed as haplotypes (two or more differences found together on phased chromosomes).' }),
+    el('p', { text: 'The score of a difference is a likelihood ratio: how many times more typical its population support is of the variants of real alleles than of arbitrary single-base changes in the same genes. Above 1 the data speak for a real variant, below 1 against; near 1 they say nothing either way. Real alleles are the named trusted ones and those confirmed as haplotypes (two or more differences found together on phased chromosomes).' }),
+    el('p', { text: `The score is a smooth curve of support, fitted to all ${model.counts.trusted} real variants and all ${model.counts.arbitrary.toLocaleString('en')} possible changes at once. Two differences with nearly the same support therefore get nearly the same score. A change that no dataset has seen is a case of its own, with a score of ${scoreText(model.never)}.` }),
     el('p', {}, 'Scores in use: ', el('b', { text: source }), '.'),
-    el('div', { class: 'scroll' }, el('table', { class: 'calibration' },
-      el('caption', { text: 'Share of arbitrary changes and of trusted variants at each level of support (counts of this run)' }),
-      el('thead', {}, el('tr', {}, ...['Support: frequency guaranteed in the best population', 'Arbitrary changes', 'Variants of real alleles', 'Score'].map((h) => el('th', { scope: 'col', text: h })))),
-      el('tbody', {}, rows.map((r) => el('tr', {},
-        el('th', { scope: 'row', text: r.support }),
-        shareCell(r.arbitrary_fraction, r.arbitrary_changes, 'arbitrary'),
-        shareCell(r.trusted_fraction, r.trusted_variants, 'trusted'),
-        el('td', { class: 'num', text: r.score })))))),
-    el('p', { class: 'muted' }, 'By frequency, a difference is ', badge('supported'), ' from a score of 10 or when it is shown to reach 1% in a population, ', badge('needs_confirmation'), ' up to 0.1, and ', badge('inconclusive'), ' in between.'));
+    el('div', { class: 'scroll' }, comparisonChart(null)),
+    el('div', { class: 'scroll' }, el('table', { class: 'data-table' },
+      el('caption', { text: 'Points on the curve' }),
+      el('thead', {}, el('tr', {}, ...['Support: frequency guaranteed in the best population', 'Score', 'How well the score is known', 'Possible changes supported at least as well'].map((h) => el('th', { scope: 'col', text: h })))),
+      el('tbody', {}, points.map((support) => el('tr', {},
+        el('th', { scope: 'row', text: support > 0 ? percent(support) : 'never seen' }),
+        el('td', { class: 'num', text: scoreText(model.score(support)) }),
+        el('td', { class: 'num', text: support > 0 ? `${scoreText(model.interval(support)[0])} to ${scoreText(model.interval(support)[1])}` : '' }),
+        el('td', { class: 'num', text: pct(model.chance(support)) })))))),
+    el('p', { class: 'muted' }, 'By frequency, a difference is ', badge('supported'), ` from a score of ${state.limit} or when it is shown to reach 1% in a population, `, badge('needs_confirmation'), ' up to 0.1, and ', badge('inconclusive'), ' in between. The two limits are conventions for strong evidence, not measured.'));
   const hapText = state.files['haplotype_calibration.tsv'];
   if (hapText) {
     const hapRows = parseTSV(hapText).filter((r) => ['1', '2', '3', '5', '10', '20', '50'].includes(r.chromosomes));
@@ -1747,6 +2136,8 @@ function wire() {
 
 wire();
 wireGeneList();
+wirePrior();
+wireLimit();
 wireNameEditor();
 // The worker is started with the page, so the analysis module is loaded
 // and the stored data counted before the first file is dropped.

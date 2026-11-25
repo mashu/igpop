@@ -35,7 +35,9 @@ identical to the reference has no rows here (it still appears in
 | Column | Meaning |
 |---|---|
 | `verdict` | The verdict of this variant by frequency: `supported`, `inconclusive`, `needs_confirmation` or `not_assessed`. `supported`: `class` is `common`, or `score` is at least `--supported-score` (10). `needs_confirmation`: `score` at most `--confirm-score` (0.1), or an unscored variant that is `absent`. See [Reading the results](reading-results.md). |
-| `score` | The main result: how many times more often this level of support occurs among trusted variants than among arbitrary base changes. Above 1 supports the variant, below 1 speaks against it. Single-base changes only. See [The score](score.md). |
+| `score` | The main result: how many times more typical this support is of trusted variants than of arbitrary base changes. Above 1 supports the variant, below 1 speaks against it. Single-base changes only. See [The score](score.md). |
+| `score_low`, `score_high` | A 95% interval for the score: how well the calibration knows it at this support. |
+| `chance` | Share of all possible single-base changes in the genes of the run that are supported at least as well as this variant. |
 | `filters` | Why the variant is not `supported`: what the data show, then how that scores, e.g. `rare_in_every_population,low_score`. `.` for a supported variant. See [Why an allele did not pass](filters.md). |
 | `probability_real` | With `--prior`: prior x score / (prior x score + 1 - prior). `.` otherwise. |
 | `support` | The number the score is based on: the largest lower 95% bound of the allele frequency over all populations of all datasets (1000 Genomes, gnomAD, datasets relayed by dbSNP). 0 if never seen. |
@@ -158,18 +160,34 @@ more uncommon variants go with a lower `min_score`, but two alleles with
 the same count can differ several hundred-fold in score
 ([The score](score.md)).
 
-## `<prefix>.score_calibration.tsv`
+## `<prefix>.score_model.tsv`
 
-The table behind the score, one row per level of support.
+The curve behind the score, as `key`, `value` rows. Pass it to a later run
+with `--calibration`.
+
+| Key | Meaning |
+|---|---|
+| `never` | Score of a change no dataset has seen. |
+| `b0`, `b1`, `b2` | log(score) = b0 + b1 x + b2 x² for a change that was seen, x = log10(support). `b2` is 0 when a straight line fits as well. |
+| `cov` | Covariance of the three coefficients (six numbers: the upper triangle), from which `score_low` and `score_high` are computed. |
+| `arbitrary`, `arbitrary_seen` | Number of possible single-base changes in the loci, and how many of them some dataset has seen. |
+| `trusted`, `trusted_seen` | The same for the variants of yardstick alleles. |
+| `tail` | 49 rows: a support, and the share of all possible changes supported at least that well (column `chance` is read from these). |
+| `real` | One row per real variant that was seen: its support. The points the curve was drawn through. |
+
+## `<prefix>.score_levels.tsv`
+
+The two groups counted per level of support: a ruler for reading the
+curve. The levels do not enter the score.
 
 | Column | Meaning |
 |---|---|
 | `support` | Level of support: the range of the lower frequency bound. |
 | `arbitrary_changes`, `arbitrary_fraction` | How many of all possible single-base changes in the loci fall in this level, and their share. |
 | `trusted_variants`, `trusted_fraction` | The same for the variants of trusted alleles. |
-| `score` | Ratio of the two shares, after smoothing and pooling. |
-| `pooled_group` | Levels with the same number were pooled to keep the score from decreasing with support. |
-| `score_source` | `run`: computed from the counts in this table. `built-in`: the counts are those of this run, the scores those of the built-in table. `file`: scores from `--calibration`. See [Automatic calibration](calibration.md). |
+| `ratio_of_fractions` | The raw ratio of the two shares in this level. |
+| `score_from`, `score_to` | The score at the lower and at the upper edge of the level. |
+| `score_source` | `run`: the curve was fitted to this run. `built-in`: the counts are those of this run, the curve is the built-in one. `file`: curve from `--calibration`. See [Automatic calibration](calibration.md). |
 
 ## `<prefix>.haplotype_calibration.tsv`
 

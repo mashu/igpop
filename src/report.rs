@@ -172,7 +172,7 @@ pub fn warnings(input: &Input) -> Vec<String> {
     }
     if model.source == ScoreSource::BuiltIn {
         out.push(
-            "scores come from the built-in table, not from your alleles. This is the intended behaviour for small sets (D, J, a handful of alleles)."
+            "scores come from the built-in curve, not from your alleles. This is the intended behaviour for small sets (D, J, a handful of alleles)."
                 .to_string(),
         );
         let mut foreign: Vec<&str> = input
@@ -185,7 +185,7 @@ pub fn warnings(input: &Input) -> Vec<String> {
         foreign.dedup();
         if !foreign.is_empty() {
             out.push(format!(
-                "the built-in table was made from IGH genes, but this run holds other genes ({} ...). Variation in other loci may be distributed differently: prefer a run with at least {} trusted variants of the same locus, or pass its table with `--calibration`.",
+                "the built-in curve was made from IGH genes, but this run holds other genes ({} ...). Variation in other loci may be distributed differently: prefer a run with at least {} trusted variants of the same locus, or pass its `score_model.tsv` with `--calibration`.",
                 foreign.iter().take(3).copied().collect::<Vec<_>>().join(", "),
                 score::MIN_TRUSTED
             ));
@@ -195,7 +195,7 @@ pub fn warnings(input: &Input) -> Vec<String> {
         let nt: u64 = model.trusted.iter().sum();
         if nt < 100 {
             out.push(format!(
-                "the calibration rests on only {nt} trusted variants, so scores are coarse; verdicts near the limits can change with a few more trusted alleles."
+                "the calibration rests on only {nt} trusted variants, so the score curve is not pinned down well (see the intervals in section 5); verdicts near the limits can change with a few more trusted alleles."
             ));
         }
         let established: u64 = model.trusted[score::BINS - 2..].iter().sum();
@@ -268,6 +268,7 @@ pub fn render(input: &Input) -> String {
     write_report(&view)
 }
 
+#[allow(dead_code)]
 fn percent(x: f64) -> String {
     if x >= 0.995 {
         ">99%".to_string()
@@ -548,29 +549,71 @@ fn write_report(r: &View) -> String {
             let _ = writeln!(o, "Source: {}.\n", r.calibration_source);
             let _ = writeln!(
                 o,
-                "The score of a variant says how many times more often its level of population support is found \
-                 among variants of trusted alleles than among arbitrary single-base changes. \
-                 Above 1 the data speak for a real variant, below 1 against.\n"
+                "The score of a variant says how many times more typical its population support is of the variants of \
+                 trusted alleles than of arbitrary single-base changes. Above 1 the data speak for a real variant, below 1 against. \
+                 It is a smooth curve of support, so two variants with nearly the same support get nearly the same score.\n"
+            );
+            let c = cal.counts;
+            let _ = writeln!(
+                o,
+                "The curve was placed with {} trusted variants ({} of them seen in some dataset) and {} possible single-base changes ({} seen). \
+                 A change that no dataset has seen scores {:.3}. For a change that was seen, with x = log10(support): \
+                 log(score) = {:.3} {} {:.3} x {} {:.3} x^2.\n",
+                c.trusted,
+                c.trusted_seen,
+                c.arbitrary,
+                c.arbitrary_seen,
+                cal.never,
+                cal.beta[0],
+                if cal.beta[1] < 0.0 { "-" } else { "+" },
+                cal.beta[1].abs(),
+                if cal.beta[2] < 0.0 { "-" } else { "+" },
+                cal.beta[2].abs(),
             );
             let _ = writeln!(
                 o,
-                "| population support (frequency demonstrated in the best population) | arbitrary changes | trusted variants | score | verdict | probability real if half of such variants are real | if 9 in 10 are real |"
+                "| population support (frequency demonstrated in the best population) | score | 95% interval of the score | arbitrary changes supported at least as well | verdict |"
             );
-            let _ = writeln!(o, "|---|---:|---:|---:|---|---:|---:|");
-            for i in 0..score::BINS {
-                let (a, t) = match &r.counts {
-                    Some((a, t)) => (a[i].to_string(), t[i].to_string()),
-                    None => (".".to_string(), ".".to_string()),
-                };
+            let _ = writeln!(o, "|---|---:|---:|---:|---|");
+            for support in [0.0, 1e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 0.1, 0.3] {
+                let (x, (low, high)) = (cal.score(support), cal.interval(support));
+                let (label, chance) = (
+                    if support == 0.0 {
+                        "never seen".to_string()
+                    } else {
+                        format!("{}%", 100.0 * support)
+                    },
+                    format!("{:.2}%", 100.0 * cal.chance(support)),
+                );
                 let _ = writeln!(
                     o,
-                    "| {} | {a} | {t} | {:.3} | `{}` | {} | {} |",
-                    score::LABELS[i],
-                    cal.score[i],
-                    band(cal.score[i], r.supported, r.confirm),
-                    percent(score::posterior(0.5, cal.score[i])),
-                    percent(score::posterior(0.9, cal.score[i])),
+                    "| {label} | {x:.3} | {low:.3} to {high:.3} | {chance} | `{}` |",
+                    band(x, r.supported, r.confirm),
                 );
+            }
+            let crossing = |limit: f64| match cal.support_at(limit) {
+                Some(s) if s < 1e-3 => format!("a support of {:.3}%", 100.0 * s),
+                Some(s) => format!("a support of {:.1}%", 100.0 * s),
+                None => "no support (the curve does not reach it)".to_string(),
+            };
+            let _ = writeln!(
+                o,
+                "\nThe score reaches {} at {}, and {} at {}. The interval says how well the trusted variants pin the curve down; \
+                 the last column says how often an arbitrary change does as well as the variant.\n",
+                r.supported,
+                crossing(r.supported),
+                r.confirm,
+                crossing(r.confirm),
+            );
+            if let Some((a, t)) = &r.counts {
+                let _ = writeln!(
+                    o,
+                    "The two groups counted per level of support (a ruler for reading; the levels do not enter the score):\n"
+                );
+                let _ = writeln!(o, "| support | arbitrary changes | trusted variants |\n|---|---:|---:|");
+                for i in 0..score::BINS {
+                    let _ = writeln!(o, "| {} | {} | {} |", score::LABELS[i], a[i], t[i]);
+                }
             }
             let _ = writeln!(
                 o,
@@ -591,8 +634,8 @@ fn write_report(r: &View) -> String {
                 None => {
                     let _ = writeln!(
                         o,
-                        "The two probability columns show how the same score reads under two different expectations; \
-                         pass `--prior` to get a `probability_real` column for your own.\n"
+                        "A score is evidence, not a probability. Pass `--prior` (the share of variants like these you expect to be real \
+                         before looking at population data) to get a `probability_real` column.\n"
                     );
                 }
             }
@@ -655,10 +698,8 @@ fn write_report(r: &View) -> String {
             "alignments.tsv",
             "placement of every allele: position, strand, identity, competing loci",
         ),
-        (
-            "score_calibration.tsv",
-            "the calibration table of section 5; reusable with --calibration",
-        ),
+        ("score_model.tsv", "the score curve of section 5; reusable with --calibration"),
+        ("score_levels.tsv", "the two groups counted per level of support"),
         (
             "dbsnp_datasets.tsv",
             "frequency datasets relayed by dbSNP and whether each was used",

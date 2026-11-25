@@ -188,6 +188,9 @@ impl ScoreModel {
     /// this run; otherwise, with too few trusted variants, the built-in table.
     pub fn new(ev: &Evidence, windows: &[Window], yardstick: &[(&Placed, Yardstick)], file: Option<(&str, &str)>) -> Result<Self> {
         let (mut arbitrary, mut trusted) = ([0u64; BINS], [0u64; BINS]);
+        // The support of every change, for the curve; the counts per level
+        // are kept for tables and pictures.
+        let (mut arbitrary_supports, mut trusted_supports) = (Vec::new(), Vec::new());
         if ev.counted() {
             let mut positions: HashSet<(&str, u64)> = HashSet::new();
             for w in windows.iter().filter(|w| ev.covers(w)) {
@@ -198,7 +201,9 @@ impl ScoreModel {
                     let reference = w.seq[(pos - w.start) as usize];
                     for alt in b"ACGT".iter().filter(|alt| **alt != reference && reference != b'N') {
                         let lookup = (w.coord.contig.clone(), (pos, vec![reference], vec![*alt]));
-                        arbitrary[score::bin(evidence::support(&ev.strata(&lookup)))] += 1;
+                        let support = evidence::support(&ev.strata(&lookup));
+                        arbitrary[score::bin(support)] += 1;
+                        arbitrary_supports.push(support);
                     }
                 }
             }
@@ -207,7 +212,9 @@ impl ScoreModel {
                 for c in p.variants.iter().filter(|c| c.kind == Kind::Snv) {
                     let lookup = p.lookup(c);
                     if variants.insert(lookup.clone()) {
-                        trusted[score::bin(evidence::support(&ev.strata(&lookup)))] += 1;
+                        let support = evidence::support(&ev.strata(&lookup));
+                        trusted[score::bin(support)] += 1;
+                        trusted_supports.push(support);
                     }
                 }
             }
@@ -220,7 +227,7 @@ impl ScoreModel {
                 format!("the file `{name}` (`--calibration`)"),
             ),
             (None, false) => (None, ScoreSource::None, String::new()),
-            (None, true) => match score::calibrate(arbitrary, trusted) {
+            (None, true) => match score::calibrate(&arbitrary_supports, &trusted_supports) {
                 Some(c) => (
                     Some(c),
                     ScoreSource::Run,
@@ -234,7 +241,7 @@ impl ScoreModel {
                     Some(score::builtin()),
                     ScoreSource::BuiltIn,
                     format!(
-                        "the built-in table, because this run has only {nt} single-base variants of trusted alleles (at least {} are needed). \
+                        "the built-in curve, because this run has only {nt} single-base variants of trusted alleles (at least {} are needed, and they must be better supported than arbitrary changes). \
                          It was computed from 566 human IGHV alleles on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and dbSNP",
                         score::MIN_TRUSTED
                     ),
@@ -277,6 +284,11 @@ pub struct VariantResult {
     /// Corrected p-value of the best stratum, if one was tested.
     pub class_p: Option<f64>,
     pub score: Option<f64>,
+    /// A 95% interval for the score: how well the calibration knows it.
+    pub score_interval: Option<(f64, f64)>,
+    /// Share of all possible single-base changes in the genes of the run
+    /// that are supported at least as well as this variant.
+    pub chance: Option<f64>,
     pub verdict: Verdict,
     pub filters: Vec<Filter>,
     /// 1000 Genomes site criteria the variant's site fails.
@@ -340,10 +352,13 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         _ => (Class::NotAssessed, None),
     };
 
-    let score = match &model.calibration {
-        Some(cal) if called.kind == Kind::Snv && ev.reads(&lookup.0) => Some(cal.score[score::bin(support)]),
+    let scored = match &model.calibration {
+        Some(cal) if called.kind == Kind::Snv && ev.reads(&lookup.0) => {
+            Some((cal.score(support), cal.interval(support), cal.chance(support)))
+        }
         _ => None,
     };
+    let score = scored.map(|(x, _, _)| x);
     let verdict = variant_verdict(class, score, limits);
 
     let mut filters = Vec::new();
@@ -375,6 +390,8 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         basis,
         class_p: corrected.map(|(p, _)| p),
         score,
+        score_interval: scored.map(|(_, interval, _)| interval),
+        chance: scored.map(|(_, _, chance)| chance),
         verdict,
         filters,
         site_qc,

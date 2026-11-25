@@ -132,9 +132,57 @@ on it in the alignment) shows:
   a single copy are listed too. For dbSNP studies the counts are worked
   out from the estimated study size and marked "about".
 - **Why this verdict and score**: which population gives the guaranteed
-  frequency (the support), the level it falls in, the shares of real
-  variants and of arbitrary changes at that level whose ratio is the score,
-  and whether a test showed a frequency of 1% or more.
+  frequency (the support), the score that support has on the curve of the
+  run and how well that score is known, how many of all possible changes
+  are supported at least as well, and whether a test showed a frequency of
+  1% or more.
+- **What it was compared with**: a picture on one axis of support. The
+  line is the score, with a band for its uncertainty and dashed lines at
+  the two limits (10 and 0.1). Below it, every real variant of the run is
+  a dot (point at it for its rsID and gene) and all possible changes are
+  bars. The difference is marked on the line. Because the line has no
+  steps, a difference just below a limit is visibly close to one just
+  above it. See [The score](score.md).
+
+## The score first, the limit as a setting
+
+Every allele shows its weakest score as a number with a dot on a
+continuous colour scale (from the colour of "needs confirmation" at 0.01
+through grey at 1 to the colour of "supported" at 100), and **Order** sorts
+the list by it. An allele is only as well supported by frequency as its
+weakest difference.
+
+A yes/no verdict needs a cut, and no cut is given by the data. The slider
+"Count a difference as supported from a score of ..." sets it, from 1 to
+100; 10 is the usual mark for strong evidence and the value the analysis
+runs with. Below the slider the app says what the chosen limit means:
+
+- the support at which the score reaches it (1.7% for 10 in the IGHV
+  example, 0.75% for 5),
+- the share of all possible single-base changes that score this high,
+  which is how often an arbitrary change would pass,
+- how many alleles are supported, and how many more or fewer than at 10.
+
+Moving the slider does not run the analysis again: scores, classes and
+haplotype checks stay as measured, and only their reading changes, exactly
+as `--supported-score` would change it on the command line. The verdict
+labels, the counts at the top and the tables under **Files**
+(`final.tsv`, `alleles.tsv`, `variants.tsv`) follow the limit; the written
+report describes the run at 10. The limit for "needs confirmation" (0.1)
+is not moved.
+
+## Showing a probability
+
+A score is evidence, not a probability. Above the list of alleles,
+"Also show a probability for each difference" turns scores into
+probabilities for the whole result at once. It asks for one number: the
+share of differences like yours that you expect to be real before looking
+at population data. This is a judgement of the method that produced the
+alleles, so it is set once, not per difference. For orientation the app
+says how many candidates of the run were found on phased chromosomes
+among those that could be looked up, and offers that share as a value.
+The setting is off unless you turn it on, changes no verdict, and is kept
+in your browser.
 
 The site files give counts for continental groups and ancestry groups, not
 for the single populations within them.
@@ -150,3 +198,9 @@ about them has a link that sets this filter. Opening one explains why,
 with the gene it fits and the two alignment scores. An allele that fits
 another gene is still judged, but its differences, and the frequencies
 found for them, may belong to the other copy of the gene.
+
+## Trying it without a file
+
+"Try the example" on the first page loads 566 human IGHV alleles of the
+KIARVA set (174 database alleles, 392 candidates) as if you had chosen the
+file. The first run downloads about 100 MB.

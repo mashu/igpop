@@ -49,7 +49,7 @@ struct Args {
     /// calibrate the score.
     #[arg(long)]
     trusted: Option<PathBuf>,
-    /// Use the scores of an earlier run's <prefix>.score_calibration.tsv.
+    /// Use the score curve of an earlier run's <prefix>.score_model.tsv.
     /// Default: calibrate on this run, or, with fewer than 30 trusted
     /// single-base variants, use the built-in human IGHV calibration.
     #[arg(long)]

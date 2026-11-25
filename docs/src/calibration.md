@@ -8,13 +8,14 @@ igpop does it in every run and picks the source in this order.
 
 | Order | Source | Used when |
 |---|---|---|
-| 1 | A table you pass with `--calibration` | You ask for it. |
-| 2 | **This run** | The yardstick alleles of the run carry at least 30 distinct single-base variants. |
-| 3 | **The built-in table** | Otherwise. |
+| 1 | A curve you pass with `--calibration` (a `score_model.tsv`) | You ask for it. |
+| 2 | **This run** | The yardstick alleles of the run carry at least 30 distinct single-base variants, and these are better supported than arbitrary changes. |
+| 3 | **The built-in curve** | Otherwise. |
 
 The report (section 5) and the last column of
-`<prefix>.score_calibration.tsv` (`score_source`: `run`, `built-in` or
-`file`) state which one was used.
+`<prefix>.score_levels.tsv` (`score_source`: `run`, `built-in` or
+`file`) state which one was used. The curve in use is always written to
+`<prefix>.score_model.tsv`.
 
 ## Calibrating on the run itself
 
@@ -31,7 +32,7 @@ The yardstick has two parts:
   score would learn that "real" means "frequent". Column `yardstick` of
   `alleles.tsv` says `named` or `haplotype`. One caveat: every variant in
   the phased panel has at least two copies in 1000 Genomes, so these
-  alleles say nothing about the lowest support levels.
+  alleles say nothing about the lowest supports.
 
 Requirements:
 
@@ -42,34 +43,37 @@ Requirements:
   move the scale, and they will show up in the report as trusted alleles
   that are not `supported`.
 - **Enough of them.** 30 distinct single-base variants is the minimum;
-  below 100 the report warns that the scale is coarse.
+  below 100 the report warns that the curve is not pinned down well.
 
 Put candidates and trusted alleles in the same FASTA and the same run.
 
-## The built-in table
+## The built-in curve
 
 Small sets (D and J genes, or a handful of alleles) cannot calibrate
-themselves. They are scored with a table computed once from 566 human IGHV
+themselves. They are scored with a curve computed once from 566 human IGHV
 alleles (147 named trusted, 45 confirmed as haplotypes) on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and the
-datasets relayed by dbSNP:
+datasets relayed by dbSNP: 213 real variants against 38,316 possible
+changes. A change never seen scores 0.005; for a change that was seen,
+log(score) = 4.96 + 1.11 x − 0.22 x² with x = log10(support). The two
+groups, counted per level of support:
 
-| Support | Arbitrary changes | Variants of yardstick alleles | Score |
+| Support | Arbitrary changes | Variants of yardstick alleles | Score across the level |
 |---|---:|---:|---:|
 | none | 18,812 | 0 | 0.005 |
-| below 0.001% | 5,488 | 0 | 0.013 |
-| 0.001 to 0.01% | 7,809 | 0 | 0.013 |
-| 0.01 to 0.1% | 3,899 | 7 | 0.340 |
-| 0.1 to 1% | 1,614 | 18 | 2.028 |
-| 1 to 10% | 332 | 41 | 22.091 |
-| 10% and more | 362 | 147 | 72.019 |
+| below 0.001% | 5,488 | 0 | 0.005 |
+| 0.001 to 0.01% | 7,809 | 0 | 0.005 to 0.05 |
+| 0.01 to 0.1% | 3,899 | 7 | 0.05 to 0.70 |
+| 0.1 to 1% | 1,614 | 18 | 0.70 to 6.4 |
+| 1 to 10% | 332 | 41 | 6.4 to 38 |
+| 10% and more | 362 | 147 | 38 to 143 |
 
 It is appropriate for human IGH with the default datasets. For another
 locus, or other datasets, the report warns; the better route is a run of
-that locus large enough to calibrate itself, whose table you then reuse:
+that locus large enough to calibrate itself, whose curve you then reuse:
 
 ```bash
 igpop variants --alleles trbv.fasta --coords trb.tsv -o trbv
-igpop variants --alleles trbj.fasta --coords trb.tsv --calibration trbv.score_calibration.tsv -o trbj
+igpop variants --alleles trbj.fasta --coords trb.tsv --calibration trbv.score_model.tsv -o trbj
 ```
 
 ## Is my calibration good?
@@ -77,7 +81,8 @@ igpop variants --alleles trbj.fasta --coords trb.tsv --calibration trbv.score_ca
 Open section 5 and 6 of the report and check three things.
 
 1. **Shape.** Arbitrary changes concentrate at "none", trusted variants at
-   1% and more, and the score rises from far below 1 to far above 10.
+   1% and more, and the score rises from far below 1 to far above 10, with
+   intervals that are narrow where it crosses the limits.
 2. **Trusted alleles.** Most trusted alleles with differences are
    `supported`.
 3. **No calibration warning**, or one you understand.
@@ -97,5 +102,6 @@ To be stricter, raise the first or raise the second:
 igpop variants --alleles my.fasta --supported-score 20 --confirm-score 0.3 -o strict
 ```
 
-Because the score has seven levels, moving a limit only matters when it
-crosses one of the seven values in the calibration table.
+Section 5 of the report says at which support the score crosses each limit
+(1.7% and 0.018% for the defaults in the IGHV example), so you can see
+what a limit means in terms of frequency.

@@ -149,7 +149,7 @@ pub struct Config {
     pub trusted: Option<String>,
     /// Alleles whose name contains this are candidates, the others trusted.
     pub candidate_marker: String,
-    /// A `score_calibration.tsv` of an earlier run.
+    /// A `score_model.tsv` of an earlier run.
     pub calibration: Option<Text>,
     pub limits: Limits,
     /// Share of variants expected to be real, for `probability_real`.
@@ -819,7 +819,10 @@ impl<'a> Session<'a> {
             ("alignments.txt", alignments),
         ];
         if ev.counted() {
-            files.push(("score_calibration.tsv", tables::calibration_table(&model)?));
+            files.push(("score_levels.tsv", tables::calibration_table(&model)?));
+            if let Some(calibration) = &model.calibration {
+                files.push(("score_model.tsv", calibration.format()));
+            }
         }
         if !ev.dbsnp.datasets.is_empty() {
             files.push(("dbsnp_datasets.tsv", tables::datasets_table(ev)?));

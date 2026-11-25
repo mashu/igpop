@@ -156,6 +156,13 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
             }
         })
         .col("score", |r: &R| r.v.score.map_or(".".to_string(), |x| format!("{x:.3}")))
+        .col("score_low", |r: &R| {
+            r.v.score_interval.map_or(".".to_string(), |x| format!("{:.3}", x.0))
+        })
+        .col("score_high", |r: &R| {
+            r.v.score_interval.map_or(".".to_string(), |x| format!("{:.3}", x.1))
+        })
+        .col("chance", |r: &R| r.v.chance.map_or(".".to_string(), num))
         .col("probability_real", |r: &R| match (r.prior, r.v.score) {
             (Some(prior), Some(x)) => format!("{:.3}", score::posterior(prior, x)),
             _ => ".".to_string(),
@@ -557,12 +564,14 @@ pub fn alignments_text(build: &str, windows: &[Window], placed: &[Placed]) -> Re
     Ok(out)
 }
 
-/// `score_calibration.tsv`: the counts of this run and the scores in use.
+/// `score_levels.tsv`: the two groups counted per level of support, and
+/// the score at the edges of each level. The score itself is the curve of
+/// `score_model.tsv`; the levels are a ruler for reading it.
 pub fn calibration_table(model: &ScoreModel) -> Result<String> {
     let mut out = String::new();
     writeln!(
         out,
-        "support\tarbitrary_changes\tarbitrary_fraction\ttrusted_variants\ttrusted_fraction\tscore\tpooled_group\tscore_source"
+        "support\tarbitrary_changes\tarbitrary_fraction\ttrusted_variants\ttrusted_fraction\tratio_of_fractions\tscore_from\tscore_to\tscore_source"
     )?;
     let (na, nt): (u64, u64) = (model.arbitrary.iter().sum(), model.trusted.iter().sum());
     let fraction = |x: u64, n: u64| {
@@ -573,13 +582,25 @@ pub fn calibration_table(model: &ScoreModel) -> Result<String> {
         }
     };
     for i in 0..score::BINS {
-        let (value, group) = match &model.calibration {
-            Some(c) => (format!("{:.3}", c.score[i]), c.group[i].to_string()),
+        let ratio = if na == 0 || nt == 0 || model.arbitrary[i] == 0 {
+            ".".to_string()
+        } else {
+            format!(
+                "{:.3}",
+                (model.trusted[i] as f64 / nt as f64) / (model.arbitrary[i] as f64 / na as f64)
+            )
+        };
+        let (from, to) = match &model.calibration {
+            Some(c) if i == 0 => (format!("{:.3}", c.never), format!("{:.3}", c.never)),
+            Some(c) => {
+                let (low, high) = score::level_range(i);
+                (format!("{:.3}", c.score(low)), format!("{:.3}", c.score(high)))
+            }
             None => (".".to_string(), ".".to_string()),
         };
         writeln!(
             out,
-            "{}\t{}\t{}\t{}\t{}\t{value}\t{group}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{ratio}\t{from}\t{to}\t{}",
             score::LABELS[i],
             model.arbitrary[i],
             fraction(model.arbitrary[i], na),

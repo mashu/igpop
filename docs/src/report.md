@@ -78,8 +78,8 @@ levels in between are the inconclusive zone.
 
 | Warning | Meaning |
 |---|---|
-| scores come from the built-in table | Your run was too small to calibrate itself. Expected for D, J and small sets. |
-| the built-in table was made from IGH genes, but this run holds other genes | The scale may not transfer to another locus. Prefer a larger run of that locus. |
+| scores come from the built-in curve | Your run was too small to calibrate itself. Expected for D, J and small sets. |
+| the built-in curve was made from IGH genes, but this run holds other genes | The scale may not transfer to another locus. Prefer a larger run of that locus. |
 | the calibration rests on only N trusted variants | It worked, but is coarse. Verdicts near the limits can move. |
 | only N of M trusted variants reach 1% | The trusted alleles do not look like established variation. Check build, coordinates and the trusted set before trusting any verdict. |
 | alleles were not placed cleanly | See section 3. |

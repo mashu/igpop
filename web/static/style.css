@@ -321,7 +321,7 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 
 /* ---- the evidence behind one difference ---- */
 .evidence-row > td { background: color-mix(in srgb, var(--ink) 3%, transparent); padding: 1rem 1.2rem; white-space: normal; }
-.evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.2rem 2rem; max-width: 1000px; }
+.evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.2rem 2rem; max-width: min(1000px, calc(100vw - 9rem)); }
 .evidence-part:first-child, .evidence-part:last-child { grid-column: 1 / -1; }
 .evidence h4 { margin: 0 0 0.4rem; font-size: 0.95rem; }
 .evidence p, .evidence ol { margin: 0.2rem 0; font-size: 0.9rem; }
@@ -356,3 +356,39 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 
 .pill.p-unclean { color: var(--inconclusive); border-color: color-mix(in srgb, var(--inconclusive) 55%, transparent); }
 .placement-note { border: 1px solid color-mix(in srgb, var(--inconclusive) 50%, transparent); background: color-mix(in srgb, var(--inconclusive) 9%, transparent); border-radius: 10px; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
+
+/* ---- what a difference was compared with ---- */
+.example { margin: 0.9rem 0 0; font-size: 0.95rem; }
+.evidence-part:nth-child(4) { grid-column: 1 / -1; }
+.compare { width: 100%; max-width: 820px; min-width: 600px; height: auto; display: block; margin: 0.4rem 0; }
+.compare .panel { fill: color-mix(in srgb, var(--ink) 3%, transparent); }
+.compare .grid { stroke: var(--line); stroke-width: 1; }
+.compare .base { stroke: var(--line); stroke-width: 1; }
+.compare .limit { stroke-width: 1.2; stroke-dasharray: 5 4; }
+.compare .limit.high { stroke: var(--supported); }
+.compare .limit.low { stroke: var(--confirm); }
+.compare .limit-name { font-size: 10px; fill: var(--muted); }
+.compare .tick, .compare .row-name { font-size: 10px; fill: var(--muted); }
+.compare .axis-name { font-size: 10.5px; fill: var(--muted); }
+.compare .band { fill: var(--accent); opacity: 0.16; }
+.compare .curve { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.compare .real { fill: var(--accent); }
+.compare .arbitrary { fill: var(--grey); opacity: 0.75; }
+.compare .count { font-size: 10px; fill: var(--ink); }
+.compare .this { stroke: var(--ink); stroke-width: 1.5; }
+.compare .this-dot { fill: var(--ink); stroke: var(--surface, #fff); stroke-width: 2; }
+.compare .this-label { font-size: 11px; font-weight: 700; fill: var(--ink); }
+.prior-setting { display: flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; align-items: center; margin: 0.5rem 0 0; font-size: 0.92rem; }
+.prior-setting input[type=number] { width: 4.2rem; }
+.prior-setting .link { font-size: inherit; }
+.probability { display: block; color: var(--muted); font-weight: 400; }
+.limit-setting { display: grid; grid-template-columns: auto minmax(10rem, 22rem) auto; gap: 0.2rem 0.8rem; align-items: center; margin: 0.6rem 0 0; font-size: 0.92rem; }
+.limit-setting input[type=range] { accent-color: var(--accent); width: 100%; }
+.limit-setting p { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 640px) { .limit-setting { grid-template-columns: 1fr; } }
+.score-pill { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; font-variant-numeric: tabular-nums; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 0.05rem 0.55rem 0.05rem 0.4rem; }
+.score-pill i { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--tone); flex: none; }
+.limit-setting label, .prior-setting label { display: inline; color: var(--ink); font-size: inherit; }
+.prior-setting input[type=checkbox] { margin-right: 0.35rem; vertical-align: -0.1em; }
+.limit-setting b { font-variant-numeric: tabular-nums; }
+.limit-setting label { white-space: nowrap; }
