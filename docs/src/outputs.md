@@ -41,7 +41,6 @@ identical to the reference has no rows here (it still appears in
 | `score_low`, `score_high` | A 95% interval for the score: how well the calibration knows it at this support. |
 | `chance` | Share of all possible single-base changes in the genes of the run that are supported at least as well as this variant. |
 | `filters` | Why the variant is not `supported`: what the data show, then how that scores, e.g. `rare_in_every_population,low_score`. `.` for a supported variant. See [Why an allele did not pass](filters.md). |
-| `probability_real` | With `--prior`: prior x score / (prior x score + 1 - prior). `.` otherwise. |
 | `support` | The number the score is based on: the largest lower 95% bound of the allele frequency over all populations of all datasets (1000 Genomes, gnomAD, datasets relayed by dbSNP). 0 if never seen. |
 | `support_from` | The population that gives it, as `dataset:population`. |
 | `class` | `common`, `uncommon`, `absent` or `not_assessed` (below). |

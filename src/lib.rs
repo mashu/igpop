@@ -152,8 +152,6 @@ pub struct Config {
     /// A `score_model.tsv` of an earlier run.
     pub calibration: Option<Text>,
     pub limits: Limits,
-    /// Share of variants expected to be real, for `probability_real`.
-    pub prior: Option<f64>,
     /// Reference FASTA; `None` = the default for the build.
     pub reference: Option<String>,
     pub kgp: Choice,
@@ -191,7 +189,6 @@ impl Config {
                 confirm: 0.1,
                 coincidence: 0.05,
             },
-            prior: None,
             reference: None,
             kgp: Choice::Default,
             gnomad: Choice::Default,
@@ -208,9 +205,6 @@ impl Config {
     }
 
     fn check(&self) -> Result<()> {
-        if self.prior.is_some_and(|p| !(p > 0.0 && p < 1.0)) {
-            bail!("the prior must lie between 0 and 1");
-        }
         if self.limits.confirm >= self.limits.supported {
             bail!("the confirm score must be below the supported score");
         }
@@ -773,13 +767,7 @@ impl<'a> Session<'a> {
                     .variants
                     .iter()
                     .zip(&allele.placed.variants)
-                    .map(move |(v, called)| tables::VariantRow {
-                        ev,
-                        allele,
-                        called,
-                        v,
-                        prior: config.prior,
-                    })
+                    .map(move |(v, called)| tables::VariantRow { ev, allele, called, v })
             })
             .collect();
         let placements: Vec<tables::PlacedRow> = results
@@ -800,7 +788,6 @@ impl<'a> Session<'a> {
             other_builds: loaded[1..].iter().map(|l| (l.build.as_str(), &l.ev, l.placed.len())).collect(),
             alleles: config.alleles.name.clone(),
             coords: coords_label,
-            prior: config.prior,
             limits: &config.limits,
             results: &results,
             ev,

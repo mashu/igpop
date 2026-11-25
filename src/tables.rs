@@ -117,8 +117,6 @@ pub struct VariantRow<'a> {
     pub allele: &'a AlleleResult<'a>,
     pub called: &'a Called,
     pub v: &'a VariantResult,
-    /// `--prior`, for the probability column.
-    pub prior: Option<f64>,
 }
 
 pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
@@ -172,10 +170,6 @@ pub fn variants_table<'a>() -> Table<VariantRow<'a>> {
             r.v.score_interval.map_or(".".to_string(), |x| format!("{:.3}", x.1))
         })
         .col("chance", |r: &R| r.v.chance.map_or(".".to_string(), num))
-        .col("probability_real", |r: &R| match (r.prior, r.v.score) {
-            (Some(prior), Some(x)) => format!("{:.3}", score::posterior(prior, x)),
-            _ => ".".to_string(),
-        })
         .col("support", |r: &R| {
             if r.ev.reads(&r.v.lookup.0) {
                 num(r.v.support)

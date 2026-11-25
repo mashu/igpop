@@ -177,7 +177,7 @@ on it in the alignment) shows:
 
 The list of alleles shows search, gene and order; the remaining filters
 (trusted or candidate, haplotype, placement) are under **More filters**,
-and the two settings below under **Verdict settings**. Both fold away and
+and the limit described below under **Verdict settings**. Both fold away and
 say in their title what is set.
 
 Every allele shows its weakest score as a number with a dot on a
@@ -208,19 +208,6 @@ labels, the counts at the top and the tables under **Files**
 (`final.tsv`, `alleles.tsv`, `variants.tsv`) follow the limit; the written
 report describes the run at 2. The limit for "needs confirmation" (0.1)
 is not moved.
-
-## Showing a probability
-
-A score is evidence, not a probability. Above the list of alleles,
-"Also show a probability for each difference" turns scores into
-probabilities for the whole result at once. It asks for one number: the
-share of differences like yours that you expect to be real before looking
-at population data. This is a judgement of the method that produced the
-alleles, so it is set once, not per difference. For orientation the app
-says how many candidates of the run were found on phased chromosomes
-among those that could be looked up, and offers that share as a value.
-The setting is off unless you turn it on, changes no verdict, and is kept
-in your browser.
 
 The site files give counts for continental groups and ancestry groups, not
 for the single populations within them.

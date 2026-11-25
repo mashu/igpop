@@ -31,7 +31,7 @@
   IGHV4-28*02). Such alleles come out weaker than they are.
 - **Verdicts are about population support.** A real private allele gets
   `needs_confirmation`; an artefact shared by all short-read datasets can
-  get `supported`. A probability needs a prior that only you can supply.
+  get `supported`. igpop reports evidence, not the probability that an allele is real.
 - **Insertions and deletions borrow their score.** It is read from the
   curve of single-base changes as a lower bound, and only where that bound
   is above 1; a rarely seen insertion or deletion has no score

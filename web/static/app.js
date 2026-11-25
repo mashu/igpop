@@ -878,7 +878,6 @@ function display(files, warnings, summary = []) {
   renderTiles();
   renderWarnings(warnings);
   renderFilters();
-  renderPriorNote();
   renderLimit();
   renderAlleles();
   renderData();
@@ -1033,8 +1032,7 @@ function scorePill(allele) {
   const t = Math.max(-1, Math.min(1, Math.log10(score) / 2));
   const tone = `color-mix(in srgb, var(${t >= 0 ? '--supported' : '--confirm'}) ${Math.round(100 * Math.abs(t))}%, var(--grey))`;
   return el('span', { class: 'score-pill', style: `--tone:${tone}`, title: `Weakest score among the differences of this allele: ${scoreText(score)} (${scoreWords(score)}). An allele is only as well supported by frequency as its weakest difference.` },
-    el('i', { 'aria-hidden': 'true' }), `score ${scoreText(score)}`,
-    state.prior ? el('em', { text: `${chanceText(afterEvidence(state.prior, score)).replace('more than ', '>').replace('less than ', '<')} real` }) : null);
+    el('i', { 'aria-hidden': 'true' }), `score ${scoreText(score)}`);
 }
 
 function renderTiles() {
@@ -1112,7 +1110,7 @@ function frequencyLegend() {
 function renderFolds() {
   const active = ['f-kind', 'f-hap', 'f-place'].filter((id) => $(id).value).length;
   $('fold-filters-state').textContent = active ? `: ${active} set` : '';
-  $('fold-reading-state').textContent = `: supported from a score of ${state.limit}${state.prior ? `, probability shown for a prior of ${Math.round(100 * state.prior)}%` : ''}`;
+  $('fold-reading-state').textContent = `: supported from a score of ${state.limit}`;
 }
 
 function visibleAlleles() {
@@ -1131,41 +1129,6 @@ function visibleAlleles() {
     if (query && !`${a.allele_name} ${a.gene} ${a.reason}`.toLowerCase().includes(query)) return false;
     return true;
   });
-}
-
-/** The one setting that turns scores into probabilities, for the whole
- *  result: off unless the user turns it on. */
-function wirePrior() {
-  const [on, box, value, note] = [$('prior-on'), $('prior-box'), $('prior-value'), $('prior-note')];
-  try {
-    const kept = JSON.parse(localStorage.getItem('igpop-prior') || 'null');
-    if (kept) { on.checked = Boolean(kept.on); value.value = String(kept.percent); }
-  } catch (error) { /* storage is off */ }
-  const apply = () => {
-    const percentage = Math.min(99, Math.max(1, Number(value.value) || 50));
-    box.hidden = !on.checked;
-    state.prior = on.checked ? percentage / 100 : null;
-    try { localStorage.setItem('igpop-prior', JSON.stringify({ on: on.checked, percent: percentage })); } catch (error) { /* storage is off */ }
-    if (state.alleles.length) renderAlleles();
-  };
-  on.addEventListener('change', apply);
-  value.addEventListener('change', apply);
-  note.addEventListener('click', (event) => {
-    const use = event.target.closest('button[data-percent]');
-    if (!use) return;
-    value.value = use.dataset.percent;
-    apply();
-  });
-  box.hidden = !on.checked;
-  state.prior = on.checked ? Math.min(99, Math.max(1, Number(value.value) || 50)) / 100 : null;
-}
-
-/** Something to hold on to when choosing the setting: how many candidates
- *  of this run turned out to exist on phased chromosomes. */
-function renderPriorNote() {
-  const looked = state.alleles.filter((a) => a.trusted === 'no' && ['found_exact', 'found_with_extra', 'not_found'].includes(a.hap_status));
-  const found = looked.filter((a) => a.hap_status === 'found_exact').length;
-  $('prior-note').textContent = `This is your judgement of the method that produced the alleles; each score then moves it up or down. The probability appears beside every score.${looked.length >= 20 ? ` For orientation: of ${looked.length} candidates in this run whose whole sequence could be looked up on phased chromosomes, ${found} were found there.` : ''}`;
 }
 
 function renderAlleles() {
@@ -1641,13 +1604,6 @@ function comparisonChart(v) {
 }
 
 const pct = (x) => (x >= 0.995 ? '100%' : `${Number((100 * x).toPrecision(2))}%`);
-/** A probability in words: never a flat 0% or 100%. */
-const chanceText = (p) => (p > 0.99 ? 'more than 99%' : p < 0.01 ? 'less than 1%' : `${Math.round(100 * p)}%`);
-
-/** The probability that a difference is real, if a share `prior` of such
- *  differences is real before looking at population data. */
-const afterEvidence = (prior, score) => (prior * score) / (prior * score + (1 - prior));
-
 /** Everything behind one difference: where it is, who carries it, and why
  *  it has its score. */
 function evidencePanel(v) {
@@ -1703,9 +1659,6 @@ function comparison(v) {
     el('div', { class: 'scroll' }, comparisonChart(v)),
     v.score_basis === 'borrowed' ? el('p', { text: 'This difference is an insertion or deletion, and the picture is made from single-base changes. Its score is read from the same line as a lower bound.' }) : null,
     el('p', {}, `This difference has a score of ${scoreText(score)}. The shaded band shows how well the real variants pin the line down here: between ${scoreText(low)} and ${scoreText(high)}. ${reading}`),
-    state.prior
-      ? el('p', {}, `With your setting that ${Math.round(100 * state.prior)}% of such differences are real before looking at population data, this one is real with a probability of `, el('b', { text: chanceText(afterEvidence(state.prior, score)) }), ` (between ${chanceText(afterEvidence(state.prior, low))} and ${chanceText(afterEvidence(state.prior, high))}, given how well the score is known).`)
-      : null,
     el('p', { class: 'muted', text: `The limits for the verdict (${state.limit} for "supported", which you can move above the list of alleles, and 0.1 for "needs confirmation") are conventions, not measurements. Where likelihood ratios are used, 1 to 3 is usually read as weak, 3 to 10 as positive and 10 or more as strong evidence. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.` }));
 }
 
@@ -1811,8 +1764,7 @@ function scoreCell(v) {
     borrowed ? el('span', { text: 'Borrowed from the curve of single-base changes, as a lower bound: random insertions and deletions are found in population data far more rarely than random base changes.' }) : null,
     el('span', { text: `A base seen this often is ${score >= 1 ? `${scoreText(score)} times more typical of real variants than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of real variants`}.` }),
     given(v.score_low) ? el('span', { text: `The calibration knows this score to between ${scoreText(Number(v.score_low))} and ${scoreText(Number(v.score_high))}.` }) : null,
-    given(v.chance) && number(v.support) > 0 ? el('span', { text: `${pct(Number(v.chance))} of all possible changes are supported at least as well.` }) : null)),
-  state.prior ? el('small', { class: 'probability', text: `${chanceText(afterEvidence(state.prior, score)).replace('more than ', '>').replace('less than ', '<')} real` }) : null);
+    given(v.chance) && number(v.support) > 0 ? el('span', { text: `${pct(Number(v.chance))} of all possible changes are supported at least as well.` }) : null)));
 }
 
 // ---- haplotype check -----------------------------------------------------
@@ -2255,7 +2207,6 @@ function wire() {
 
 wire();
 wireGeneList();
-wirePrior();
 wireLimit();
 wireNameEditor();
 // The worker is started with the page, so the analysis module is loaded
