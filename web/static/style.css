@@ -2,12 +2,12 @@
    once as variables, with a dark variant; verdicts always carry an icon and
    a word besides their colour. */
 :root {
-  --paper: #f6f4ef;
+  --paper: #f5f5f9;
   --surface: #ffffff;
-  --ink: #1c2330;
-  --muted: #5d6675;
-  --line: #dcd8cf;
-  --accent: #0b6e69;
+  --ink: #1d1b33;
+  --muted: #5f5d75;
+  --line: #dddbe8;
+  --accent: #5b3fb8;
   --accent-ink: #ffffff;
   --supported: #1f7a4d;
   --inconclusive: #9a6200;
@@ -21,13 +21,13 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #12161d;
-    --surface: #1a2029;
-    --ink: #e9edf3;
-    --muted: #a3adbd;
-    --line: #2d3644;
-    --accent: #4fc4bb;
-    --accent-ink: #06211f;
+    --paper: #15141f;
+    --surface: #1e1c2b;
+    --ink: #ecebf5;
+    --muted: #a9a6bd;
+    --line: #322f45;
+    --accent: #a594f9;
+    --accent-ink: #17142b;
     --supported: #58c58f;
     --inconclusive: #e0a84a;
     --confirm: #f08a6c;
@@ -654,13 +654,13 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .tabs.pills button[aria-selected=true] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
 /* ---- before the run: one colour per thing told apart ---- */
-:root { --c-main: #2a78d6; --c-older: #eb6834; --c-freq: #6250d6; --c-hap: #b77c00; }
-@media (prefers-color-scheme: dark) { :root { --c-main: #3987e5; --c-older: #d95926; --c-freq: #9085e9; --c-hap: #c98500; } }
+:root { --c-main: #3a6fc4; --c-older: #c96a3a; --c-freq: #5b3fb8; --c-hap: #9a7410; }
+@media (prefers-color-scheme: dark) { :root { --c-main: #6f9ae0; --c-older: #d98a5f; --c-freq: #a594f9; --c-hap: #c9a04a; } }
 .j-main { background: var(--c-main); }
 .j-older { background: var(--c-older); }
 #check { border-left-color: var(--c-main); }
-#check .plan-kind { color: var(--surface); background: var(--c-freq); border-color: var(--c-freq); font-weight: 700; }
-#check .plan-kind.k-haplotypes { background: var(--c-hap); border-color: var(--c-hap); }
+#check .plan-kind { color: var(--c-freq); background: color-mix(in srgb, var(--c-freq) 16%, transparent); border-color: color-mix(in srgb, var(--c-freq) 45%, transparent); font-weight: 700; }
+#check .plan-kind.k-haplotypes { color: var(--c-hap); background: color-mix(in srgb, var(--c-hap) 16%, transparent); border-color: color-mix(in srgb, var(--c-hap) 45%, transparent); }
 #check .plan-track i { background: var(--c-freq); }
 #check .plan-track i.k-haplotypes { background: var(--c-hap); }
 .plan-table caption .swatch { vertical-align: -0.05rem; }
