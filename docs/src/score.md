@@ -193,9 +193,9 @@ are still shown, as a ruler; they no longer decide anything.
   across a slope, not a step: a variant scoring 9 is nearly as well
   supported as one scoring 11, and the table shows the number so that you
   can read it that way. In the IGHV example a limit of 5 instead of 10
-  supports 409 instead of 393 alleles, and a limit of 3 supports 422; the
-  share of artificial substitutions that pass rises from about 1.5% to
-  about 1.9% and 2.6%. The web app has a slider for the limit that shows
+  supports 407 instead of 390 alleles, and a limit of 3 supports 421; the
+  share of artificial substitutions that pass rises from 1.3% to
+  1.6% and 2.3% (3.0% at a limit of 2, with 439 alleles supported). The web app has a slider for the limit that shows
   these consequences while you move it.
 
 So a score of 3 or 5 is not a rejection. It says that such support is

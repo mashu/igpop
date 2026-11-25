@@ -105,10 +105,10 @@ On the 519 IGHV alleles of the example that differ from the reference:
 
 | Sources read | Alleles supported |
 |---|---:|
-| 1000 Genomes, gnomAD and dbSNP | 399 |
-| without gnomAD | 386 |
-| without dbSNP | 384 |
-| 1000 Genomes only | 367 |
+| 1000 Genomes, gnomAD and dbSNP | 390 |
+| without gnomAD | 378 |
+| without dbSNP | 374 |
+| 1000 Genomes only | 361 |
 
 No single source is essential, and each contributes. The web app reads
 gnomAD from the project's copy at Amazon, because the server at Google
