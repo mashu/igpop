@@ -143,6 +143,23 @@ it showed a frequency of 1% or more, how many alleles the phased panel
 could look up completely and how many it found. The studies that dbSNP
 passes on are listed underneath, with their estimated sizes.
 
+## An opened allele
+
+An opened allele has four parts, each with a heading and the question it
+answers.
+
+1. **Verdict.** The verdict and the reason for it in one sentence.
+2. **Differences from the reference genome.** Is each difference, taken
+   by itself, carried by people? One row per difference.
+3. **Haplotype check.** Does the whole sequence, with all its differences
+   together, exist on single chromosomes of real people? The bars say
+   what they count in their title. When every difference is in the phased
+   panel they count chromosomes with exactly this sequence. When only some
+   are, they count chromosomes that carry those differences, which is not
+   the frequency of the allele, and the panel says so.
+4. **Alignment.** Where the differences lie and what the other alleles of
+   the gene have there.
+
 ## The evidence behind one difference
 
 Pointing at a difference in the table (its description or its frequency
