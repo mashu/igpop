@@ -29,14 +29,14 @@ The page can also display results of the command-line program: drop the
 
 ## Differences from the command line
 
-- **No gnomAD ancestry groups.** Browsers may only read from servers that
-  permit it. The 1000 Genomes and dbSNP servers do; the gnomAD server does
-  not. gnomAD's overall frequencies still arrive through dbSNP, but the
-  nine ancestry groups do not, so support is a little lower for variants
-  that are frequent in one gnomAD group only. In the IGHV example, 15 of
-  566 alleles get a stricter verdict in the web app (14 supported become
-  inconclusive, 1 inconclusive becomes needs_confirmation); none gets a
-  more lenient one. For final results use the command line.
+- **gnomAD comes from its copy at Amazon.** Browsers may only read from
+  servers that permit it. gnomAD's server at Google does not, but the
+  project's copy at Amazon holds the same files and does, so the web app
+  reads it there and gives the same evidence as the command line. gnomAD
+  is the largest download (about 60 MB for a full V set); it can be
+  switched off under Options, in which case its overall frequencies still
+  arrive through dbSNP but the ancestry groups do not, and a few alleles
+  get a stricter verdict.
 - **Slower the first time.** One processor core, and downloads limited
   to three at a time per data server (the servers refuse bursts). The
   downloads are most of the waiting. Later runs on the same genes use the
@@ -132,8 +132,7 @@ on it in the alignment) shows:
   bases.
 - **Who carries it**: every population that looked at the position, with
   the number of chromosomes that carry the base out of those examined: the
-  five continental groups of 1000 Genomes, the ancestry groups of gnomAD
-  (command-line runs), and the studies dbSNP passes on. Populations without
+  five continental groups of 1000 Genomes, the ancestry groups of gnomAD, and the studies dbSNP passes on. Populations without
   a single copy are listed too. For dbSNP studies the counts are worked
   out from the estimated study size and marked "about".
 - **Why this verdict and score**: which population gives the guaranteed

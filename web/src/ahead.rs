@@ -39,7 +39,7 @@ async fn get(url: &str, range: Option<&str>) -> Result<(u16, Vec<u8>, Option<Str
     let init = RequestInit::new();
     init.set_method("GET");
     init.set_mode(RequestMode::Cors);
-    let request = Request::new_with_str_and_init(url, &init).map_err(js)?;
+    let request = Request::new_with_str_and_init(&crate::mirror(url), &init).map_err(js)?;
     if let Some(range) = range {
         request.headers().set("Range", range).map_err(js)?;
     }

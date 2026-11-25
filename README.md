@@ -19,8 +19,8 @@ downloaded.
 
 ## Quick start (human IGH)
 
-No installation: the web app (badge above) runs the analysis in the browser,
-without gnomAD ancestry groups. For the full analysis, install the program:
+No installation: the web app (badge above) runs the analysis in the browser.
+For large sets and scripted runs, install the program:
 
 1. Install Rust with [rustup](https://rustup.rs/) (Linux and macOS; on
    Windows run the installer from that page):

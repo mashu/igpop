@@ -333,6 +333,7 @@ function askCheck() {
   worker.postMessage({
     type: 'check', id: names.asked, fasta: currentFasta(), name: names.pending.name, build: $('opt-build').value,
     haplotypes: $('opt-hap').checked,
+    gnomad: $('opt-gnomad').checked,
     coords: names.rows ? geneListText(names.rows) : undefined, aliases: aliasText(),
   });
 }
@@ -374,8 +375,7 @@ function renderEvidencePlan(groups, genes, sources) {
   }
   $('check-evidence').replaceChildren(cards.length ? el('section', { class: 'plan', 'aria-label': 'Where the evidence will come from' },
     el('h3', { class: 'plan-title', text: 'Where the evidence will come from' }),
-    el('div', { class: 'plan-cards' }, cards),
-    el('p', { class: 'muted plan-foot', text: 'In the browser, gnomAD cannot be read directly (its server does not allow it); its overall frequencies still arrive through dbSNP. The command-line program reads gnomAD in full.' })) : '');
+    el('div', { class: 'plan-cards' }, cards)) : '');
 }
 
 // How a name of the file is connected to a gene of the list.
@@ -695,6 +695,7 @@ function runChecked() {
     build: $('opt-build').value,
     marker: $('opt-marker').value || '_S',
     haplotypes: $('opt-hap').checked,
+    gnomad: $('opt-gnomad').checked,
     paralog: $('opt-paralog').checked,
     coords: names.rows ? geneListText(names.rows) : undefined,
     aliases: aliasText(),
@@ -739,7 +740,7 @@ function wireGeneList() {
       fail(`The example could not be loaded (${error.message}).`);
     }
   });
-  for (const id of ['opt-build', 'opt-hap']) $(id).addEventListener('change', askCheck);
+  for (const id of ['opt-build', 'opt-hap', 'opt-gnomad']) $(id).addEventListener('change', askCheck);
   $('gene-filter').addEventListener('input', renderGeneList);
   $('gene-reset').addEventListener('click', () => setGeneList(null));
   $('gene-upload').addEventListener('click', () => $('gene-file').click());
@@ -1632,21 +1633,36 @@ function comparison(v) {
     el('p', { class: 'muted', text: 'The limits for the verdict (10 for "supported" unless you move it above the list of alleles, 0.1 for "needs confirmation") are conventions for strong evidence, as in other fields that use likelihood ratios; they are not measured. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.' }));
 }
 
-/** The population data of one difference, briefly, for a popup. */
+/** The population data of one difference, briefly, for a popup: per
+ *  source the chromosomes that carry it, and the populations where it is
+ *  most frequent as bars on the scale of the frequency line. */
 function peoplePopup(v) {
   const groups = populations(v);
   const support = number(v.support);
-  const lines = groups.map((g) => {
-    const top = [...g.rows].filter((r) => (r.af ?? (r.an ? r.ac / r.an : 0)) > 0)
-      .sort((x, y) => (y.af ?? y.ac / y.an) - (x.af ?? x.ac / x.an)).slice(0, 3);
-    return el('span', {},
-      el('b', { text: g.total && g.total.an > 0 ? `${g.source}: ${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')} chromosomes` : g.source }),
-      top.length ? el('span', { class: 'hint-list' }, top.map((r) => el('span', { text: `${r.name}: ${Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}, ` : ''}${percent(r.af ?? r.ac / r.an)}` })))
-        : el('span', { text: 'not seen' }));
+  const share = (r) => r.af ?? (r.an ? r.ac / r.an : 0);
+  // The same scale as the frequency line: one in a million to 100%.
+  const width = (af) => `${Math.max(2, Math.min(100, ((Math.log10(af) - LOG_MIN) / -LOG_MIN) * 100))}%`;
+  const kind = (source) => (/1000 Genomes/.test(source) ? 'kgp' : /gnomAD/.test(source) ? 'gnomad' : 'dbsnp');
+  const blocks = groups.map((g) => {
+    const seen = [...g.rows].filter((r) => share(r) > 0).sort((x, y) => share(y) - share(x));
+    const top = seen.slice(0, 3);
+    return el('span', { class: `tip-source s-${kind(g.source)}` },
+      el('span', { class: 'tip-head' }, el('b', { text: g.source }),
+        g.total && g.total.an > 0 ? el('span', { text: `${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')}` }) : null),
+      top.length ? el('span', { class: 'tip-rows' }, top.flatMap((r) => [
+        el('span', { class: 'tip-name', text: r.name }),
+        el('span', { class: 'tip-track' }, el('i', { style: `width:${width(share(r))}` })),
+        el('span', { class: 'tip-count', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? '~' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
+        el('span', { class: 'tip-share', text: percent(share(r)) }),
+      ])) : el('span', { class: 'tip-none', text: 'not seen' }),
+      seen.length > top.length ? el('span', { class: 'tip-none', text: `and ${plural(seen.length - top.length, 'more population')}` }) : null);
   });
   return el('span', { class: 'people-tip' },
-    lines.length ? lines : el('span', { text: 'No source has a record of this base at this position.' }),
-    support > 0 ? el('span', { text: `Guaranteed frequency: at least ${percent(support)}${given(v.support_from) ? ` (${stratumWords(v.support_from)})` : ''}.${given(v.score) ? ` Score ${scoreText(Number(v.score))}.` : ''}` }) : null);
+    blocks.length ? blocks : el('span', { text: 'No source has a record of this base at this position.' }),
+    blocks.length ? el('span', { class: 'tip-none', text: 'Counts are chromosomes. Bars run from 0.0001% to 100% in steps of ten; the line marks 1%.' }) : null,
+    support > 0 || given(v.score) ? el('span', { class: 'tip-foot' },
+      support > 0 ? el('span', {}, 'Guaranteed frequency ', el('b', { text: `at least ${percent(support)}` })) : el('span', { text: 'Never seen' }),
+      given(v.score) ? el('span', {}, 'Score ', el('b', { text: scoreText(Number(v.score)) })) : null) : null);
 }
 
 function variantTable(variants, opened) {

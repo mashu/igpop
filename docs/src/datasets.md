@@ -110,10 +110,10 @@ On the 519 IGHV alleles of the example that differ from the reference:
 | without dbSNP | 384 |
 | 1000 Genomes only | 367 |
 
-No single source is essential, and each contributes. The web app cannot
-read gnomAD (its server does not allow requests from web pages), so its
-results correspond to the second line; gnomAD's overall frequencies still
-reach it through dbSNP.
+No single source is essential, and each contributes. The web app reads
+gnomAD from the project's copy at Amazon, because the server at Google
+does not allow requests from web pages; with gnomAD switched off in its
+options, its results correspond to the second line.
 
 ## If a source cannot be read
 
@@ -125,7 +125,7 @@ line, three times in the browser). After that:
 | dbSNP | continues without rsIDs, the COMMON flag and relayed frequencies | a warning above the results and in the report |
 | Phased panel | continues without the haplotype check (`hap_status = not_checked`) | a warning above the results and in the report |
 | 1000 Genomes frequencies | stops | an error message |
-| gnomAD (command line) | stops | an error message |
+| gnomAD | stops (in the web app, switch gnomAD off under Options and run again) | an error message |
 | Reference sequence | stops: alleles cannot be placed without it | an error message |
 
 A run that continued without a source says so only in its warnings: the
