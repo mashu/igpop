@@ -199,6 +199,15 @@ The list of alleles shows search, gene and order; the remaining filters
 and the limit described below under **Verdict settings**. Both fold away and
 say in their title what is set.
 
+**Unsupported differences per allele** shows the whole file from another
+side: how many alleles have no difference that fails by itself, how many
+have one, two, three and so on, coloured by the verdict of the allele.
+An allele that is inconclusive because of a single weak difference is a
+different case from one with four, and here the two are apart. The bars
+are switches: select one or more to list only those alleles, for example
+the ones with the most unsupported differences. The counts follow the
+limit under Verdict settings.
+
 Every allele shows its weakest score as a number with a dot on a
 continuous colour scale (from the colour of "needs confirmation" at 0.01
 through grey at 1 to the colour of "supported" at 100), and **Order** sorts

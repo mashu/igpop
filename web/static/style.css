@@ -572,3 +572,24 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .why dt { color: var(--muted); }
 .why dd { margin: 0; font-weight: 600; }
 .compare .one-percent { stroke: var(--confirm); stroke-width: 1.2; stroke-dasharray: 3 3; }
+
+/* ---- alleles by number of unsupported differences ---- */
+#fold-doubt[open] { order: 1; }
+.doubt-chart { display: flex; align-items: flex-end; gap: 6px; height: 9.5rem; max-width: 30rem; border-bottom: 1px solid var(--line); margin-top: 0.3rem; }
+.doubt-bar { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 2px; padding: 0 0 0 0; border: 0; background: none; color: var(--ink); cursor: pointer; font: inherit; position: relative; }
+.doubt-bar:disabled { cursor: default; color: var(--muted); }
+.doubt-count { font-size: 0.8rem; font-variant-numeric: tabular-nums; text-align: center; }
+.doubt-stack { display: flex; flex-direction: column; gap: 2px; min-height: 8px; }
+.doubt-bar:disabled .doubt-stack { min-height: 0; }
+.doubt-stack i { display: block; min-height: 2px; border-radius: 3px 3px 0 0; }
+.doubt-stack i + i { border-radius: 0; }
+.doubt-name { position: absolute; top: 100%; left: 0; right: 0; text-align: center; font-size: 0.8rem; color: var(--muted); padding-top: 0.2rem; white-space: nowrap; }
+.doubt-bar:hover:not(:disabled) .doubt-stack, .doubt-bar:focus-visible .doubt-stack { outline: 2px solid var(--ink); outline-offset: 2px; }
+.doubt-bar[aria-pressed=true] .doubt-stack { outline: 2px solid var(--accent); outline-offset: 2px; }
+.doubt-bar[aria-pressed=true] .doubt-name { color: var(--ink); font-weight: 700; }
+.doubt-chart:has([aria-pressed=true]) .doubt-bar[aria-pressed=false] .doubt-stack { opacity: 0.35; }
+.doubt-axis { margin: 1.6rem 0 0.3rem; font-size: 0.8rem; max-width: 30rem; text-align: center; }
+.doubt-stack .v-supported, .swatch.v-supported { background: var(--supported); }
+.doubt-stack .v-inconclusive, .swatch.v-inconclusive { background: var(--inconclusive); }
+.doubt-stack .v-needs_confirmation, .swatch.v-needs_confirmation { background: var(--confirm); }
+.doubt-stack .v-not_assessed, .swatch.v-not_assessed { background: var(--grey); }

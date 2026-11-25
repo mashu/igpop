@@ -109,7 +109,7 @@ function parseAlignments(text) {
 
 // ---- state ---------------------------------------------------------------
 
-const state = { limit: 10, prefix: 'igpop', marker: '_S', build: '', files: {}, alleles: [], variants: new Map(), alignments: new Map(), verdict: '' };
+const state = { limit: 10, prefix: 'igpop', marker: '_S', build: '', files: {}, alleles: [], variants: new Map(), alignments: new Map(), verdict: '', doubt: new Set() };
 let worker = null;
 
 function show(section) {
@@ -1137,6 +1137,58 @@ function renderFolds() {
   $('fold-reading-state').textContent = `: supported from a score of ${state.limit}`;
 }
 
+/** How many differences of an allele are not supported by themselves,
+ *  as the group it falls in: 0 to 4, or 5 for five and more. Alleles
+ *  without differences or without a place have none. */
+const DOUBT_GROUPS = ['0', '1', '2', '3', '4', '5 or more'];
+function doubtOf(allele) {
+  const variants = state.variants.get(allele.allele_name) || [];
+  if (!variants.length) return -1;
+  return Math.min(5, variants.filter((v) => v.verdict !== 'supported').length);
+}
+
+/** The alleles by their number of unsupported differences: one bar per
+ *  number, split by verdict. A bar is a switch that filters the list. */
+function renderDoubt() {
+  const shown = ['supported', 'inconclusive', 'needs_confirmation', 'not_assessed'];
+  const counts = DOUBT_GROUPS.map(() => Object.fromEntries(shown.map((verdict) => [verdict, 0])));
+  for (const allele of state.alleles) {
+    const group = doubtOf(allele);
+    if (group >= 0 && shown.includes(allele.verdict)) counts[group][allele.verdict] += 1;
+  }
+  const totals = counts.map((c) => shown.reduce((sum, verdict) => sum + c[verdict], 0));
+  const most = Math.max(1, ...totals);
+  const all = totals.reduce((sum, n) => sum + n, 0);
+  $('fold-doubt').hidden = !all;
+  for (const group of [...state.doubt]) if (!totals[group]) state.doubt.delete(group);
+  $('fold-doubt-state').textContent = state.doubt.size ? `: showing ${[...state.doubt].sort().map((g) => DOUBT_GROUPS[g]).join(', ')}` : '';
+  const bars = DOUBT_GROUPS.map((name, group) => {
+    const parts = shown.filter((verdict) => counts[group][verdict]).map((verdict) => `${counts[group][verdict]} ${VERDICTS[verdict].label.toLowerCase()}`);
+    const button = el('button', { type: 'button', class: 'doubt-bar', 'aria-pressed': String(state.doubt.has(group)), disabled: totals[group] ? null : '',
+      title: totals[group] ? parts.join(', ') : 'no allele',
+      'aria-label': `${plural(totals[group], 'allele')} with ${name} unsupported ${group === 1 ? 'difference' : 'differences'}${parts.length ? `: ${parts.join(', ')}` : ''}. Show only these.` },
+    el('span', { class: 'doubt-count', text: String(totals[group]) }),
+    el('span', { class: 'doubt-stack', style: `height:${(100 * totals[group]) / most}%` },
+      shown.filter((verdict) => counts[group][verdict]).reverse().map((verdict) => el('i', { class: `v-${verdict}`, style: `flex:${counts[group][verdict]}` }))),
+    el('span', { class: 'doubt-name', text: name }));
+    button.addEventListener('click', () => {
+      if (state.doubt.has(group)) state.doubt.delete(group); else state.doubt.add(group);
+      renderAlleles();
+    });
+    return button;
+  });
+  $('doubt').replaceChildren(
+    el('p', { class: 'legend' },
+      ...shown.filter((verdict) => counts.some((c) => c[verdict])).map((verdict) => el('span', { class: 'key' }, el('i', { class: `swatch v-${verdict}` }), ` ${VERDICTS[verdict].label.toLowerCase()}`)),
+      hint('How to read this', el('span', { class: 'help-text' },
+        el('span', { text: `Each bar counts the alleles with that many differences that are not supported by themselves at the current limit (${state.limit}). The colours are the verdicts of the alleles.` }),
+        el('span', { text: 'An allele with unsupported differences can still be supported, when its exact sequence was found on phased chromosomes.' }),
+        el('span', { text: 'Select one or more bars to show only those alleles in the list below; select a bar again to release it.' })))),
+    el('div', { class: 'doubt-chart', role: 'group', 'aria-label': 'Alleles by number of unsupported differences' }, bars),
+    el('p', { class: 'doubt-axis muted', text: 'unsupported differences in the allele' }),
+    state.doubt.size ? el('button', { type: 'button', class: 'link', text: 'Show all again', onclick: () => { state.doubt.clear(); renderAlleles(); } }) : null);
+}
+
 function visibleAlleles() {
   const query = $('f-search').value.trim().toLowerCase();
   const gene = $('f-gene').value;
@@ -1146,6 +1198,7 @@ function visibleAlleles() {
   return state.alleles.filter((a) => {
     if (place && a.locus_status !== place) return false;
     if (state.verdict && a.verdict !== state.verdict) return false;
+    if (state.doubt.size && !state.doubt.has(doubtOf(a))) return false;
     if (gene && a.gene !== gene) return false;
     if (kind === 'candidate' && !isCandidate(a)) return false;
     if (kind === 'trusted' && isCandidate(a)) return false;
@@ -1156,6 +1209,7 @@ function visibleAlleles() {
 }
 
 function renderAlleles() {
+  renderDoubt();
   const rows = visibleAlleles();
   renderFolds();
   const list = $('alleles');
