@@ -382,3 +382,13 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .prior-setting input[type=number] { width: 4.2rem; }
 .prior-setting .link { font-size: inherit; }
 .probability { display: block; color: var(--muted); font-weight: 400; }
+.limit-setting { display: grid; grid-template-columns: auto minmax(10rem, 22rem) auto; gap: 0.2rem 0.8rem; align-items: center; margin: 0.6rem 0 0; font-size: 0.92rem; }
+.limit-setting input[type=range] { accent-color: var(--accent); width: 100%; }
+.limit-setting p { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 640px) { .limit-setting { grid-template-columns: 1fr; } }
+.score-pill { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; font-variant-numeric: tabular-nums; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 0.05rem 0.55rem 0.05rem 0.4rem; }
+.score-pill i { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--tone); flex: none; }
+.limit-setting label, .prior-setting label { display: inline; color: var(--ink); font-size: inherit; }
+.prior-setting input[type=checkbox] { margin-right: 0.35rem; vertical-align: -0.1em; }
+.limit-setting b { font-variant-numeric: tabular-nums; }
+.limit-setting label { white-space: nowrap; }

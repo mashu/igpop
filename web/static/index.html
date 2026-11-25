@@ -166,6 +166,19 @@
           <label>Placement
             <select id="f-place"><option value="">any</option></select>
           </label>
+          <label>Order
+            <select id="f-order">
+              <option value="">by gene</option>
+              <option value="low">weakest score first</option>
+              <option value="high">strongest score first</option>
+            </select>
+          </label>
+        </div>
+        <div class="limit-setting" id="limit-setting" hidden>
+          <label for="limit">Count a difference as supported from a score of <b id="limit-value">10</b></label>
+          <input id="limit" type="range" min="0" max="13" step="1" value="8" aria-describedby="limit-note">
+          <button type="button" class="link" id="limit-reset" hidden>back to 10</button>
+          <p id="limit-note" class="muted" aria-live="polite"></p>
         </div>
         <div class="prior-setting">
           <label><input id="prior-on" type="checkbox"> Also show a probability for each difference</label>
