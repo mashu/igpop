@@ -212,6 +212,28 @@ is not moved.
 The site files give counts for continental groups and ancestry groups, not
 for the single populations within them.
 
+## The alignment of a gene
+
+"Alignment of this gene" in an opened allele shows every allele of the
+gene under the reference, 5' to 3'.
+
+- **Positions** are counted from the first base of the gene; the few bases
+  shown before and after it are not numbered.
+- **Differences that are not supported are marked**, in every allele of
+  the gene: underlined when the difference is inconclusive or has no
+  population data, framed when it needs confirmation. A supported
+  difference is a plain coloured letter. The marks follow the limit set
+  under Verdict settings.
+- **Regions.** For heavy-chain V genes a line shows FR1, CDR1, FR2, CDR2,
+  FR3 and the start of CDR3, and the popup of a column names its region.
+  The borders are placed from the conserved residues of a V gene (the two
+  cysteines and the tryptophan) and standard framework lengths, not from
+  an IMGT alignment, so they can be off by a codon or two. For the 53
+  IGHV genes of the built-in list the resulting CDR1 and CDR2 lengths are
+  the usual ones (8, 9 or 10 and 7, 8, 9 or 10 codons).
+- Pointing at a column shows what is there; a click on a difference of the
+  opened allele shows its evidence.
+
 ## Alleles that were not placed cleanly
 
 A sequence is "not placed cleanly" when it fits another gene of the list

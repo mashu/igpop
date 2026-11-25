@@ -1862,28 +1862,93 @@ const BASE_WORDS = { '.': 'same as the reference', '-': 'base missing (deletion)
 
 /** The alignment of one gene: every allele under the reference, one column
  *  per base. Pointing at a column highlights it and says what is there. */
+const CODONS = (() => {
+  const bases = 'TCAG';
+  const acids = 'FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG';
+  const table = {};
+  [...bases].forEach((a, i) => [...bases].forEach((b, j) => [...bases].forEach((c, k) => { table[a + b + c] = acids[16 * i + 4 * j + k]; })));
+  return table;
+})();
+
+/** The framework and complementarity-determining regions of a heavy-chain
+ *  V gene, found from its three conserved residues (the two cysteines and
+ *  the tryptophan), as [name, first column, last column]. Approximate: the
+ *  exact borders are defined on an alignment of all V genes, which igpop
+ *  does not make. Null if the residues are not where a V gene has them. */
+function regionsOf(reference, first, last) {
+  const dna = reference.slice(first, last + 1).toUpperCase();
+  let protein = '';
+  for (let i = 0; i + 3 <= dna.length; i += 3) protein += CODONS[dna.slice(i, i + 3)] || 'X';
+  // The first cysteine is codon 22 of the gene in every human IGHV gene;
+  // a reference allele can have lost it.
+  const cys1 = protein.slice(17, 28).includes('C') ? protein.slice(17, 28).indexOf('C') + 17 : 21;
+  const found = protein.slice(cys1 + 5).search(/W[A-Z]RQ/);
+  const trp = found >= 0 ? cys1 + 5 + found : protein.indexOf('W', cys1 + 5);
+  const cys2 = protein.lastIndexOf('C');
+  if (trp < 0 || cys2 < trp + 45) return null;
+  const parts = [['FR1', 0, cys1 + 3], ['CDR1', cys1 + 4, trp - 3], ['FR2', trp - 2, trp + 14], ['CDR2', trp + 15, cys2 - 38], ['FR3', cys2 - 37, cys2]];
+  if (parts.some(([, from, to]) => to < from)) return null;
+  const regions = parts.map(([name, from, to]) => [name, first + 3 * from, first + 3 * to + 2]);
+  if (first + 3 * cys2 + 3 <= last) regions.push(['CDR3', first + 3 * cys2 + 3, last]);
+  return regions;
+}
+
 function alignmentPanel(block, alleleName, opened = new Map()) {
   const aln = parseBlock(block);
   const columns = aln.positions.length;
   const names = ['reference', ...(aln.rows.has(alleleName) ? [alleleName] : []), ...[...aln.rows.keys()].filter((n) => n !== 'reference' && n !== alleleName)];
-  const ruler = Array.from({ length: columns }, (_, c) => ((c + 1) % 10 === 0 ? '|' : (c + 1) % 5 === 0 ? ':' : '·')).join('');
-  const numbers = Array.from({ length: Math.floor(columns / 10) }, (_, k) => String(10 * (k + 1)).padStart(10, ' ')).join('');
-  const line = (name, cls, content) => el('div', { class: `aln-line ${cls}`, 'data-name': name }, content);
-  const coloured = (seq) => {
-    const parts = [];
-    for (const piece of seq.split(/([A-Za-z-])/)) {
-      if (!piece) continue;
-      parts.push(/^[A-Za-z-]$/.test(piece) ? el('b', { class: `nt nt-${piece === '-' ? 'gap' : piece.toUpperCase()}`, text: piece }) : piece.replace(/\./g, '·'));
+  // Where the gene itself begins and ends among the columns: the block
+  // shows a few bases on either side of it.
+  const span = aln.title.match(/:(\d+)-(\d+)\s+strand\s+(\S)/);
+  const ends = span ? (span[3] === '-' ? [Number(span[2]), Number(span[1])] : [Number(span[1]), Number(span[2])]) : null;
+  const geneFirst = ends ? Math.max(0, aln.positions.indexOf(ends[0])) : 0;
+  const geneLast = ends && aln.positions.indexOf(ends[1]) >= 0 ? aln.positions.indexOf(ends[1]) : columns - 1;
+  const inGene = (c) => c - geneFirst + 1;
+  const ruler = Array.from({ length: columns }, (_, c) => (c < geneFirst || c > geneLast ? ' ' : inGene(c) % 10 === 0 ? '|' : inGene(c) % 5 === 0 ? ':' : '·')).join('');
+  const numbers = Array.from({ length: columns }, () => ' ');
+  for (let n = 10; geneFirst + n - 1 <= geneLast; n += 10) [...String(n)].reverse().forEach((digit, k) => { numbers[geneFirst + n - 1 - k] = digit; });
+  const regions = /^IGHV/.test(aln.title) ? regionsOf(aln.rows.get('reference') || '', geneFirst, geneLast) : null;
+  const regionAt = (c) => (regions || []).find(([, from, to]) => c >= from && c <= to);
+  const regionLine = regions ? [
+    el('span', { style: `display:inline-block;width:${regions[0][1]}ch` }),
+    ...regions.map(([name, from, to]) => el('span', { class: `aln-region ${name.startsWith('CDR') ? 'cdr' : 'fr'}`, style: `width:${to - from + 1}ch` }, to - from + 1 >= name.length + 1 ? el('small', { text: name }) : null))] : null;
+  // The verdict of each difference, by allele and column, so that the
+  // ones that are not supported stand out.
+  const verdictAt = (name) => {
+    const marks = new Map();
+    for (const v of state.variants.get(name) || []) {
+      if (v.verdict === 'supported' || v.type === 'INS') continue;
+      const pos = Number(v.genome_pos);
+      const covered = v.type === 'SNV' ? [pos] : Array.from({ length: Math.max(0, v.vcf_ref.length - 1) }, (_, k) => pos + 1 + k);
+      for (const p of covered) {
+        const c = aln.positions.indexOf(p);
+        if (c >= 0) marks.set(c, v.verdict);
+      }
     }
+    return marks;
+  };
+  const line = (name, cls, content) => el('div', { class: `aln-line ${cls}`, 'data-name': name }, content);
+  const coloured = (seq, name) => {
+    const marks = verdictAt(name);
+    const parts = [];
+    let plain = '';
+    [...seq].forEach((piece, c) => {
+      if (!/^[A-Za-z-]$/.test(piece)) { plain += piece === '.' ? '·' : piece; return; }
+      if (plain) { parts.push(plain); plain = ''; }
+      parts.push(el('b', { class: `nt nt-${piece === '-' ? 'gap' : piece.toUpperCase()}${marks.has(c) ? ` nv-${marks.get(c)}` : ''}`, text: piece }));
+    });
+    if (plain) parts.push(plain);
     return parts;
   };
   const marker = el('div', { class: 'aln-column', hidden: true });
   const seqs = el('div', { class: 'aln-seqs', style: `width:${columns}ch` }, marker,
-    line('', 'aln-ruler', numbers), line('', 'aln-ruler', ruler),
+    line('', 'aln-ruler', numbers.join('')), line('', 'aln-ruler', ruler),
+    regionLine ? line('', 'aln-ruler aln-regions', regionLine) : null,
     names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '',
-      name === 'reference' ? aln.rows.get(name) : coloured(aln.rows.get(name) || ''))));
+      name === 'reference' ? aln.rows.get(name) : coloured(aln.rows.get(name) || '', name))));
   const labels = el('div', { class: 'aln-names' },
-    line('', 'aln-ruler', 'position in gene'), line('', 'aln-ruler', ' '),
+    line('', 'aln-ruler', 'position in gene'), line('', 'aln-ruler', ' '),
+    regionLine ? line('', 'aln-ruler aln-regions', 'region (approximate)') : null,
     names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '', name)));
   const tip = el('div', { class: 'aln-tip', role: 'status', hidden: true });
   const grid = el('div', { class: 'aln-grid', tabindex: '0', role: 'group', 'aria-label': `Alignment of ${names.length - 1} alleles of this gene. Use the left and right arrow keys to move along it.` }, labels, seqs);
@@ -1896,7 +1961,7 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     const base = (aln.rows.get(row) || '')[col] || ' ';
     const differing = [...aln.rows].filter(([n, seq]) => n !== 'reference' && /[A-Za-z-]/.test(seq[col] || '')).length;
     const parts = [
-      el('b', { text: `Base ${col + 1} of the gene` }),
+      el('b', { text: col < geneFirst ? `${geneFirst - col} base${geneFirst - col > 1 ? 's' : ''} before the gene` : col > geneLast ? `${col - geneLast} base${col - geneLast > 1 ? 's' : ''} after the gene` : `Base ${inGene(col)} of the gene${regionAt(col) ? `, in ${regionAt(col)[0]}` : ''}` }),
       el('span', { class: 'muted', text: `${aln.build} ${aln.contig}:${pos.toLocaleString('en')}` }),
       el('span', {}, 'Reference: ', el('b', { class: `nt nt-${reference}`, text: reference })),
       el('span', {}, `${row}: `, BASE_WORDS[base] ? BASE_WORDS[base] : el('b', { class: `nt nt-${base.toUpperCase()}`, text: base })),
@@ -1979,10 +2044,11 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
   });
   const own = aln.notes.get(alleleName);
   return el('details', { class: 'aln' }, el('summary', { text: 'Alignment of this gene' }),
-    el('p', { class: 'muted', text: 'Every allele of the gene under the reference, read 5′ to 3′. A dot is the same base as the reference, a coloured letter is a difference, a dash is a missing base. This allele is the highlighted row. Point at a column to see what is there; with the keyboard, the arrow keys jump between the differences of this allele (hold Shift to move one base).' }),
+    el('p', { class: 'muted', text: 'Every allele of the gene under the reference, read 5′ to 3′. A dot is the same base as the reference, a coloured letter is a difference, a dash is a missing base. A difference that is not supported is marked: underlined when inconclusive or without data, framed when it needs confirmation. This allele is the highlighted row. Point at a column to see what is there; with the keyboard, the arrow keys jump between the differences of this allele (hold Shift to move one base).' }),
     own ? el('p', { class: 'muted', text: `${alleleName}: ${own.replace(/\s{2,}/g, ', ')}.` }) : null,
     el('p', { class: 'aln-where', text: aln.title.replace(/\s{2,}/g, ' · ') }),
-    grid, tip);
+    grid, tip,
+    regions ? el('p', { class: 'muted aln-foot', text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the three conserved residues of a V gene (two cysteines and a tryptophan) and can be off by a codon or two from the IMGT definition.' }) : null);
 }
 
 // ---- score and checks ------------------------------------------------------
