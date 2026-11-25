@@ -39,7 +39,7 @@ async fn get(url: &str, range: Option<&str>) -> Result<(u16, Vec<u8>, Option<Str
     let init = RequestInit::new();
     init.set_method("GET");
     init.set_mode(RequestMode::Cors);
-    let request = Request::new_with_str_and_init(url, &init).map_err(js)?;
+    let request = Request::new_with_str_and_init(&crate::mirror(url), &init).map_err(js)?;
     if let Some(range) = range {
         request.headers().set("Range", range).map_err(js)?;
     }
@@ -68,37 +68,43 @@ async fn date(url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Make sure a piece is kept; returns it. `range = None` is the whole file.
-async fn piece(url: &str, range: Option<&str>) -> Result<Vec<u8>> {
+/// Make sure a piece is kept; returns it and whether it had to be
+/// downloaded. `range = None` is the whole file.
+async fn piece(url: &str, range: Option<&str>) -> Result<(Vec<u8>, bool)> {
     if let Some(bytes) = KEPT.with(|kept| kept.borrow_mut().get(url, range)) {
-        return Ok(bytes);
+        return Ok((bytes, false));
     }
     let (status, bytes, _) = get(url, range).await?;
     match status {
         s if s == success(range) => {
             KEPT.with(|kept| kept.borrow_mut().put(url, range, &bytes));
-            Ok(bytes)
+            Ok((bytes, true))
         }
         // Past the end of the file.
-        416 => Ok(Vec::new()),
+        416 => Ok((Vec::new(), true)),
         other => bail!("{url}: HTTP {other}"),
     }
 }
 
-/// Fetch everything the reader of one region will ask for.
-async fn region(index: &Tabix, contig: &str, start: u64, end: u64) -> Result<()> {
+/// Fetch everything the reader of one region will ask for. True if
+/// nothing had to be downloaded: the region was kept from an earlier run.
+async fn region(index: &Tabix, contig: &str, start: u64, end: u64) -> Result<bool> {
     let mut reader = index.reader(contig, start, end);
+    let mut kept = true;
     while let Some((from, to)) = reader.request() {
         // Spelled exactly as `igpop::net::get_range` spells it.
         let range = format!("bytes={from}-{to}");
-        reader.feed(&piece(index.spec(), Some(&range)).await?)?;
+        let (bytes, downloaded) = piece(index.spec(), Some(&range)).await?;
+        kept &= !downloaded;
+        reader.feed(&bytes)?;
     }
-    Ok(())
+    Ok(kept)
 }
 
 thread_local! {
-    /// Regions downloaded so far, and how many there are.
-    static DONE: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+    /// Regions ready so far, how many of them were already kept in the
+    /// browser, and how many there are.
+    static DONE: std::cell::Cell<(usize, usize, usize)> = const { std::cell::Cell::new((0, 0, 0)) };
 }
 
 /// One file with its index: the index first, then its regions.
@@ -115,12 +121,13 @@ async fn file(url: String, regions: Vec<Region>) -> Result<()> {
         Some(async move {
             let result = region(index, &name, *start, *end).await;
             DONE.with(|done| {
-                let (so_far, total) = done.get();
-                done.set((so_far + 1, total));
+                let (so_far, kept, total) = done.get();
+                let kept = kept + usize::from(matches!(result, Ok(true)));
+                done.set((so_far + 1, kept, total));
                 // One line per region, in a form the page turns into a bar.
-                note!("progress: {} of {total} regions downloaded", so_far + 1);
+                note!("progress: {} of {total} regions ready, {kept} kept from an earlier run", so_far + 1);
             });
-            result
+            result.map(|_| ())
         })
     });
     let results: Vec<Result<()>> = stream::iter(jobs).buffer_unordered(PER_SERVER).collect().await;
@@ -146,7 +153,7 @@ pub async fn download(downloads: Vec<Download>) {
     if regions == 0 {
         return;
     }
-    DONE.with(|done| done.set((0, regions)));
+    DONE.with(|done| done.set((0, 0, regions)));
     note!(
         "downloading {regions} regions from {} servers, up to {PER_SERVER} at a time per server",
         servers.len()

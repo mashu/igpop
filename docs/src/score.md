@@ -212,7 +212,7 @@ alleles (off unless you turn it on).
 
 ## Seeing what a difference was compared with
 
-In the web app, "populations and reasons" on a difference shows the
+In the web app, "show" in the Details column of a difference shows the
 comparison itself on one axis of support: the score curve with its
 interval and the two limits, every real variant of the run as a dot (point
 at it for its rsID and gene), all possible changes as bars, and the

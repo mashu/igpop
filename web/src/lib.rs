@@ -13,9 +13,10 @@
 //! pieces of a file that has changed are simply no longer found.
 //!
 //! Only data hosts that allow cross-origin requests can be read from a
-//! browser. The reference, 1000 Genomes and dbSNP hosts do; the gnomAD
-//! bucket does not, so the web app runs without reading gnomAD directly
-//! (dbSNP still relays gnomAD's overall frequencies).
+//! browser. The reference, 1000 Genomes and dbSNP hosts do. The gnomAD
+//! bucket at Google does not, but its copy at Amazon does and holds the
+//! same files under the same paths, so gnomAD is read from there
+//! (`mirror`).
 
 mod ahead;
 
@@ -114,12 +115,22 @@ fn success(range: Option<&str>) -> u16 {
     }
 }
 
+/// Where a file is read from in the browser: gnomAD's copy at Amazon
+/// allows requests from web pages, the one at Google does not. Pieces
+/// are still kept under the address the program asked for.
+pub(crate) fn mirror(url: &str) -> String {
+    url.replace(
+        "https://storage.googleapis.com/gcp-public-data--gnomad/",
+        "https://gnomad-public-us-east-1.s3.amazonaws.com/",
+    )
+}
+
 /// One blocking GET; `Err` is a network failure (including a blocked
 /// cross-origin request), not an HTTP error status. Also returns the
 /// file's `Last-Modified` date.
 fn get_once(url: &str, range: Option<&str>) -> Result<(igpop::net::Response, Option<String>), JsValue> {
     let request = XmlHttpRequest::new()?;
-    request.open_with_async("GET", url, false)?;
+    request.open_with_async("GET", &mirror(url), false)?;
     request.set_response_type(XmlHttpRequestResponseType::Arraybuffer);
     if let Some(range) = range {
         request.set_request_header("Range", range)?;
@@ -218,8 +229,9 @@ fn configure(job: &Object) -> Config {
     }
     config.coords = named("coords", "the gene list of this page");
     config.aliases = named("aliases", "the gene names of this page");
-    // The gnomAD bucket cannot be read from a web page.
-    config.gnomad = Choice::Off;
+    if !flag(job, "gnomad") {
+        config.gnomad = Choice::Off;
+    }
     if !flag(job, "haplotypes") {
         config.phased = Choice::Off;
     }
