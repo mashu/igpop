@@ -242,7 +242,7 @@ impl ScoreModel {
                     ScoreSource::BuiltIn,
                     format!(
                         "the built-in curve, because this run has only {nt} single-base variants of trusted alleles (at least {} are needed, and they must be better supported than arbitrary changes). \
-                         It was computed from 566 human IGHV alleles on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and dbSNP",
+                         It was computed from 566 human IGHV alleles on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes, dbSNP, ALFA, GenomeAsia, ToMMo 61KJPN and WBBC",
                         score::MIN_TRUSTED
                     ),
                 ),

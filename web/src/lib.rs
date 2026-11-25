@@ -232,6 +232,9 @@ fn configure(job: &Object) -> Config {
     if !flag(job, "gnomad") {
         config.gnomad = Choice::Off;
     }
+    if !flag(job, "more") {
+        config.more_datasets = false;
+    }
     if !flag(job, "haplotypes") {
         config.phased = Choice::Off;
     }

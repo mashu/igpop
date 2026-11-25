@@ -7,7 +7,24 @@
 | 1000 Genomes 30x (NYGC), annotated site-level calls | GRCh38 | 3,202 sequenced; counts taken from the 2,504 unrelated | Frequencies per superpopulation, consortium site filters. |
 | gnomAD v4.1 genomes | GRCh38 | 76,215 | Frequencies per genetic-ancestry group, gnomAD filters. |
 | dbSNP (latest release) | GRCh38 / GRCh37 | — | rsIDs, the COMMON flag, and frequencies relayed from other projects (TOPMed, ALFA, gnomAD exomes, ExAC, ToMMo, Korean panels, ...), used as evidence. |
+| ALFA (NCBI), release 4 | GRCh38 | differs by position, up to several hundred thousand | Counts in nine populations: European, African American, African Others, East Asian, South Asian, Other Asian, Latin American 1 and 2, Other. |
+| GenomeAsia pilot | GRCh38 | 1,739 | Counts in seven groups: Northeast, Southeast and South Asian, Oceanian, African, American, West Eurasian. |
+| ToMMo 61KJPN | GRCh38 | about 61,000 | Counts in Japanese people. |
+| Westlake BioBank for Chinese (WBBC) | GRCh38 | 4,480 | Counts in four regions of China: North, Central, South, Lingnan. |
 | 1000 Genomes 30x phased panel | GRCh38 | 2,598 founders | Haplotype check only. |
+
+The last four are read for GRCh38 only and can be switched off together
+(`--no-more-datasets`, or *Read more populations* in the web app). They
+add populations the first two cover thinly or as one block: Japanese,
+regions of China, Southeast Asia, and the populations of ALFA one by one
+(dbSNP passes on only its total). ALFA and ToMMo are also among the
+studies dbSNP relays; when they are read directly, their dbSNP copies are
+left out, so that the same people are not consulted twice. A dataset that
+cannot be reached is reported and left out; the run continues.
+
+Not included: datasets whose licence does not allow use by a public tool
+(for example SG10K_Health of Singapore, the only large panel with a Malay
+group), and datasets that publish frequencies without counts.
 
 An rsID by itself is never evidence: dbSNP records every submitted
 change. Only reported frequencies count.

@@ -174,7 +174,7 @@ on it in the alignment) shows:
   bases.
 - **Who carries it**: every population that looked at the position, with
   the number of chromosomes that carry the base out of those examined: the
-  five continental groups of 1000 Genomes, the ancestry groups of gnomAD, and the studies dbSNP passes on. Populations without
+  five continental groups of 1000 Genomes, the ancestry groups of gnomAD, the populations of ALFA, GenomeAsia, ToMMo (Japan) and WBBC (China), and the studies dbSNP passes on. Populations without
   a single copy are listed too. For dbSNP studies the counts are worked
   out from the estimated study size and marked "about".
 - **Why this verdict and score**: which population gives the guaranteed

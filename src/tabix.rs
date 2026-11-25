@@ -130,7 +130,9 @@ impl Tabix {
     }
 
     /// The file's own spelling of a contig: exact, with/without `chr`, or a
-    /// RefSeq chromosome accession (NC_000014.9 for chromosome 14).
+    /// RefSeq chromosome accession (NC_000014.9 for chromosome 14). A file
+    /// with several versions of a chromosome (ALFA holds every assembly)
+    /// answers with the latest, which for the human chromosomes is GRCh38.
     pub fn resolve_contig(&self, name: &str) -> Option<String> {
         let bare = name.strip_prefix("chr").unwrap_or(name);
         let number = match bare {
@@ -143,7 +145,10 @@ impl Tabix {
             .iter()
             .find(|n| *n == name)
             .or_else(|| self.names.iter().find(|n| *n == bare || **n == format!("chr{bare}")))
-            .or_else(|| self.names.iter().find(|n| accession.as_deref().is_some_and(|a| n.starts_with(a))))
+            .or_else(|| {
+                let version = |n: &String| n.strip_prefix(accession.as_deref()?)?.parse::<u32>().ok();
+                self.names.iter().filter(|n| version(n).is_some()).max_by_key(|n| version(n))
+            })
             .cloned()
     }
 

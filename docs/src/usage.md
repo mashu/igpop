@@ -57,6 +57,7 @@ results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
 | `--vcf` | 1000 Genomes 30x annotated calls (GRCh38) | Site-level VCF with the `*_unrel` INFO fields; `{contig}` is replaced by the contig name. |
 | `--gnomad` | gnomAD v4.1 genomes (GRCh38) | gnomAD sites VCF; `{contig}` as above. |
 | `--no-gnomad` | off | Do not use gnomAD. |
+| `--no-more-datasets` | off | Do not use the further datasets read for GRCh38: ALFA by population, the GenomeAsia pilot, ToMMo 61KJPN and WBBC. |
 | `--no-frequencies` | off | Read no population data at all: alignments and variants only. |
 | `--phased-vcf` | 1000 Genomes 30x phased panel (GRCh38) | Phased VCF with genotypes for the [haplotype check](haplotypes.md); `{contig}` as above. |
 | `--pedigree` | 1000 Genomes sample table | Family, sample, father, mother, sex, population, superpopulation. |

@@ -20,6 +20,7 @@
 pub mod align;
 pub mod assess;
 pub mod evidence;
+pub mod extra;
 pub mod fetch;
 pub mod freq;
 pub mod hap;
@@ -61,6 +62,8 @@ struct Defaults {
     gnomad_name: &'static str,
     dbsnp: &'static str,
     phased: &'static str,
+    /// Further datasets with counts per group.
+    extras: &'static [extra::Extra],
 }
 
 fn defaults(build: &str) -> Option<Defaults> {
@@ -74,6 +77,7 @@ fn defaults(build: &str) -> Option<Defaults> {
             gnomad_name: "gnomAD_v4.1",
             dbsnp: "https://ftp.ncbi.nih.gov/snp/latest_release/VCF/GCF_000001405.40.gz",
             phased: "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20220422_3202_phased_SNV_INDEL_SV/1kGP_high_coverage_Illumina.{contig}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz",
+            extras: &extra::GRCH38,
         }),
         // Phase 3 of 1000 Genomes is one phased genotype file per
         // chromosome: it serves both the frequencies and the haplotypes.
@@ -86,6 +90,7 @@ fn defaults(build: &str) -> Option<Defaults> {
             gnomad_name: "gnomAD_v2.1",
             dbsnp: "https://ftp.ncbi.nih.gov/snp/latest_release/VCF/GCF_000001405.25.gz",
             phased: PHASE3,
+            extras: &[],
         }),
         _ => None,
     }
@@ -157,6 +162,9 @@ pub struct Config {
     pub kgp: Choice,
     pub gnomad: Choice,
     pub dbsnp: Choice,
+    /// Read the further datasets of the build (ALFA, GenomeAsia, ToMMo,
+    /// WBBC).
+    pub more_datasets: bool,
     pub phased: Choice,
     pub pedigree: Option<String>,
     /// dbSNP datasets left out by name.
@@ -193,6 +201,7 @@ impl Config {
             kgp: Choice::Default,
             gnomad: Choice::Default,
             dbsnp: Choice::Default,
+            more_datasets: true,
             phased: Choice::Default,
             pedigree: None,
             dbsnp_exclude: vec!["SGDP_PRJ".to_string()],
@@ -334,11 +343,11 @@ pub struct Preview {
 fn planned(config: &Config, build: &str, main: bool) -> Vec<PlannedSource> {
     let Some(d) = defaults(build) else { return Vec::new() };
     let phase3 = d.kgp_release == KgpRelease::Phase3;
-    let own = |choice: &Choice| main && matches!(choice, Choice::Custom(_));
     let mut out = Vec::new();
-    let mut add = |choice: &Choice, default: &str, source: PlannedSource| {
+    // A source the run reads; the user's own file is named as such.
+    let place = |out: &mut Vec<PlannedSource>, choice: &Choice, default: &str, source: PlannedSource| {
         if choice.resolve(Some(default), main).is_some() {
-            out.push(match own(choice) {
+            out.push(match main && matches!(choice, Choice::Custom(_)) {
                 true => PlannedSource {
                     title: "your own file",
                     people: None,
@@ -357,7 +366,8 @@ fn planned(config: &Config, build: &str, main: bool) -> Vec<PlannedSource> {
         people,
         about,
     };
-    add(
+    place(
+        &mut out,
         &config.kgp,
         d.kgp,
         match phase3 {
@@ -377,7 +387,8 @@ fn planned(config: &Config, build: &str, main: bool) -> Vec<PlannedSource> {
             ),
         },
     );
-    add(
+    place(
+        &mut out,
         &config.gnomad,
         d.gnomad,
         match phase3 {
@@ -397,7 +408,8 @@ fn planned(config: &Config, build: &str, main: bool) -> Vec<PlannedSource> {
             ),
         },
     );
-    add(
+    place(
+        &mut out,
         &config.dbsnp,
         d.dbsnp,
         source(
@@ -408,7 +420,11 @@ fn planned(config: &Config, build: &str, main: bool) -> Vec<PlannedSource> {
             "rsIDs, and frequencies from further studies of a few hundred to several hundred thousand people",
         ),
     );
-    add(
+    if config.more_datasets {
+        out.extend(d.extras.iter().map(|e| source(e.name, e.title, "frequencies", e.people, e.about)));
+    }
+    place(
+        &mut out,
         &config.phased,
         d.phased,
         match phase3 {
@@ -602,6 +618,10 @@ impl<'a> Session<'a> {
                 gnomad: config.gnomad.resolve(d.map(|d| d.gnomad), main),
                 gnomad_name: d.map_or("gnomAD", |d| d.gnomad_name),
                 dbsnp: config.dbsnp.resolve(d.map(|d| d.dbsnp), main),
+                extras: match (config.more_datasets, d) {
+                    (true, Some(d)) => d.extras.to_vec(),
+                    _ => Vec::new(),
+                },
                 phased: config.phased.resolve(d.map(|d| d.phased), main),
                 pedigree: config.pedigree.clone().unwrap_or_else(|| DEFAULT_PEDIGREE.to_string()),
                 dbsnp_exclude: config.dbsnp_exclude.clone(),
@@ -863,7 +883,7 @@ mod tests {
         });
         let Preview { alleles, genes, sources } = preview(&config).unwrap();
         // Both builds are needed, each with its four default sources.
-        assert_eq!(sources.iter().filter(|s| s.build == "GRCh38").count(), 4);
+        assert_eq!(sources.iter().filter(|s| s.build == "GRCh38").count(), 8);
         assert_eq!(sources.iter().filter(|s| s.build == "GRCh37").count(), 4);
         let of = |gene: &str| genes.iter().find(|g| g.gene == gene).unwrap();
         assert_eq!(of("IGHV1-18").place.as_ref().unwrap().0, "GRCh38");
