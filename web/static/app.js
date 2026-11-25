@@ -1464,7 +1464,8 @@ function whyScore(v) {
       ? `On the curve of this run, a base with this support is ${score >= 1 ? `${scoreText(score)} times more typical of the variants of real alleles than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of the variants of real alleles`}: a score of ${scoreText(score)}.${known}`
       : `${model ? `${pct(1 - model.seenShare)} of all possible single-base changes in these genes have never been seen either, but ${model.counts.trusted - model.counts.trusted_seen === 0 ? 'none' : model.counts.trusted - model.counts.trusted_seen} of the ${model.counts.trusted} variants of real alleles. ` : ''}That gives a score of ${scoreText(score)}.${known}`);
     if (given(v.chance) && support > 0) steps.push(`How often does chance do as well? Of all ${model ? model.counts.arbitrary.toLocaleString('en') : ''} single-base changes that are possible in the genes of the run, ${pct(Number(v.chance))} are supported at least as well as this one.`);
-  } else steps.push('Insertions and deletions get no score, because the comparison with arbitrary changes is made for single-base changes only.');
+    if (v.score_basis === 'borrowed') steps.push('This is an insertion or deletion. The curve is made from single-base changes, so the score is borrowed from it and is a lower bound: random insertions and deletions turn up in population data far more rarely than random base changes, so the same support counts at least as much.');
+  } else steps.push(v.type === 'SNV' ? 'No score could be given.' : 'No score: the curve is made from single-base changes and is borrowed for insertions and deletions only as a lower bound. For this support the bound is below 1 and says nothing, so the verdict rests on whether the change was seen at all.');
   if (v.class === 'common') steps.push(given(v.class_basis) && v.class_basis !== 'dbSNP:COMMON'
     ? `Apart from the score, a test shows that the frequency reaches 1% in ${stratumWords(v.class_basis)}${given(v.class_p) ? ` (p = ${Number(v.class_p).toPrecision(2)} after correction for the number of populations)` : ''}. A common variant is supported whatever its score.`
     : 'dbSNP marks this base as common. A common variant is supported whatever its score.');
@@ -1671,7 +1672,7 @@ function evidencePanel(v) {
 /** The part of the evidence panel that shows what a single-base difference
  *  was compared with, and what its score is worth. */
 function comparison(v) {
-  if (v.type !== 'SNV' || !given(v.score)) return null;
+  if (!given(v.score)) return null;
   const model = scoreModel();
   if (!model) return null;
   const score = Number(v.score);
@@ -1686,6 +1687,7 @@ function comparison(v) {
       ? `Blue dots: the ${model.real.length} distinct single-base variants of the ${model.alleles} alleles (${plural(model.genes, 'gene')}) that this run accepts as real, namely the database alleles and the candidates whose whole sequence was found on several phased chromosomes. Point at a dot to see which variant it is. Grey bars: all ${model.counts.arbitrary.toLocaleString('en')} single-base changes that are possible in the genes of the run, which is what an arbitrary error looks like. The line is the score: how much more typical a support is of the dots than of the bars. It is fitted to all of them at once, so it has no steps.`
       : `The scores of this run come from igpop's built-in curve, because the run has too few established alleles to make its own. The curve was made from ${model.counts.trusted} real variants (blue dots) and ${model.counts.arbitrary.toLocaleString('en')} possible changes (grey bars) in human IGHV genes.`),
     el('div', { class: 'scroll' }, comparisonChart(v)),
+    v.score_basis === 'borrowed' ? el('p', { text: 'This difference is an insertion or deletion, and the picture is made from single-base changes. Its score is read from the same line as a lower bound.' }) : null,
     el('p', {}, `This difference has a score of ${scoreText(score)}. The shaded band shows how well the real variants pin the line down here: between ${scoreText(low)} and ${scoreText(high)}. ${reading}`),
     state.prior
       ? el('p', {}, `With your setting that ${Math.round(100 * state.prior)}% of such differences are real before looking at population data, this one is real with a probability of `, el('b', { text: chanceText(afterEvidence(state.prior, score)) }), ` (between ${chanceText(afterEvidence(state.prior, low))} and ${chanceText(afterEvidence(state.prior, high))}, given how well the score is known).`)
@@ -1787,10 +1789,12 @@ function siteQuality(v) {
 }
 
 function scoreCell(v) {
-  if (!given(v.score)) return el('td', { class: 'num', text: '–', title: 'Insertions and deletions have no score.' });
+  if (!given(v.score)) return el('td', { class: 'num', text: '–', title: v.type === 'SNV' ? 'No score.' : 'No score: for an insertion or deletion seen this rarely the borrowed score says nothing.' });
   const score = Number(v.score);
-  return el('td', { class: 'num' }, explain(el('span', { class: 'hint-value', tabindex: '0', text: scoreText(score) }), el('span', {},
-    el('b', { text: `${scoreText(score)}: ${scoreWords(score)}` }),
+  const borrowed = v.score_basis === 'borrowed';
+  return el('td', { class: 'num' }, explain(el('span', { class: 'hint-value', tabindex: '0', text: `${borrowed ? '\u2265 ' : ''}${scoreText(score)}` }), el('span', {},
+    el('b', { text: `${borrowed ? 'At least ' : ''}${scoreText(score)}: ${scoreWords(score)}` }),
+    borrowed ? el('span', { text: 'Borrowed from the curve of single-base changes, as a lower bound: random insertions and deletions are found in population data far more rarely than random base changes.' }) : null,
     el('span', { text: `A base seen this often is ${score >= 1 ? `${scoreText(score)} times more typical of real variants than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of real variants`}.` }),
     given(v.score_low) ? el('span', { text: `The calibration knows this score to between ${scoreText(Number(v.score_low))} and ${scoreText(Number(v.score_high))}.` }) : null,
     given(v.chance) && number(v.support) > 0 ? el('span', { text: `${pct(Number(v.chance))} of all possible changes are supported at least as well.` }) : null)),

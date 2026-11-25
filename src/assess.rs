@@ -284,6 +284,9 @@ pub struct VariantResult {
     /// Corrected p-value of the best stratum, if one was tested.
     pub class_p: Option<f64>,
     pub score: Option<f64>,
+    /// The score of an insertion or deletion is read from the curve of
+    /// single-base changes.
+    pub score_borrowed: bool,
     /// A 95% interval for the score: how well the calibration knows it.
     pub score_interval: Option<(f64, f64)>,
     /// Share of all possible single-base changes in the genes of the run
@@ -352,8 +355,15 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         _ => (Class::NotAssessed, None),
     };
 
+    // The curve is made from single-base changes. An insertion or deletion
+    // borrows it, but only as a lower bound: of all possible single-base
+    // insertions and deletions far fewer are found in population data than
+    // of all possible base changes, so the same support is at least as
+    // strong evidence for them. A lower bound can speak for a variant and
+    // cannot speak against it: below 1 it says nothing, and the variant
+    // stays without a score.
     let scored = match &model.calibration {
-        Some(cal) if called.kind == Kind::Snv && ev.reads(&lookup.0) => {
+        Some(cal) if ev.reads(&lookup.0) && (called.kind == Kind::Snv || cal.score(support) > 1.0) => {
             Some((cal.score(support), cal.interval(support), cal.chance(support)))
         }
         _ => None,
@@ -390,6 +400,7 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         basis,
         class_p: corrected.map(|(p, _)| p),
         score,
+        score_borrowed: scored.is_some() && called.kind != Kind::Snv,
         score_interval: scored.map(|(_, interval, _)| interval),
         chance: scored.map(|(_, _, chance)| chance),
         verdict,

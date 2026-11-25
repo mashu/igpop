@@ -32,7 +32,9 @@
 - **Verdicts are about population support.** A real private allele gets
   `needs_confirmation`; an artefact shared by all short-read datasets can
   get `supported`. A probability needs a prior that only you can supply.
-- **Insertions and deletions have no score.** Their verdict comes from the
-  class alone: `common` is `supported`, `absent` is `needs_confirmation`.
+- **Insertions and deletions borrow their score.** It is read from the
+  curve of single-base changes as a lower bound, and only where that bound
+  is above 1; a rarely seen insertion or deletion has no score
+  ([The score](score.md)).
 - **Built-in calibration is human IGHV.** For other loci it is a stand-in
   until a run of that locus can calibrate itself.

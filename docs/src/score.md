@@ -151,8 +151,25 @@ are still shown, as a ruler; they no longer decide anything.
   variants: an allele is only as well supported as its weakest variant.
   Scores of several variants are not multiplied, because variants on the
   same chromosome are inherited together and are not independent evidence.
-- **Not scored.** Insertions and deletions (there is no "every possible
-  indel" to compare with).
+- **Insertions and deletions borrow the curve.** The two groups are
+  single-base changes, because every possible one can be listed. An
+  insertion or deletion gets the score the curve gives its support, as a
+  lower bound (`score_basis` is `borrowed`). The reason: of 988 artificial
+  single-base insertions and deletions, 2.8% were found in any dataset and
+  0.1% had a support of 0.1% or more, against 54% and 7% of artificial
+  base changes. An arbitrary insertion or deletion is far less likely to
+  be "known", so the same support is at least as strong evidence. A lower
+  bound can speak for a variant but not against it: where the curve is at
+  1 or below, the insertion or deletion stays without a score and its
+  verdict rests on its class (`absent` is `needs_confirmation`, otherwise
+  `inconclusive`).
+- **Matched as the exact change.** Every difference is looked up by
+  position, reference bases and alternate bases together, after both the
+  allele's difference and the records of the population files are brought
+  to the same left-aligned, shortest form. A base change recorded at the
+  position of a deletion is a different variant with its own rsID and
+  counts, and of a record that lists several alternate alleles only the
+  one that is the same change is used.
 
 ## What the score does not say
 
