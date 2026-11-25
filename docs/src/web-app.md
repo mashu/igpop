@@ -177,7 +177,7 @@ on it in the alignment) shows:
 
 The list of alleles shows search, gene and order; the remaining filters
 (trusted or candidate, haplotype, placement) are under **More filters**,
-and the two settings below under **Verdict settings**. Both fold away and
+and the limit described below under **Verdict settings**. Both fold away and
 say in their title what is set.
 
 Every allele shows its weakest score as a number with a dot on a
@@ -209,21 +209,34 @@ labels, the counts at the top and the tables under **Files**
 report describes the run at 2. The limit for "needs confirmation" (0.1)
 is not moved.
 
-## Showing a probability
-
-A score is evidence, not a probability. Above the list of alleles,
-"Also show a probability for each difference" turns scores into
-probabilities for the whole result at once. It asks for one number: the
-share of differences like yours that you expect to be real before looking
-at population data. This is a judgement of the method that produced the
-alleles, so it is set once, not per difference. For orientation the app
-says how many candidates of the run were found on phased chromosomes
-among those that could be looked up, and offers that share as a value.
-The setting is off unless you turn it on, changes no verdict, and is kept
-in your browser.
-
 The site files give counts for continental groups and ancestry groups, not
 for the single populations within them.
+
+## The alignment of a gene
+
+"Alignment of this gene" in an opened allele shows every allele of the
+gene under the reference, 5' to 3'.
+
+- **Positions** are counted from the first base of the gene; the few bases
+  shown before and after it are not numbered.
+- **Differences that are not supported are marked**, in every allele of
+  the gene: underlined when the difference is inconclusive or has no
+  population data, framed when it needs confirmation. A supported
+  difference is a plain coloured letter. The marks follow the limit set
+  under Verdict settings.
+- **Regions.** For heavy-chain V genes a line shows FR1, CDR1, FR2, CDR2,
+  FR3 and the start of CDR3, and the popup of a column names its region.
+  Pointing at a region highlights its columns in all alleles; a click
+  keeps the highlight until the region is clicked again.
+  CDR3 is only a few bases long here: a V gene ends just after the second
+  cysteine, and the rest of CDR3 comes from the D and J genes.
+  The borders are placed from the conserved residues of a V gene (the two
+  cysteines and the tryptophan) and standard framework lengths, not from
+  an IMGT alignment, so they can be off by a codon or two. For the 53
+  IGHV genes of the built-in list the resulting CDR1 and CDR2 lengths are
+  the usual ones (8, 9 or 10 and 7, 8, 9 or 10 codons).
+- Pointing at a column shows what is there; a click on a difference of the
+  opened allele shows its evidence.
 
 ## Alleles that were not placed cleanly
 

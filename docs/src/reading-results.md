@@ -125,10 +125,7 @@ light.
 ## Probabilities
 
 A score is a likelihood ratio, not a probability, and not odds either:
-odds that a variant is real = your odds beforehand x score. To turn it into
-a probability you must say how many of
-your candidates you expect to be real before looking at population data. If
-you can, pass it (`--prior 0.5` for "half of them"), and `variants.tsv`
-gains a `probability_real` column. It is one number for the whole run: a
-judgement of the method that produced the alleles. [The score](score.md)
-has a table of how much it matters.
+odds that a variant is real = your odds beforehand x score. igpop does not
+turn it into a probability, because that needs the share of your
+candidates that are real before looking at population data, which only
+you can judge. [The score](score.md) has a table of how much it matters.

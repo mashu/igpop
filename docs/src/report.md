@@ -54,7 +54,6 @@ the table itself:
 | trusted variants | How many variants of trusted alleles have this support. |
 | score | Ratio of the two shares. |
 | verdict | What a variant at this level is called. |
-| probability real if half ... / if 9 in 10 ... | The score turned into a probability under two expectations. |
 
 A healthy table has most arbitrary changes at the top ("none") and most
 trusted variants at the bottom (1% and more), with scores rising from well

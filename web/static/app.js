@@ -878,7 +878,6 @@ function display(files, warnings, summary = []) {
   renderTiles();
   renderWarnings(warnings);
   renderFilters();
-  renderPriorNote();
   renderLimit();
   renderAlleles();
   renderData();
@@ -991,15 +990,35 @@ function renderLimit() {
   const supported = state.alleles.filter((a) => a.verdict === 'supported').length;
   const before = state.alleles.filter((a) => a.run.verdict === 'supported').length;
   const change = supported === before ? '' : ` (${supported > before ? `${supported - before} more` : `${before - supported} fewer`} than at ${RUN_LIMIT})`;
-  const fact = (number, words) => el('span', {}, el('b', { text: number }), words);
   const reading = state.limit >= 10 ? 'From 10 on, a score is usually read as strong evidence.'
     : state.limit >= 3 ? 'Between 3 and 10, a score is usually read as positive but not strong evidence.'
       : state.limit > 1 ? 'Between 1 and 3, a score is weak evidence: such a difference is more typical of real variants than of arbitrary changes, but not by much.'
         : 'At 1 or below, a difference passes although its support is no more typical of real variants than of arbitrary changes.';
+  // A figure, what it counts, and on request what exactly it means.
+  const fact = (number, words, meaning) => el('span', {},
+    explain(el('b', { class: 'hint-value', tabindex: '0', text: number }), el('span', {}, meaning.map((line) => el('span', { text: line })))), words);
+  const judged = state.alleles.filter((a) => !['matches_reference', 'not_placed'].includes(a.verdict)).length;
+  const counts = model.counts;
   $('limit-note').replaceChildren(
-    everything ? fact('any', 'even a base never seen passes') : Number.isFinite(at) ? fact(percent(at), 'frequency a difference must be shown to reach') : fact('none', 'no frequency reaches this score in this run'),
-    everything ? fact('100%', 'of arbitrary base changes would pass') : Number.isFinite(at) ? fact(pct(model.chance(at)), 'of arbitrary base changes would pass') : null,
-    fact(String(supported), `alleles supported${change}`),
+    everything
+      ? fact('any', 'even a base never seen passes', [`A base that no dataset has seen scores ${scoreText(model.score(0))}, which is at or above this limit.`])
+      : Number.isFinite(at)
+        ? fact(percent(at), 'frequency a difference must be shown to reach', [
+          `A difference scores ${state.limit} or more when the data guarantee, with 95% confidence, a frequency of at least ${percent(at)} in some population of some source.`,
+          'This guaranteed frequency is lower than the observed one, the more so the fewer people were examined: 3 carriers among 200 chromosomes guarantee less than 300 among 20,000.',
+          'A difference shown to reach 1% in a population is supported whatever this limit.'])
+        : fact('none', 'no frequency reaches this score in this run', ['The score curve of this run stays below this limit even for a base that everyone carries.']),
+    everything
+      ? fact('100%', 'of arbitrary base changes would pass', ['With this limit, every single-base change that is possible in these genes would count as supported.'])
+      : Number.isFinite(at)
+        ? fact(pct(model.chance(at)), 'of arbitrary base changes would pass', [
+          `Take every single-base change that is possible in the genes of this run: ${counts.arbitrary.toLocaleString('en')} of them, three at each position. ${pct(model.chance(at))} of them score ${state.limit} or more.`,
+          'This is how often a random error in one base would pass by its score alone. It is the price of the limit: a lower limit lets more real differences through, and more errors with them.',
+          'It counts single differences. An allele with several differences passes only if each of them does.'])
+        : null,
+    fact(`${supported} of ${judged}`, `alleles supported${change}`, [
+      `${judged} of the ${state.alleles.length} alleles differ from the reference genome and could be placed on a gene; the others are identical to the reference or were not placed.`,
+      `${supported} of them are supported with this limit: every difference passes by frequency, or the whole sequence was found on phased chromosomes.`]),
     el('p', { text: `${reading}${state.limit === RUN_LIMIT ? '' : ` Verdicts, counts and the tables under Files follow this limit; the report describes the run at ${RUN_LIMIT}.`}` }));
 }
 
@@ -1033,8 +1052,7 @@ function scorePill(allele) {
   const t = Math.max(-1, Math.min(1, Math.log10(score) / 2));
   const tone = `color-mix(in srgb, var(${t >= 0 ? '--supported' : '--confirm'}) ${Math.round(100 * Math.abs(t))}%, var(--grey))`;
   return el('span', { class: 'score-pill', style: `--tone:${tone}`, title: `Weakest score among the differences of this allele: ${scoreText(score)} (${scoreWords(score)}). An allele is only as well supported by frequency as its weakest difference.` },
-    el('i', { 'aria-hidden': 'true' }), `score ${scoreText(score)}`,
-    state.prior ? el('em', { text: `${chanceText(afterEvidence(state.prior, score)).replace('more than ', '>').replace('less than ', '<')} real` }) : null);
+    el('i', { 'aria-hidden': 'true' }), `score ${scoreText(score)}`);
 }
 
 function renderTiles() {
@@ -1112,7 +1130,7 @@ function frequencyLegend() {
 function renderFolds() {
   const active = ['f-kind', 'f-hap', 'f-place'].filter((id) => $(id).value).length;
   $('fold-filters-state').textContent = active ? `: ${active} set` : '';
-  $('fold-reading-state').textContent = `: supported from a score of ${state.limit}${state.prior ? `, probability shown for a prior of ${Math.round(100 * state.prior)}%` : ''}`;
+  $('fold-reading-state').textContent = `: supported from a score of ${state.limit}`;
 }
 
 function visibleAlleles() {
@@ -1131,41 +1149,6 @@ function visibleAlleles() {
     if (query && !`${a.allele_name} ${a.gene} ${a.reason}`.toLowerCase().includes(query)) return false;
     return true;
   });
-}
-
-/** The one setting that turns scores into probabilities, for the whole
- *  result: off unless the user turns it on. */
-function wirePrior() {
-  const [on, box, value, note] = [$('prior-on'), $('prior-box'), $('prior-value'), $('prior-note')];
-  try {
-    const kept = JSON.parse(localStorage.getItem('igpop-prior') || 'null');
-    if (kept) { on.checked = Boolean(kept.on); value.value = String(kept.percent); }
-  } catch (error) { /* storage is off */ }
-  const apply = () => {
-    const percentage = Math.min(99, Math.max(1, Number(value.value) || 50));
-    box.hidden = !on.checked;
-    state.prior = on.checked ? percentage / 100 : null;
-    try { localStorage.setItem('igpop-prior', JSON.stringify({ on: on.checked, percent: percentage })); } catch (error) { /* storage is off */ }
-    if (state.alleles.length) renderAlleles();
-  };
-  on.addEventListener('change', apply);
-  value.addEventListener('change', apply);
-  note.addEventListener('click', (event) => {
-    const use = event.target.closest('button[data-percent]');
-    if (!use) return;
-    value.value = use.dataset.percent;
-    apply();
-  });
-  box.hidden = !on.checked;
-  state.prior = on.checked ? Math.min(99, Math.max(1, Number(value.value) || 50)) / 100 : null;
-}
-
-/** Something to hold on to when choosing the setting: how many candidates
- *  of this run turned out to exist on phased chromosomes. */
-function renderPriorNote() {
-  const looked = state.alleles.filter((a) => a.trusted === 'no' && ['found_exact', 'found_with_extra', 'not_found'].includes(a.hap_status));
-  const found = looked.filter((a) => a.hap_status === 'found_exact').length;
-  $('prior-note').textContent = `This is your judgement of the method that produced the alleles; each score then moves it up or down. The probability appears beside every score.${looked.length >= 20 ? ` For orientation: of ${looked.length} candidates in this run whose whole sequence could be looked up on phased chromosomes, ${found} were found there.` : ''}`;
 }
 
 function renderAlleles() {
@@ -1641,13 +1624,6 @@ function comparisonChart(v) {
 }
 
 const pct = (x) => (x >= 0.995 ? '100%' : `${Number((100 * x).toPrecision(2))}%`);
-/** A probability in words: never a flat 0% or 100%. */
-const chanceText = (p) => (p > 0.99 ? 'more than 99%' : p < 0.01 ? 'less than 1%' : `${Math.round(100 * p)}%`);
-
-/** The probability that a difference is real, if a share `prior` of such
- *  differences is real before looking at population data. */
-const afterEvidence = (prior, score) => (prior * score) / (prior * score + (1 - prior));
-
 /** Everything behind one difference: where it is, who carries it, and why
  *  it has its score. */
 function evidencePanel(v) {
@@ -1703,9 +1679,6 @@ function comparison(v) {
     el('div', { class: 'scroll' }, comparisonChart(v)),
     v.score_basis === 'borrowed' ? el('p', { text: 'This difference is an insertion or deletion, and the picture is made from single-base changes. Its score is read from the same line as a lower bound.' }) : null,
     el('p', {}, `This difference has a score of ${scoreText(score)}. The shaded band shows how well the real variants pin the line down here: between ${scoreText(low)} and ${scoreText(high)}. ${reading}`),
-    state.prior
-      ? el('p', {}, `With your setting that ${Math.round(100 * state.prior)}% of such differences are real before looking at population data, this one is real with a probability of `, el('b', { text: chanceText(afterEvidence(state.prior, score)) }), ` (between ${chanceText(afterEvidence(state.prior, low))} and ${chanceText(afterEvidence(state.prior, high))}, given how well the score is known).`)
-      : null,
     el('p', { class: 'muted', text: `The limits for the verdict (${state.limit} for "supported", which you can move above the list of alleles, and 0.1 for "needs confirmation") are conventions, not measurements. Where likelihood ratios are used, 1 to 3 is usually read as weak, 3 to 10 as positive and 10 or more as strong evidence. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.` }));
 }
 
@@ -1811,8 +1784,7 @@ function scoreCell(v) {
     borrowed ? el('span', { text: 'Borrowed from the curve of single-base changes, as a lower bound: random insertions and deletions are found in population data far more rarely than random base changes.' }) : null,
     el('span', { text: `A base seen this often is ${score >= 1 ? `${scoreText(score)} times more typical of real variants than of arbitrary changes` : `${scoreText(1 / score)} times more typical of arbitrary changes than of real variants`}.` }),
     given(v.score_low) ? el('span', { text: `The calibration knows this score to between ${scoreText(Number(v.score_low))} and ${scoreText(Number(v.score_high))}.` }) : null,
-    given(v.chance) && number(v.support) > 0 ? el('span', { text: `${pct(Number(v.chance))} of all possible changes are supported at least as well.` }) : null)),
-  state.prior ? el('small', { class: 'probability', text: `${chanceText(afterEvidence(state.prior, score)).replace('more than ', '>').replace('less than ', '<')} real` }) : null);
+    given(v.chance) && number(v.support) > 0 ? el('span', { text: `${pct(Number(v.chance))} of all possible changes are supported at least as well.` }) : null)));
 }
 
 // ---- haplotype check -----------------------------------------------------
@@ -1890,28 +1862,117 @@ const BASE_WORDS = { '.': 'same as the reference', '-': 'base missing (deletion)
 
 /** The alignment of one gene: every allele under the reference, one column
  *  per base. Pointing at a column highlights it and says what is there. */
+const CODONS = (() => {
+  const bases = 'TCAG';
+  const acids = 'FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG';
+  const table = {};
+  [...bases].forEach((a, i) => [...bases].forEach((b, j) => [...bases].forEach((c, k) => { table[a + b + c] = acids[16 * i + 4 * j + k]; })));
+  return table;
+})();
+
+/** The framework and complementarity-determining regions of a heavy-chain
+ *  V gene, found from its three conserved residues (the two cysteines and
+ *  the tryptophan), as [name, first column, last column]. Approximate: the
+ *  exact borders are defined on an alignment of all V genes, which igpop
+ *  does not make. Null if the residues are not where a V gene has them. */
+function regionsOf(reference, first, last) {
+  const dna = reference.slice(first, last + 1).toUpperCase();
+  let protein = '';
+  for (let i = 0; i + 3 <= dna.length; i += 3) protein += CODONS[dna.slice(i, i + 3)] || 'X';
+  // The first cysteine is codon 22 of the gene in every human IGHV gene;
+  // a reference allele can have lost it.
+  const cys1 = protein.slice(17, 28).includes('C') ? protein.slice(17, 28).indexOf('C') + 17 : 21;
+  const found = protein.slice(cys1 + 5).search(/W[A-Z]RQ/);
+  const trp = found >= 0 ? cys1 + 5 + found : protein.indexOf('W', cys1 + 5);
+  const cys2 = protein.lastIndexOf('C');
+  if (trp < 0 || cys2 < trp + 45) return null;
+  const parts = [['FR1', 0, cys1 + 3], ['CDR1', cys1 + 4, trp - 3], ['FR2', trp - 2, trp + 14], ['CDR2', trp + 15, cys2 - 38], ['FR3', cys2 - 37, cys2]];
+  if (parts.some(([, from, to]) => to < from)) return null;
+  const regions = parts.map(([name, from, to]) => [name, first + 3 * from, first + 3 * to + 2]);
+  if (first + 3 * cys2 + 3 <= last) regions.push(['CDR3', first + 3 * cys2 + 3, last]);
+  return regions;
+}
+
 function alignmentPanel(block, alleleName, opened = new Map()) {
   const aln = parseBlock(block);
   const columns = aln.positions.length;
   const names = ['reference', ...(aln.rows.has(alleleName) ? [alleleName] : []), ...[...aln.rows.keys()].filter((n) => n !== 'reference' && n !== alleleName)];
-  const ruler = Array.from({ length: columns }, (_, c) => ((c + 1) % 10 === 0 ? '|' : (c + 1) % 5 === 0 ? ':' : '·')).join('');
-  const numbers = Array.from({ length: Math.floor(columns / 10) }, (_, k) => String(10 * (k + 1)).padStart(10, ' ')).join('');
-  const line = (name, cls, content) => el('div', { class: `aln-line ${cls}`, 'data-name': name }, content);
-  const coloured = (seq) => {
-    const parts = [];
-    for (const piece of seq.split(/([A-Za-z-])/)) {
-      if (!piece) continue;
-      parts.push(/^[A-Za-z-]$/.test(piece) ? el('b', { class: `nt nt-${piece === '-' ? 'gap' : piece.toUpperCase()}`, text: piece }) : piece.replace(/\./g, '·'));
+  // Where the gene itself begins and ends among the columns: the block
+  // shows a few bases on either side of it.
+  const span = aln.title.match(/:(\d+)-(\d+)\s+strand\s+(\S)/);
+  const ends = span ? (span[3] === '-' ? [Number(span[2]), Number(span[1])] : [Number(span[1]), Number(span[2])]) : null;
+  const geneFirst = ends ? Math.max(0, aln.positions.indexOf(ends[0])) : 0;
+  const geneLast = ends && aln.positions.indexOf(ends[1]) >= 0 ? aln.positions.indexOf(ends[1]) : columns - 1;
+  const inGene = (c) => c - geneFirst + 1;
+  const ruler = Array.from({ length: columns }, (_, c) => (c < geneFirst || c > geneLast ? ' ' : inGene(c) % 10 === 0 ? '|' : inGene(c) % 5 === 0 ? ':' : '·')).join('');
+  const numbers = Array.from({ length: columns }, () => ' ');
+  for (let n = 10; geneFirst + n - 1 <= geneLast; n += 10) [...String(n)].reverse().forEach((digit, k) => { numbers[geneFirst + n - 1 - k] = digit; });
+  const regions = /^IGHV/.test(aln.title) ? regionsOf(aln.rows.get('reference') || '', geneFirst, geneLast) : null;
+  const regionAt = (c) => (regions || []).find(([, from, to]) => c >= from && c <= to);
+  const regionLine = regions ? [
+    el('span', { style: `display:inline-block;width:${regions[0][1]}ch` }),
+    ...regions.map(([name, from, to]) => el('span', { class: `aln-region ${name.startsWith('CDR') ? 'cdr' : 'fr'}`, title: name === 'CDR3' ? 'The first bases of CDR3; the rest comes from the D and J genes' : name, style: `width:${to - from + 1}ch` }, to - from + 1 >= name.length + 1 ? el('small', { text: name }) : null))] : null;
+  // The verdict of each difference, by allele and column, so that the
+  // ones that are not supported stand out.
+  const verdictAt = (name) => {
+    const marks = new Map();
+    for (const v of state.variants.get(name) || []) {
+      if (v.verdict === 'supported' || v.type === 'INS') continue;
+      const pos = Number(v.genome_pos);
+      const covered = v.type === 'SNV' ? [pos] : Array.from({ length: Math.max(0, v.vcf_ref.length - 1) }, (_, k) => pos + 1 + k);
+      for (const p of covered) {
+        const c = aln.positions.indexOf(p);
+        if (c >= 0) marks.set(c, v.verdict);
+      }
     }
+    return marks;
+  };
+  const line = (name, cls, content) => el('div', { class: `aln-line ${cls}`, 'data-name': name }, content);
+  const coloured = (seq, name) => {
+    const marks = verdictAt(name);
+    const parts = [];
+    let plain = '';
+    [...seq].forEach((piece, c) => {
+      if (!/^[A-Za-z-]$/.test(piece)) { plain += piece === '.' ? '·' : piece; return; }
+      if (plain) { parts.push(plain); plain = ''; }
+      parts.push(el('b', { class: `nt nt-${piece === '-' ? 'gap' : piece.toUpperCase()}${marks.has(c) ? ` nv-${marks.get(c)}` : ''}`, text: piece }));
+    });
+    if (plain) parts.push(plain);
     return parts;
   };
   const marker = el('div', { class: 'aln-column', hidden: true });
-  const seqs = el('div', { class: 'aln-seqs', style: `width:${columns}ch` }, marker,
-    line('', 'aln-ruler', numbers), line('', 'aln-ruler', ruler),
+  // A band over the columns of one region: shown while the pointer is on
+  // its label, and kept when the label is clicked.
+  const band = el('div', { class: 'aln-band', hidden: true });
+  let pinned = null;
+  const showBand = (region) => {
+    band.hidden = !region;
+    if (region) Object.assign(band.style, { left: `${region[1]}ch`, width: `${region[2] - region[1] + 1}ch` });
+  };
+  for (const [i, label] of (regionLine || []).slice(1).entries()) {
+    const region = regions[i];
+    Object.assign(label, { tabIndex: 0 });
+    label.setAttribute('role', 'button');
+    label.setAttribute('aria-pressed', 'false');
+    label.addEventListener('mouseenter', () => showBand(region));
+    label.addEventListener('mouseleave', () => showBand(pinned));
+    const toggle = (event) => {
+      event.stopPropagation();
+      pinned = pinned === region ? null : region;
+      for (const other of regionLine.slice(1)) other.setAttribute('aria-pressed', String(other === label && pinned === region));
+      showBand(pinned);
+    };
+    label.addEventListener('click', toggle);
+    label.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(event); } });
+  }
+  const seqs = el('div', { class: 'aln-seqs', style: `width:${columns}ch` }, marker, band,
+    line('', 'aln-ruler', numbers.join('')), line('', 'aln-ruler', ruler),
+    regionLine ? line('', 'aln-ruler aln-regions', regionLine) : null,
     names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '',
-      name === 'reference' ? aln.rows.get(name) : coloured(aln.rows.get(name) || ''))));
+      name === 'reference' ? aln.rows.get(name) : coloured(aln.rows.get(name) || '', name))));
   const labels = el('div', { class: 'aln-names' },
-    line('', 'aln-ruler', 'position in gene'), line('', 'aln-ruler', ' '),
+    line('', 'aln-ruler', 'position in gene'), line('', 'aln-ruler', ' '),
+    regionLine ? line('', 'aln-ruler aln-regions', 'region (approximate)') : null,
     names.map((name) => line(name, name === 'reference' ? 'aln-ref' : name === alleleName ? 'current' : '', name)));
   const tip = el('div', { class: 'aln-tip', role: 'status', hidden: true });
   const grid = el('div', { class: 'aln-grid', tabindex: '0', role: 'group', 'aria-label': `Alignment of ${names.length - 1} alleles of this gene. Use the left and right arrow keys to move along it.` }, labels, seqs);
@@ -1924,7 +1985,7 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     const base = (aln.rows.get(row) || '')[col] || ' ';
     const differing = [...aln.rows].filter(([n, seq]) => n !== 'reference' && /[A-Za-z-]/.test(seq[col] || '')).length;
     const parts = [
-      el('b', { text: `Base ${col + 1} of the gene` }),
+      el('b', { text: col < geneFirst ? `${geneFirst - col} base${geneFirst - col > 1 ? 's' : ''} before the gene` : col > geneLast ? `${col - geneLast} base${col - geneLast > 1 ? 's' : ''} after the gene` : `Base ${inGene(col)} of the gene${regionAt(col) ? `, in ${regionAt(col)[0] === 'CDR3' ? 'the first bases of CDR3' : regionAt(col)[0]}` : ''}` }),
       el('span', { class: 'muted', text: `${aln.build} ${aln.contig}:${pos.toLocaleString('en')}` }),
       el('span', {}, 'Reference: ', el('b', { class: `nt nt-${reference}`, text: reference })),
       el('span', {}, `${row}: `, BASE_WORDS[base] ? BASE_WORDS[base] : el('b', { class: `nt nt-${base.toUpperCase()}`, text: base })),
@@ -2007,10 +2068,11 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
   });
   const own = aln.notes.get(alleleName);
   return el('details', { class: 'aln' }, el('summary', { text: 'Alignment of this gene' }),
-    el('p', { class: 'muted', text: 'Every allele of the gene under the reference, read 5′ to 3′. A dot is the same base as the reference, a coloured letter is a difference, a dash is a missing base. This allele is the highlighted row. Point at a column to see what is there; with the keyboard, the arrow keys jump between the differences of this allele (hold Shift to move one base).' }),
+    el('p', { class: 'muted', text: 'Every allele of the gene under the reference, read 5′ to 3′. A dot is the same base as the reference, a coloured letter is a difference, a dash is a missing base. A difference that is not supported is marked: underlined when inconclusive or without data, framed when it needs confirmation. This allele is the highlighted row. Point at a column to see what is there; with the keyboard, the arrow keys jump between the differences of this allele (hold Shift to move one base).' }),
     own ? el('p', { class: 'muted', text: `${alleleName}: ${own.replace(/\s{2,}/g, ', ')}.` }) : null,
     el('p', { class: 'aln-where', text: aln.title.replace(/\s{2,}/g, ' · ') }),
-    grid, tip);
+    grid, tip,
+    regions ? el('p', { class: 'muted aln-foot', text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the three conserved residues of a V gene (two cysteines and a tryptophan) and can be off by a codon or two from the IMGT definition. Point at a region to see its columns, or click it to keep them highlighted. A V gene holds only the first few bases of CDR3; the rest of it comes from the D and J genes and the joints between them, so it is not in a germline allele.' }) : null);
 }
 
 // ---- score and checks ------------------------------------------------------
@@ -2255,7 +2317,6 @@ function wire() {
 
 wire();
 wireGeneList();
-wirePrior();
 wireLimit();
 wireNameEditor();
 // The worker is started with the page, so the analysis module is loaded

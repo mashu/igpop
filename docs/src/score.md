@@ -133,9 +133,6 @@ are still shown, as a ruler; they no longer decide anything.
 - **From score to verdict.** At least 2: `supported`. At most 0.1:
   `needs_confirmation`. In between: `inconclusive`. Both limits can be
   changed; see below for what they mean and cost.
-- **From score to probability.** Probability = prior x score /
-  (prior x score + 1 - prior), where the prior is the share of such
-  variants you expect to be real (`--prior`).
 - **Shape of the curve.** More support can never mean a lower score. The
   curved term (x²) is kept only if it improves the fit (Akaike's
   criterion) and the curve still rises over the whole range; otherwise a
@@ -230,11 +227,11 @@ odds after = odds before x score
 | 95% | 66% | 97% | 99% | 99.7% |
 
 An allele found in several people by a careful method starts high, and a
-score of 2 leaves it high. The verdict does not use such a prior, because
-igpop cannot know it. It is one number for a whole run, a judgement of the
-method that produced the alleles: `--prior` adds the probability as a
-column, and the web app has one optional setting for it above the list of
-alleles (off unless you turn it on).
+score of 2 leaves it high; with a high starting figure nearly every
+difference comes out above 90%, whatever its score. igpop therefore does
+not report a probability: it would mostly repeat the figure put in. The
+verdict and the score describe what the population data say, and the table
+is for weighing that against what you know about your method.
 
 ## Seeing what a difference was compared with
 

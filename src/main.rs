@@ -69,10 +69,6 @@ struct Args {
     /// changes of real chromosomes are found as often.
     #[arg(long, default_value_t = 0.05)]
     coincidence: f64,
-    /// Share of variants like yours expected to be real before looking at
-    /// population data (between 0 and 1); fills the probability_real column.
-    #[arg(long)]
-    prior: Option<f64>,
 
     /// Reference FASTA: a path or URL with .fai (and .gzi if bgzipped).
     /// Default: the 1000 Genomes reference for --build, read remotely.
@@ -169,7 +165,6 @@ impl Args {
         config.limits.supported = self.supported_score;
         config.limits.confirm = self.confirm_score;
         config.limits.coincidence = self.coincidence;
-        config.prior = self.prior;
         config.reference = self.reference.clone();
         config.kgp = choice(&self.vcf, false);
         config.gnomad = choice(&self.gnomad, self.no_gnomad);

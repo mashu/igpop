@@ -28,7 +28,6 @@ pub struct Input<'a> {
     pub other_builds: Vec<(&'a str, &'a Evidence, usize)>,
     pub alleles: String,
     pub coords: String,
-    pub prior: Option<f64>,
     pub limits: &'a Limits,
     pub results: &'a [AlleleResult<'a>],
     pub ev: &'a Evidence,
@@ -58,7 +57,6 @@ struct View<'a> {
     common: f64,
     supported: f64,
     confirm: f64,
-    prior: Option<f64>,
     rows: Vec<Row>,
     /// (locus status, number of alleles).
     statuses: Vec<(&'static str, usize)>,
@@ -230,7 +228,6 @@ pub fn render(input: &Input) -> String {
         common: input.limits.common,
         supported: input.limits.supported,
         confirm: input.limits.confirm,
-        prior: input.prior,
         rows: input
             .results
             .iter()
@@ -624,21 +621,10 @@ fn write_report(r: &View) -> String {
                 r.confirm,
                 100.0 * r.common
             );
-            match r.prior {
-                Some(prior) => {
-                    let _ = writeln!(
-                        o,
-                        "The `probability_real` column uses your prior of {prior} (`--prior`): the share of variants like these you expect to be real before looking at population data.\n"
-                    );
-                }
-                None => {
-                    let _ = writeln!(
-                        o,
-                        "A score is evidence, not a probability. Pass `--prior` (the share of variants like these you expect to be real \
-                         before looking at population data) to get a `probability_real` column.\n"
-                    );
-                }
-            }
+            let _ = writeln!(
+                o,
+                "A score is evidence, not a probability: how likely a variant is to be real also depends on what was known before looking at population data.\n"
+            );
         }
     }
 

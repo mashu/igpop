@@ -351,12 +351,6 @@ pub fn builtin() -> Calibration {
     parse(BUILTIN, "built-in score model").expect("the built-in score model is complete")
 }
 
-/// Probability that a variant is real, given the share of real variants
-/// expected before looking at the data (`prior`) and its score.
-pub fn posterior(prior: f64, score: f64) -> f64 {
-    prior * score / (prior * score + 1.0 - prior)
-}
-
 /// A calibration from the text of a `<prefix>.score_model.tsv` written by
 /// an earlier run; `label` names it in error messages.
 pub fn parse(text: &str, label: &str) -> Result<Calibration> {
@@ -421,12 +415,6 @@ mod tests {
         assert_eq!(bin(0.02), 5);
         assert_eq!(bin(0.5), 6);
         assert_eq!(level_range(4), (1e-3, 1e-2));
-    }
-
-    #[test]
-    fn posterior_follows_bayes() {
-        assert!((posterior(0.5, 1.0) - 0.5).abs() < 1e-12);
-        assert!((posterior(0.5, 9.0) - 0.9).abs() < 1e-12);
     }
 
     /// Arbitrary changes mostly unseen or rare, real variants mostly frequent.
