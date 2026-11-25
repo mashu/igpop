@@ -1240,6 +1240,21 @@ function placementNote(allele) {
   return el('p', { class: 'placement-note' }, lines);
 }
 
+/** Why the allele has this verdict and not the next one: the rule, with
+ *  the numbers of its weakest difference. */
+function verdictRule(allele, variants) {
+  if (!['inconclusive', 'needs_confirmation'].includes(allele.verdict) || allele.filters === 'sequence_not_in_panel') return null;
+  const open = variants.filter((v) => v.verdict === allele.verdict);
+  if (!open.length) return null;
+  const weakest = open.reduce((low, v) => (given(v.score) && (!given(low.score) || Number(v.score) < Number(low.score)) ? v : low), open[0]);
+  const name = given(weakest.rsid) ? weakest.rsid : `the ${changeWords(weakest)} at position ${weakest.aln_pos}`;
+  const scored = given(weakest.score) ? `${name} scores ${scoreText(Number(weakest.score))}` : `${name} has no score and ${weakest.class === 'absent' ? 'was never seen' : 'was seen too rarely to tell'}`;
+  const rule = allele.verdict === 'needs_confirmation'
+    ? `A score of ${CONFIRM} or less means the frequency is what an arbitrary base change looks like, so the allele needs confirmation.`
+    : `A score between ${CONFIRM} and ${state.limit} means the frequency cannot tell either way, so the allele is inconclusive.`;
+  return el('p', { class: 'muted', text: `An allele is only as well supported as its weakest difference: ${scored}. ${given(weakest.score) ? rule : ''} The limits are ${CONFIRM} for "needs confirmation" and ${state.limit} for "supported"; the haplotype check can still support an allele whose differences fall short.` });
+}
+
 function alleleDetail(allele) {
   const placement = placementNote(allele);
   const variants = state.variants.get(allele.allele_name) || [];
@@ -1247,6 +1262,7 @@ function alleleDetail(allele) {
   const opened = new Map();
   const parts = [detailSection('Verdict', null,
     el('p', { class: 'reason' }, badge(allele.verdict), ' ', idWords(allele.reason).replace(/variant\(s\)/g, variants.length === 1 ? 'difference' : 'differences').replace(/\bvariants\b/g, 'differences')),
+    verdictRule(allele, variants),
     placement,
     given(allele.notes) ? el('p', { class: 'muted', text: `Keep in mind: ${allele.notes.replace(/difference\(s\)/g, 'differences').replace(' (column kgp_site_qc says why)', '').replace(/1kGP_30x/g, '1000 Genomes 30x').replace(/1kGP_phase3/g, '1000 Genomes phase 3').replace(/gnomAD_v/g, 'gnomAD v')}.` }) : null)];
   if (variants.length) parts.push(detailSection('Differences from the reference genome', 'Is each difference, taken by itself, carried by people?', variantTable(variants, opened)));
