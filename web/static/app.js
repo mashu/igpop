@@ -490,7 +490,7 @@ function renderEvidencePlan(groups, genes, sources) {
     const mine = sources.filter((s) => s.build === build);
     if (!members.length) return null;
     return el('table', { class: 'plan-table' },
-      el('caption', {}, el('b', { text: `Genes on ${build}` }), ` ${plural(members.length, 'gene')}`),
+      el('caption', {}, el('i', { class: `swatch j-${build === builds[0] ? 'main' : 'older'}` }), ' ', el('b', { text: `Genes on ${build}` }), ` ${plural(members.length, 'gene')}`),
       el('thead', { class: 'sr' }, el('tr', {}, ...['Dataset', 'Gives', 'People'].map((h) => el('th', { scope: 'col', text: h })))),
       el('tbody', {}, mine.map((s) => el('tr', {},
         el('th', { scope: 'row' }, s.title, ' ', hint(`About ${s.title}`, el('span', { class: 'help-text' }, el('span', { text: `${s.about[0].toUpperCase()}${s.about.slice(1)}.` })))),

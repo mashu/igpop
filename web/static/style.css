@@ -652,3 +652,15 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .tabs.pills { border-bottom: 0; gap: 0.4rem; margin-top: 0; }
 .tabs.pills button { border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.9rem; font-size: 0.9rem; }
 .tabs.pills button[aria-selected=true] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* ---- before the run: one colour per thing told apart ---- */
+:root { --c-main: #2a78d6; --c-older: #eb6834; --c-freq: #6250d6; --c-hap: #b77c00; }
+@media (prefers-color-scheme: dark) { :root { --c-main: #3987e5; --c-older: #d95926; --c-freq: #9085e9; --c-hap: #c98500; } }
+.j-main { background: var(--c-main); }
+.j-older { background: var(--c-older); }
+#check { border-left-color: var(--c-main); }
+#check .plan-kind { color: var(--surface); background: var(--c-freq); border-color: var(--c-freq); font-weight: 700; }
+#check .plan-kind.k-haplotypes { background: var(--c-hap); border-color: var(--c-hap); }
+#check .plan-track i { background: var(--c-freq); }
+#check .plan-track i.k-haplotypes { background: var(--c-hap); }
+.plan-table caption .swatch { vertical-align: -0.05rem; }
