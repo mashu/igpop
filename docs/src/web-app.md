@@ -226,6 +226,8 @@ gene under the reference, 5' to 3'.
   under Verdict settings.
 - **Regions.** For heavy-chain V genes a line shows FR1, CDR1, FR2, CDR2,
   FR3 and the start of CDR3, and the popup of a column names its region.
+  CDR3 is only a few bases long here: a V gene ends just after the second
+  cysteine, and the rest of CDR3 comes from the D and J genes.
   The borders are placed from the conserved residues of a V gene (the two
   cysteines and the tryptophan) and standard framework lengths, not from
   an IMGT alignment, so they can be off by a codon or two. For the 53

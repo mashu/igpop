@@ -1911,7 +1911,7 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
   const regionAt = (c) => (regions || []).find(([, from, to]) => c >= from && c <= to);
   const regionLine = regions ? [
     el('span', { style: `display:inline-block;width:${regions[0][1]}ch` }),
-    ...regions.map(([name, from, to]) => el('span', { class: `aln-region ${name.startsWith('CDR') ? 'cdr' : 'fr'}`, style: `width:${to - from + 1}ch` }, to - from + 1 >= name.length + 1 ? el('small', { text: name }) : null))] : null;
+    ...regions.map(([name, from, to]) => el('span', { class: `aln-region ${name.startsWith('CDR') ? 'cdr' : 'fr'}`, title: name === 'CDR3' ? 'The first bases of CDR3; the rest comes from the D and J genes' : name, style: `width:${to - from + 1}ch` }, to - from + 1 >= name.length + 1 ? el('small', { text: name }) : null))] : null;
   // The verdict of each difference, by allele and column, so that the
   // ones that are not supported stand out.
   const verdictAt = (name) => {
@@ -1961,7 +1961,7 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     const base = (aln.rows.get(row) || '')[col] || ' ';
     const differing = [...aln.rows].filter(([n, seq]) => n !== 'reference' && /[A-Za-z-]/.test(seq[col] || '')).length;
     const parts = [
-      el('b', { text: col < geneFirst ? `${geneFirst - col} base${geneFirst - col > 1 ? 's' : ''} before the gene` : col > geneLast ? `${col - geneLast} base${col - geneLast > 1 ? 's' : ''} after the gene` : `Base ${inGene(col)} of the gene${regionAt(col) ? `, in ${regionAt(col)[0]}` : ''}` }),
+      el('b', { text: col < geneFirst ? `${geneFirst - col} base${geneFirst - col > 1 ? 's' : ''} before the gene` : col > geneLast ? `${col - geneLast} base${col - geneLast > 1 ? 's' : ''} after the gene` : `Base ${inGene(col)} of the gene${regionAt(col) ? `, in ${regionAt(col)[0] === 'CDR3' ? 'the first bases of CDR3' : regionAt(col)[0]}` : ''}` }),
       el('span', { class: 'muted', text: `${aln.build} ${aln.contig}:${pos.toLocaleString('en')}` }),
       el('span', {}, 'Reference: ', el('b', { class: `nt nt-${reference}`, text: reference })),
       el('span', {}, `${row}: `, BASE_WORDS[base] ? BASE_WORDS[base] : el('b', { class: `nt nt-${base.toUpperCase()}`, text: base })),
@@ -2048,7 +2048,7 @@ function alignmentPanel(block, alleleName, opened = new Map()) {
     own ? el('p', { class: 'muted', text: `${alleleName}: ${own.replace(/\s{2,}/g, ', ')}.` }) : null,
     el('p', { class: 'aln-where', text: aln.title.replace(/\s{2,}/g, ' · ') }),
     grid, tip,
-    regions ? el('p', { class: 'muted aln-foot', text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the three conserved residues of a V gene (two cysteines and a tryptophan) and can be off by a codon or two from the IMGT definition.' }) : null);
+    regions ? el('p', { class: 'muted aln-foot', text: 'FR and CDR are the framework and complementarity-determining regions. Their borders are placed from the three conserved residues of a V gene (two cysteines and a tryptophan) and can be off by a codon or two from the IMGT definition. A V gene holds only the first few bases of CDR3; the rest of it comes from the D and J genes and the joints between them, so it is not in a germline allele.' }) : null);
 }
 
 // ---- score and checks ------------------------------------------------------
