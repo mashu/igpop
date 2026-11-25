@@ -114,6 +114,14 @@ let worker = null;
 
 function show(section) {
   for (const id of ['start', 'check', 'progress', 'error', 'results']) $(id).hidden = id !== section;
+  // The steps of a run, with the present one marked.
+  const order = ['start', 'check', 'progress', 'results'];
+  $('stages').hidden = !order.includes(section) || section === 'start';
+  for (const item of $('stages').children) {
+    const at = order.indexOf(item.dataset.step) - order.indexOf(section);
+    item.className = at < 0 ? 'done' : at === 0 ? 'now' : '';
+    if (at === 0) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
+  }
   if (section !== 'progress') clearInterval(run.timer);
 }
 
@@ -438,8 +446,8 @@ function renderOverview(groups, genes, sources, alleles) {
   ].filter((part) => part.count > 0);
   const total = parts.reduce((n, part) => n + part.count, 0) || 1;
   const namesCount = new Set(alleles.map((a) => a.named)).size;
-  const tile = (count, label, sub, cls = '') => el('div', { class: `fact-tile ${cls}` },
-    el('span', { class: 'tile-count', text: count }), el('span', { class: 'fact-label', text: label }), sub ? el('span', { class: 'tile-sub', text: sub }) : null);
+  const fact = (count, label, sub, cls = '') => el('div', { class: `fact ${cls}` },
+    el('b', { text: count }), el('span', { text: ` ${label}` }), sub ? el('small', { text: sub }) : null);
   const notes = [];
   if (open.length) {
     notes.push(el('p', { class: 'check-note warn' }, el('span', { class: 'plan-warn', 'aria-hidden': 'true', text: '!' }),
@@ -455,10 +463,10 @@ function renderOverview(groups, genes, sources, alleles) {
       hint('Why older data', el('span', { class: 'help-text' }, el('span', { text: `These genes are missing from ${builds[0]}. They are judged with the older data of ${builds[1]}, so read their verdicts with more caution.` })))));
   }
   $('check-overview').replaceChildren(
-    el('div', { class: 'fact-tiles' },
-      tile(alleles.length.toLocaleString('en'), alleles.length === 1 ? 'allele' : 'alleles'),
-      tile(String(namesCount), namesCount === 1 ? 'gene name' : 'gene names', open.length ? `${new Set(open.map((g) => g.named)).size} not matched` : 'all matched to a gene', open.length ? 'warn' : 'good'),
-      tile(String(sources.filter((source) => source.build === builds[0]).length), 'datasets', 'nothing downloaded yet')),
+    el('div', { class: 'facts-row' },
+      fact(alleles.length.toLocaleString('en'), alleles.length === 1 ? 'allele' : 'alleles'),
+      fact(String(namesCount), namesCount === 1 ? 'gene name' : 'gene names', open.length ? `${new Set(open.map((g) => g.named)).size} not matched` : 'all matched to a gene', open.length ? 'warn' : 'good'),
+      fact(String(sources.filter((source) => source.build === builds[0]).length), 'datasets')),
     el('div', { class: 'judged' },
       el('h3', { class: 'plan-title', text: 'Which data will judge your alleles' }),
       el('div', { class: 'judged-bar', role: 'img', 'aria-label': parts.map((part) => `${part.count} ${part.name}`).join(', ') },

@@ -626,3 +626,29 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .plan-track i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
 .plan-track i.k-haplotypes { background: var(--supported); }
 #view-check-genes .fold > summary { list-style: none; cursor: default; }
+
+/* ---- the steps of a run; the page before the run looks unlike the results ---- */
+.stages { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0; margin: 1.6rem 0 0; padding: 0; counter-reset: step; font-size: 0.88rem; color: var(--muted); }
+.stages li { counter-increment: step; display: flex; align-items: center; gap: 0.45rem; }
+.stages li::before { content: counter(step); display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1.5px solid var(--line); font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stages li + li { margin-left: 0.6rem; }
+
+.stages li:not(:last-child)::after { content: ""; width: 2rem; height: 1.5px; background: var(--line); margin-left: 0.6rem; }
+.stages li.done { color: var(--ink); }
+.stages li.done::before { content: "\2713"; background: var(--supported); border-color: var(--supported); color: var(--surface); }
+.stages li.now { color: var(--ink); font-weight: 700; }
+.stages li.now::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.stages + .panel, .stages + section { margin-top: 1rem; }
+#check { border-left: 4px solid var(--accent); }
+.facts-row { display: flex; flex-wrap: wrap; gap: 0.4rem 2.2rem; margin: 0.6rem 0 1.2rem; align-items: baseline; }
+.fact b { font-size: 1.5rem; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.fact small { margin-left: 0.5rem; color: var(--muted); }
+.fact.good small { color: var(--supported); font-weight: 600; }
+.fact.warn b, .fact.warn small { color: var(--confirm); font-weight: 700; }
+.start-band { display: flex; flex-wrap: wrap; gap: 0.8rem 1.5rem; align-items: center; justify-content: space-between; margin: 1.3rem 0 0; padding: 1rem 1.1rem; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.start-band > div:first-child { display: grid; gap: 0.15rem; }
+#check .start-band .actions { margin: 0; }
+.check-details { font-size: 0.95rem; margin: 1.8rem 0 0.5rem; color: var(--muted); font-weight: 600; }
+.tabs.pills { border-bottom: 0; gap: 0.4rem; margin-top: 0; }
+.tabs.pills button { border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.9rem; font-size: 0.9rem; }
+.tabs.pills button[aria-selected=true] { background: var(--ink); color: var(--surface); border-color: var(--ink); }

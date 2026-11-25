@@ -105,7 +105,7 @@ lists each file as it is read.
 An allele is matched to a gene by the part of its name before `*`, and the
 gene must be in the gene list, which says where each gene lies on the
 reference genome. After you choose a file, and before anything is
-downloaded, a short page says what the run will do: how many alleles and
+downloaded, a short page says what the run will do (a line of four steps above it shows where you are: file, check, analysis, results): how many alleles and
 gene names the file has, whether every name is matched to a gene, and one
 bar that divides the alleles by the data that will judge them. The button
 to start the run is right below. Details are in three tabs: **Data to be

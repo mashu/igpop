@@ -19,6 +19,12 @@
   </header>
 
   <main id="main">
+    <ol id="stages" class="stages" aria-label="Where you are" hidden>
+      <li data-step="start">Choose a file</li>
+      <li data-step="check">Check before the run</li>
+      <li data-step="progress">Analysis</li>
+      <li data-step="results">Results</li>
+    </ol>
     <section id="start" class="hero">
       <h1>Are your germline alleles seen in human populations?</h1>
       <p class="lead">Check immunoglobulin germline alleles against 1000 Genomes and dbSNP.
@@ -60,11 +66,18 @@
       <p id="check-summary" class="muted" aria-live="polite"></p>
       <p id="check-error" class="check-error" role="alert" hidden></p>
       <div id="check-overview"></div>
-      <div class="actions">
-        <button type="button" class="primary" id="check-run">Run the analysis</button>
-        <button type="button" class="ghost" data-restart>Choose another file</button>
+      <div class="start-band">
+        <div>
+          <b>Nothing has been downloaded yet.</b>
+          <span class="muted">The run reads only the regions of your genes from each dataset.</span>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" id="check-run">Run the analysis</button>
+          <button type="button" class="ghost" data-restart>Choose another file</button>
+        </div>
       </div>
-      <div class="tabs" role="tablist" aria-label="Details before the run">
+      <h3 class="check-details">Details, if you want to look first</h3>
+      <div class="tabs pills" role="tablist" aria-label="Details before the run">
         <button role="tab" id="tab-check-data" aria-controls="view-check-data" aria-selected="true">Data to be read</button>
         <button role="tab" id="tab-check-names" aria-controls="view-check-names" aria-selected="false" tabindex="-1">Gene names</button>
         <button role="tab" id="tab-check-genes" aria-controls="view-check-genes" aria-selected="false" tabindex="-1">Gene list</button>
