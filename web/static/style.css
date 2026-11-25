@@ -571,3 +571,4 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .why > div { display: grid; grid-template-columns: 11rem 1fr; gap: 0.6rem; }
 .why dt { color: var(--muted); }
 .why dd { margin: 0; font-weight: 600; }
+.compare .one-percent { stroke: var(--confirm); stroke-width: 1.2; stroke-dasharray: 3 3; }
