@@ -92,9 +92,8 @@ struct Args {
     /// Do not use dbSNP.
     #[arg(long)]
     no_dbsnp: bool,
-    /// Do not use the further datasets read for GRCh38: ALFA by
-    /// population, the GenomeAsia pilot, ToMMo 61KJPN and WBBC.
-    #[arg(long)]
+    /// For evaluation only: leave out ALFA, GenomeAsia, ToMMo and WBBC.
+    #[arg(long, hide = true)]
     no_more_datasets: bool,
     /// dbSNP frequency datasets left out of the evidence, comma-separated.
     /// Default: SGDP_PRJ, whose per-site samples are often one or two

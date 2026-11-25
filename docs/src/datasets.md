@@ -13,8 +13,7 @@
 | Westlake BioBank for Chinese (WBBC) | GRCh38 | 4,480 | Counts in four regions of China: North, Central, South, Lingnan. |
 | 1000 Genomes 30x phased panel | GRCh38 | 2,598 founders | Haplotype check only. |
 
-The last four are read for GRCh38 only and can be switched off together
-(`--no-more-datasets`, or *Read more populations* in the web app). They
+The last four are read for GRCh38 only. They
 add populations the first two cover thinly or as one block: Japanese,
 regions of China, Southeast Asia, and the populations of ALFA one by one
 (dbSNP passes on only its total). ALFA and ToMMo are also among the

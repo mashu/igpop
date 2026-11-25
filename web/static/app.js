@@ -405,7 +405,6 @@ function askCheck() {
     type: 'check', id: names.asked, fasta: currentFasta(), name: names.pending.name, build: $('opt-build').value,
     haplotypes: $('opt-hap').checked,
     gnomad: $('opt-gnomad').checked,
-    more: $('opt-more').checked,
     coords: names.rows ? geneListText(names.rows) : undefined, aliases: aliasText(),
   });
 }
@@ -768,7 +767,6 @@ function runChecked() {
     marker: $('opt-marker').value || '_S',
     haplotypes: $('opt-hap').checked,
     gnomad: $('opt-gnomad').checked,
-    more: $('opt-more').checked,
     paralog: $('opt-paralog').checked,
     coords: names.rows ? geneListText(names.rows) : undefined,
     aliases: aliasText(),
@@ -813,7 +811,7 @@ function wireGeneList() {
       fail(`The example could not be loaded (${error.message}).`);
     }
   });
-  for (const id of ['opt-build', 'opt-hap', 'opt-gnomad', 'opt-more']) $(id).addEventListener('change', askCheck);
+  for (const id of ['opt-build', 'opt-hap', 'opt-gnomad']) $(id).addEventListener('change', askCheck);
   $('gene-filter').addEventListener('input', renderGeneList);
   $('gene-reset').addEventListener('click', () => setGeneList(null));
   $('gene-upload').addEventListener('click', () => $('gene-file').click());
