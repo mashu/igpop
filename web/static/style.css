@@ -2,12 +2,12 @@
    once as variables, with a dark variant; verdicts always carry an icon and
    a word besides their colour. */
 :root {
-  --paper: #f6f4ef;
+  --paper: #f5f5f9;
   --surface: #ffffff;
-  --ink: #1c2330;
-  --muted: #5d6675;
-  --line: #dcd8cf;
-  --accent: #0b6e69;
+  --ink: #1d1b33;
+  --muted: #5f5d75;
+  --line: #dddbe8;
+  --accent: #5b3fb8;
   --accent-ink: #ffffff;
   --supported: #1f7a4d;
   --inconclusive: #9a6200;
@@ -21,13 +21,13 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #12161d;
-    --surface: #1a2029;
-    --ink: #e9edf3;
-    --muted: #a3adbd;
-    --line: #2d3644;
-    --accent: #4fc4bb;
-    --accent-ink: #06211f;
+    --paper: #15141f;
+    --surface: #1e1c2b;
+    --ink: #ecebf5;
+    --muted: #a9a6bd;
+    --line: #322f45;
+    --accent: #a594f9;
+    --accent-ink: #17142b;
     --supported: #58c58f;
     --inconclusive: #e0a84a;
     --confirm: #f08a6c;
@@ -593,3 +593,74 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .doubt-stack .v-inconclusive, .swatch.v-inconclusive { background: var(--inconclusive); }
 .doubt-stack .v-needs_confirmation, .swatch.v-needs_confirmation { background: var(--confirm); }
 .doubt-stack .v-not_assessed, .swatch.v-not_assessed { background: var(--grey); }
+
+/* ---- before the run: facts, one bar, details in tabs ---- */
+#check .actions { margin: 1.1rem 0 0; }
+.fact-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 1rem 0 1.2rem; max-width: 44rem; }
+.fact-tile { border: 1px solid var(--line); border-radius: 12px; padding: 0.8rem 1rem; display: grid; gap: 0.15rem; }
+.fact-label { font-weight: 650; }
+.fact-tile.good .tile-sub { color: var(--supported); }
+.fact-tile.warn { border-color: var(--confirm); }
+.fact-tile.warn .tile-sub { color: var(--confirm); font-weight: 600; }
+.judged { max-width: 44rem; }
+.judged-bar { display: flex; gap: 2px; height: 1.5rem; }
+.judged-bar i { display: block; border-radius: 4px; min-width: 6px; }
+.j-main { background: var(--accent); }
+.j-older { background: var(--neutral); }
+.j-none { background: var(--grey); }
+.j-open { background: var(--confirm); }
+.judged .legend { margin: 0.5rem 0 0; }
+.check-note { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.check-note.warn { color: var(--confirm); }
+#check .tabs { margin-top: 1.4rem; }
+#check [role=tabpanel] { padding-top: 0.9rem; }
+.plan-table { width: 100%; max-width: 44rem; margin: 0 0 1.2rem; font-size: 0.92rem; table-layout: fixed; }
+.plan-table th { width: 46%; }
+.plan-table td:nth-child(2) { width: 20%; }
+.plan-table caption { text-align: left; padding: 0.2rem 0 0.4rem; color: var(--muted); }
+.plan-table caption b { color: var(--ink); font-size: 0.98rem; margin-right: 0.4rem; }
+.plan-table th, .plan-table td { padding: 0.35rem 0.8rem 0.35rem 0; border-bottom: 0; vertical-align: middle; }
+.plan-table tbody th { font-weight: 600; }
+.plan-size { white-space: nowrap; }
+.plan-track { display: inline-block; width: 45%; height: 0.6rem; border-radius: 3px; background: color-mix(in srgb, var(--ink) 9%, transparent); vertical-align: middle; margin-right: 0.6rem; }
+.plan-track i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.plan-track i.k-haplotypes { background: var(--supported); }
+#view-check-genes .fold > summary { list-style: none; cursor: default; }
+
+/* ---- the steps of a run; the page before the run looks unlike the results ---- */
+.stages { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0; margin: 1.6rem 0 0; padding: 0; counter-reset: step; font-size: 0.88rem; color: var(--muted); }
+.stages li { counter-increment: step; display: flex; align-items: center; gap: 0.45rem; }
+.stages li::before { content: counter(step); display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1.5px solid var(--line); font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stages li + li { margin-left: 0.6rem; }
+
+.stages li:not(:last-child)::after { content: ""; width: 2rem; height: 1.5px; background: var(--line); margin-left: 0.6rem; }
+.stages li.done { color: var(--ink); }
+.stages li.done::before { content: "\2713"; background: var(--supported); border-color: var(--supported); color: var(--surface); }
+.stages li.now { color: var(--ink); font-weight: 700; }
+.stages li.now::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.stages + .panel, .stages + section { margin-top: 1rem; }
+#check { border-left: 4px solid var(--accent); }
+.facts-row { display: flex; flex-wrap: wrap; gap: 0.4rem 2.2rem; margin: 0.6rem 0 1.2rem; align-items: baseline; }
+.fact b { font-size: 1.5rem; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.fact small { margin-left: 0.5rem; color: var(--muted); }
+.fact.good small { color: var(--supported); font-weight: 600; }
+.fact.warn b, .fact.warn small { color: var(--confirm); font-weight: 700; }
+.start-band { display: flex; flex-wrap: wrap; gap: 0.8rem 1.5rem; align-items: center; justify-content: space-between; margin: 1.3rem 0 0; padding: 1rem 1.1rem; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.start-band > div:first-child { display: grid; gap: 0.15rem; }
+#check .start-band .actions { margin: 0; }
+.check-details { font-size: 0.95rem; margin: 1.8rem 0 0.5rem; color: var(--muted); font-weight: 600; }
+.tabs.pills { border-bottom: 0; gap: 0.4rem; margin-top: 0; }
+.tabs.pills button { border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.9rem; font-size: 0.9rem; }
+.tabs.pills button[aria-selected=true] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* ---- before the run: one colour per thing told apart ---- */
+:root { --c-main: #3a6fc4; --c-older: #c96a3a; --c-freq: #5b3fb8; --c-hap: #9a7410; }
+@media (prefers-color-scheme: dark) { :root { --c-main: #6f9ae0; --c-older: #d98a5f; --c-freq: #a594f9; --c-hap: #c9a04a; } }
+.j-main { background: var(--c-main); }
+.j-older { background: var(--c-older); }
+#check { border-left-color: var(--c-main); }
+#check .plan-kind { color: var(--c-freq); background: color-mix(in srgb, var(--c-freq) 16%, transparent); border-color: color-mix(in srgb, var(--c-freq) 45%, transparent); font-weight: 700; }
+#check .plan-kind.k-haplotypes { color: var(--c-hap); background: color-mix(in srgb, var(--c-hap) 16%, transparent); border-color: color-mix(in srgb, var(--c-hap) 45%, transparent); }
+#check .plan-track i { background: var(--c-freq); }
+#check .plan-track i.k-haplotypes { background: var(--c-hap); }
+.plan-table caption .swatch { vertical-align: -0.05rem; }

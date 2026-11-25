@@ -105,8 +105,15 @@ lists each file as it is read.
 An allele is matched to a gene by the part of its name before `*`, and the
 gene must be in the gene list, which says where each gene lies on the
 reference genome. After you choose a file, and before anything is
-downloaded, the page shows how the names of the file connect to the genes
-of the list, one line per connection:
+downloaded, a short page says what the run will do (a line of four steps above it shows where you are: file, check, analysis, results): how many alleles and
+gene names the file has, whether every name is matched to a gene, and one
+bar that divides the alleles by the data that will judge them. The button
+to start the run is right below. Details are in three tabs: **Data to be
+read**, **Gene names** and **Gene list**. If a name is not matched, the
+page says so in red and opens Gene names for you.
+
+**Gene names** shows how the names of the file connect to the genes of the
+list, one line per connection:
 
 | Arrow | Meaning |
 |---|---|
@@ -124,18 +131,19 @@ Both sides can be changed. On the side of the file, the menu of a line
 sets what to do with its alleles, and "edit names" opens the alleles one
 by one: correct a name (your file is not changed; the corrected name is
 used for this run) or decide for a single allele. On the side of the list,
-**Gene list** lets you look through the genes, remove one, add one (gene,
+the tab **Gene list** lets you look through the genes, remove one, add one (gene,
 build, contig, first and last base, strand), load your own list from a
 tab-separated file, or save the current one. Your list and your matches
 are kept in this browser; "Back to the built-in list" discards the list.
 
 ## Where the evidence comes from
 
-The same step shows, before the run, which data will be read for which
-genes: one card per genome build with its sources (frequencies or whole
-sequences, and how many people), a card for genes that lie outside the
-chromosomes and get no population data, and for every gene of the file the
-sources that will be used for it.
+The tab **Data to be read** lists, before the run, the datasets of each
+genome build: whether a dataset gives frequencies or whole sequences, and
+how many people it holds, as a bar on one scale. A question mark beside
+each name says who is in it. Genes that lie outside the chromosomes and
+get no population data, and genes judged with the older data of GRCh37,
+are named under the bar at the top of the page.
 
 After the run, the tab **Data used** shows what each source had to say:
 how many of the distinct differences of the run it has seen, for how many
