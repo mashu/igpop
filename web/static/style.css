@@ -524,3 +524,4 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .aln-region.cdr { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 .aln-line .nt { padding: 0; border-radius: 3px; }
 .aln-column { outline: 0; background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 1px 0 0 var(--accent), inset -1px 0 0 var(--accent); }
+.other-end { display: block; color: var(--muted); font-size: 0.78rem; white-space: nowrap; }

@@ -1641,7 +1641,7 @@ function evidencePanel(v) {
   return el('div', { class: 'evidence' },
     el('div', { class: 'evidence-part' },
       el('h4', { text: 'Where' }),
-      el('p', {}, `Base ${v.aln_pos} of your sequence (counted from its first base), ${v.build || ''} ${v.contig}:${Number(v.genome_pos).toLocaleString('en')} on the genome. `,
+      el('p', {}, `Base ${v.aln_pos} of your sequence (counted from its first base${given(v.aln_pos_genome_strand) && v.aln_pos_genome_strand !== v.aln_pos ? `; base ${v.aln_pos_genome_strand} when the allele is read along the forward strand of the genome, because this gene lies on the reverse strand` : ''}), ${v.build || ''} ${v.contig}:${Number(v.genome_pos).toLocaleString('en')} on the genome. `,
         `A ${kind}: the reference genome has ${referenceBases(v) || v.vcf_ref}, this allele has ${v.query_variant}`,
         el('span', { class: 'muted', text: ' (written on the forward strand of the genome, as in the population files; the alignment below shows the gene in its own direction).' }))),
     el('div', { class: 'evidence-part' },
@@ -1748,7 +1748,8 @@ function variantTable(variants, opened) {
     return [el('tr', {},
       el('th', { scope: 'row' }, rsLink(v),
         explain(el('span', { class: 'hint-value plain', tabindex: '0' }, el('small', { text: change(v) }), el('small', { text: `${v.contig}:${Number(v.genome_pos).toLocaleString('en')}` })), peoplePopup(v))),
-      el('td', { text: v.aln_pos }),
+      el('td', {}, v.aln_pos, given(v.aln_pos_genome_strand) && v.aln_pos_genome_strand !== v.aln_pos
+        ? el('small', { class: 'other-end', title: 'The same base counted along the forward strand of the genome, that is, from the other end of the allele. Tools that work on the genome strand, such as IgSNPer, report this number.', text: `${v.aln_pos_genome_strand} on the genome strand` }) : null),
       el('td', {}, badge(v.verdict)),
       el('td', {}, chips(v.filters), siteQuality(v)),
       scoreCell(v),
