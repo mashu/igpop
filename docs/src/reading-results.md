@@ -74,10 +74,11 @@ For each variant, `variants.tsv` holds what the verdict is made of:
 | `class` | `common`: shown to reach 1% in at least one population. `uncommon`: seen, but not shown to reach 1%. `absent`: never seen. |
 | `support` | The frequency the data *guarantee* in the best population (a lower confidence bound, so small studies cannot inflate it). |
 | `score` | A likelihood ratio: how many times more often this level of support occurs among variants of real alleles than among arbitrary base changes. Around 70 = typical of real variants; 1 = no information either way; 0.01 = typical of arbitrary changes. |
-| `verdict` | The verdict of the variant by frequency: `supported` if `class` is `common` or the score is at least 10; `needs_confirmation` if the score is at most 0.1; otherwise `inconclusive`. |
+| `verdict` | The verdict of the variant by frequency: `supported` if `class` is `common` or the score is at least 2; `needs_confirmation` if the score is at most 0.1; otherwise `inconclusive`. |
 
-A score of 10 or 0.1 means the data favour one explanation ten to one, the
-usual mark for strong evidence. Both limits can be changed
+A score of 2 means that such support is twice as typical of real variants
+as of arbitrary changes; a score of 0.1 means ten to one for an arbitrary
+change. Both limits can be changed
 (`--supported-score`, `--confirm-score`).
 
 ## Why not simply count uncommon variants?

@@ -183,14 +183,14 @@
             <div class="settings">
               <section class="setting" id="limit-setting" hidden>
                 <div class="setting-head">
-                  <label for="limit">Count a difference as supported from a score of</label>
-                  <output id="limit-value" for="limit">10</output>
-                  <button type="button" class="link" id="limit-reset" hidden>Reset to 10</button>
+                  <label for="limit-value">Count a difference as supported from a score of</label>
+                  <input id="limit-value" type="number" min="0" max="100" step="0.1" value="2" inputmode="decimal">
+                  <button type="button" class="link" id="limit-reset" hidden>Reset to 2</button>
                 </div>
                 <div class="slider">
-                  <span aria-hidden="true">2</span>
-                  <input id="limit" type="range" min="0" max="11" step="1" value="6" aria-describedby="limit-note">
-                  <span aria-hidden="true">100</span>
+                  <span aria-hidden="true">0</span>
+                  <input id="limit" type="range" min="0" max="20" step="0.1" value="2" aria-label="The same limit as a slider, from 0 to 20" aria-describedby="limit-note">
+                  <span aria-hidden="true">20</span>
                 </div>
                 <div id="limit-note" class="facts" aria-live="polite"></div>
               </section>

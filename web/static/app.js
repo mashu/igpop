@@ -900,9 +900,7 @@ function badge(verdict) {
 
 // ---- the limit for "supported": a setting, not part of the evidence ---------
 
-// Below 2 a score says too little to call anything supported.
-const LIMITS = [2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100];
-const RUN_LIMIT = 10; // the limit the analysis itself was run with
+const RUN_LIMIT = 2; // the limit the analysis itself is run with
 const CONFIRM = 0.1;
 const FILTER_ORDER = ['no_population_data', 'never_observed', 'single_observation', 'rare_in_every_population', 'common_not_demonstrated', 'low_score', 'intermediate_score', 'not_scored'];
 const SCORE_FILTERS = ['low_score', 'intermediate_score', 'not_scored'];
@@ -938,7 +936,7 @@ function applyLimit(limit) {
       else if (v.verdict === 'supported') v.filters = '.';
       else {
         // What the data show stays; how that scores is read again.
-        const shown = given(v.run.filters) ? v.run.filters.split(',').filter((f) => !SCORE_FILTERS.includes(f)) : ['common_not_demonstrated'];
+        const shown = given(v.data_show) ? [v.data_show] : given(v.run.filters) ? v.run.filters.split(',').filter((f) => !SCORE_FILTERS.includes(f)) : ['common_not_demonstrated'];
         v.filters = [...shown, given(v.score) ? (Number(v.score) <= CONFIRM ? 'low_score' : 'intermediate_score') : 'not_scored'].join(',');
       }
     }
@@ -983,25 +981,32 @@ function renderLimit() {
   const model = scoreModel();
   $('limit-setting').hidden = !model;
   if (!model) return;
-  $('limit').value = String(LIMITS.indexOf(state.limit));
-  $('limit-value').textContent = String(state.limit);
+  $('limit').value = String(Math.min(20, state.limit));
+  $('limit-value').value = String(state.limit);
   $('limit-reset').hidden = state.limit === RUN_LIMIT;
-  const at = model.supportAt(state.limit);
+  // The smallest support that passes; a limit at or below the score of a
+  // base never seen lets everything pass.
+  const everything = model.score(0) >= state.limit;
+  const at = everything ? 0 : model.supportAt(state.limit);
   const supported = state.alleles.filter((a) => a.verdict === 'supported').length;
   const before = state.alleles.filter((a) => a.run.verdict === 'supported').length;
   const change = supported === before ? '' : ` (${supported > before ? `${supported - before} more` : `${before - supported} fewer`} than at ${RUN_LIMIT})`;
   const fact = (number, words) => el('span', {}, el('b', { text: number }), words);
+  const reading = state.limit >= 10 ? 'From 10 on, a score is usually read as strong evidence.'
+    : state.limit >= 3 ? 'Between 3 and 10, a score is usually read as positive but not strong evidence.'
+      : state.limit > 1 ? 'Between 1 and 3, a score is weak evidence: such a difference is more typical of real variants than of arbitrary changes, but not by much.'
+        : 'At 1 or below, a difference passes although its support is no more typical of real variants than of arbitrary changes.';
   $('limit-note').replaceChildren(
-    Number.isFinite(at) ? fact(percent(at), 'frequency a difference must be shown to reach') : fact('none', 'no frequency reaches this score in this run'),
-    Number.isFinite(at) ? fact(pct(model.chance(at)), 'of arbitrary base changes would pass') : null,
+    everything ? fact('any', 'even a base never seen passes') : Number.isFinite(at) ? fact(percent(at), 'frequency a difference must be shown to reach') : fact('none', 'no frequency reaches this score in this run'),
+    everything ? fact('100%', 'of arbitrary base changes would pass') : Number.isFinite(at) ? fact(pct(model.chance(at)), 'of arbitrary base changes would pass') : null,
     fact(String(supported), `alleles supported${change}`),
-    el('p', { text: state.limit === RUN_LIMIT
-      ? '10 is the usual mark for strong evidence. The scores do not depend on it.'
-      : 'Verdicts, counts and the tables under Files follow this limit. The report describes the run at 10.' }));
+    el('p', { text: `${reading}${state.limit === RUN_LIMIT ? '' : ` Verdicts, counts and the tables under Files follow this limit; the report describes the run at ${RUN_LIMIT}.`}` }));
 }
 
 function wireLimit() {
-  const move = (limit) => {
+  const move = (value) => {
+    const limit = Math.min(100, Math.max(0, Math.round(10 * Number(value)) / 10));
+    if (!Number.isFinite(limit)) return renderLimit();
     applyLimit(limit);
     renderTiles();
     renderLimit();
@@ -1011,9 +1016,10 @@ function wireLimit() {
   };
   $('limit').addEventListener('input', () => {
     // While dragging, only the number moves; the list follows on release.
-    $('limit-value').textContent = String(LIMITS[Number($('limit').value)]);
+    $('limit-value').value = $('limit').value;
   });
-  $('limit').addEventListener('change', () => move(LIMITS[Number($('limit').value)]));
+  $('limit').addEventListener('change', () => move($('limit').value));
+  $('limit-value').addEventListener('change', () => move($('limit-value').value));
   $('limit-reset').addEventListener('click', () => move(RUN_LIMIT));
   $('f-order').addEventListener('input', renderAlleles);
 }
@@ -1316,7 +1322,7 @@ function scoreHint() {
     points.length ? el('span', { class: 'hint-table' }, points.map(([support, words]) => el('span', {},
       el('b', { text: scoreText(model.score(support)) }),
       el('span', { text: `${words}: ${scoreWords(model.score(support))}` })))) : null,
-    el('span', { text: `${state.limit} or more counts as supported (the limit you can set above the list), 0.1 or less as needing confirmation. These limits are conventions for strong evidence; around 1 the frequency cannot tell.` }));
+    el('span', { text: `${state.limit} or more counts as supported (the limit you can set above the list), 0.1 or less as needing confirmation. These limits are conventions; around 1 the frequency cannot tell, and 10 or more is usually read as strong evidence.` }));
 }
 
 // ---- variants: one row each, with a frequency strip -------------------------
@@ -1685,7 +1691,7 @@ function comparison(v) {
   if (!model) return null;
   const score = Number(v.score);
   const [low, high] = given(v.score_low) ? [Number(v.score_low), Number(v.score_high)] : model.interval(number(v.support));
-  const reading = score >= state.limit ? (state.limit >= 10 ? 'That is strong evidence for a real variant.' : 'That is above the limit you set for a supported difference.')
+  const reading = score >= 10 ? 'That is strong evidence for a real variant.' : score >= state.limit && score > 1 ? 'That speaks for a real variant and is above the limit for a supported difference, without being strong evidence.'
     : score > 1 ? 'That speaks for a real variant, the more so the higher the score, but is not strong evidence by itself. "Inconclusive" means exactly that, not "ruled out".'
       : score > 0.1 ? 'That speaks mildly against a real variant without ruling it out.'
         : 'That is what an arbitrary change looks like: the difference needs confirmation from other data.';
@@ -1700,7 +1706,7 @@ function comparison(v) {
     state.prior
       ? el('p', {}, `With your setting that ${Math.round(100 * state.prior)}% of such differences are real before looking at population data, this one is real with a probability of `, el('b', { text: chanceText(afterEvidence(state.prior, score)) }), ` (between ${chanceText(afterEvidence(state.prior, low))} and ${chanceText(afterEvidence(state.prior, high))}, given how well the score is known).`)
       : null,
-    el('p', { class: 'muted', text: 'The limits for the verdict (10 for "supported" unless you move it above the list of alleles, 0.1 for "needs confirmation") are conventions for strong evidence, as in other fields that use likelihood ratios; they are not measured. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.' }));
+    el('p', { class: 'muted', text: `The limits for the verdict (${state.limit} for "supported", which you can move above the list of alleles, and 0.1 for "needs confirmation") are conventions, not measurements. Where likelihood ratios are used, 1 to 3 is usually read as weak, 3 to 10 as positive and 10 or more as strong evidence. Because the score is smooth, a difference just below a limit is nearly as well supported as one just above it: read the number, not only the verdict.` }));
 }
 
 /** The population data of one difference, briefly, for a popup: per

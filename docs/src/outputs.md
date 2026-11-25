@@ -34,8 +34,9 @@ identical to the reference has no rows here (it still appears in
 
 | Column | Meaning |
 |---|---|
-| `verdict` | The verdict of this variant by frequency: `supported`, `inconclusive`, `needs_confirmation` or `not_assessed`. `supported`: `class` is `common`, or `score` is at least `--supported-score` (10). `needs_confirmation`: `score` at most `--confirm-score` (0.1), or an unscored variant that is `absent`. See [Reading the results](reading-results.md). |
+| `verdict` | The verdict of this variant by frequency: `supported`, `inconclusive`, `needs_confirmation` or `not_assessed`. `supported`: `class` is `common`, or `score` is at least `--supported-score` (2). `needs_confirmation`: `score` at most `--confirm-score` (0.1), or an unscored variant that is `absent`. See [Reading the results](reading-results.md). |
 | `score` | The main result: how many times more typical this support is of trusted variants than of arbitrary base changes. Above 1 supports the variant, below 1 speaks against it. See [The score](score.md). |
+| `data_show` | What the data show about a variant that is not `common`, whatever its verdict: `never_observed`, `single_observation`, `rare_in_every_population`, `common_not_demonstrated` or `no_population_data`. The first entry of `filters` when the variant is not supported. |
 | `score_basis` | `curve` for a single-base change; `borrowed` for an insertion or deletion, whose score is read from the same curve as a lower bound; `.` without a score. |
 | `score_low`, `score_high` | A 95% interval for the score: how well the calibration knows it at this support. |
 | `chance` | Share of all possible single-base changes in the genes of the run that are supported at least as well as this variant. |

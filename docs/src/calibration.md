@@ -94,14 +94,14 @@ a trusted list that contains the candidates.
 
 ## Changing the verdict limits
 
-By frequency, `supported` starts at a score of 10, `needs_confirmation` at
+By frequency, `supported` starts at a score of 2, `needs_confirmation` at
 0.1 and below. (The haplotype route has its own limit, `--coincidence`.)
 To be stricter, raise the first or raise the second:
 
 ```bash
-igpop variants --alleles my.fasta --supported-score 20 --confirm-score 0.3 -o strict
+igpop variants --alleles my.fasta --supported-score 10 --confirm-score 0.3 -o strict
 ```
 
 Section 5 of the report says at which support the score crosses each limit
-(1.7% and 0.018% for the defaults in the IGHV example), so you can see
+(0.28% and 0.018% for the defaults in the IGHV example), so you can see
 what a limit means in terms of frequency.

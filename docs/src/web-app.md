@@ -167,7 +167,7 @@ on it in the alignment) shows:
   1% or more.
 - **What it was compared with**: a picture on one axis of support. The
   line is the score, with a band for its uncertainty and dashed lines at
-  the two limits (10 and 0.1). Below it, every real variant of the run is
+  the two limits (2 and 0.1 unless you move the first). Below it, every real variant of the run is
   a dot (point at it for its rsID and gene) and all possible changes are
   bars. The difference is marked on the line. Because the line has no
   steps, a difference just below a limit is visibly close to one just
@@ -186,23 +186,27 @@ through grey at 1 to the colour of "supported" at 100), and **Order** sorts
 the list by it. An allele is only as well supported by frequency as its
 weakest difference.
 
-A yes/no verdict needs a cut, and no cut is given by the data. The slider
-"Count a difference as supported from a score of ..." sets it, from 2 to
-100 (below 2 a score says too little to call anything supported); 10 is the usual mark for strong evidence and the value the analysis
-runs with. Below the slider the app says what the chosen limit means:
+A yes/no verdict needs a cut, and no cut is given by the data. The field
+"Count a difference as supported from a score of ..." sets it, in steps of
+0.1 from 0 to 100; the slider under it covers 0 to 20. The analysis runs
+with 2. Under the slider the app says what the chosen limit means:
 
-- the support at which the score reaches it (1.7% for 10 in the IGHV
-  example, 0.75% for 5),
+- the support at which the score reaches it (0.28% for 2 in the IGHV
+  example, 1.7% for 10),
 - the share of all possible single-base changes that score this high,
   which is how often an arbitrary change would pass,
-- how many alleles are supported, and how many more or fewer than at 10.
+- how many alleles are supported, and how many more or fewer than at 2,
+- how such a score is usually read: 1 to 3 weak, 3 to 10 positive, 10 or
+  more strong evidence. At 1 or below a difference passes although its
+  support is no more typical of real variants than of arbitrary changes,
+  and at 0 everything with a score passes.
 
 Moving the slider does not run the analysis again: scores, classes and
 haplotype checks stay as measured, and only their reading changes, exactly
 as `--supported-score` would change it on the command line. The verdict
 labels, the counts at the top and the tables under **Files**
 (`final.tsv`, `alleles.tsv`, `variants.tsv`) follow the limit; the written
-report describes the run at 10. The limit for "needs confirmation" (0.1)
+report describes the run at 2. The limit for "needs confirmation" (0.1)
 is not moved.
 
 ## Showing a probability
