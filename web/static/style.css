@@ -466,3 +466,4 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .setting label.check { display: flex; align-items: center; gap: 0.5rem; }
 .nowrap { white-space: nowrap; }
 .setting-head input[type=number] { width: 5rem; font: inherit; font-size: 1.3rem; font-weight: 700; color: var(--accent); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 0.1rem 0.4rem; font-variant-numeric: tabular-nums; }
+.facts b.hint-value { width: fit-content; }

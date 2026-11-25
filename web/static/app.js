@@ -990,15 +990,35 @@ function renderLimit() {
   const supported = state.alleles.filter((a) => a.verdict === 'supported').length;
   const before = state.alleles.filter((a) => a.run.verdict === 'supported').length;
   const change = supported === before ? '' : ` (${supported > before ? `${supported - before} more` : `${before - supported} fewer`} than at ${RUN_LIMIT})`;
-  const fact = (number, words) => el('span', {}, el('b', { text: number }), words);
   const reading = state.limit >= 10 ? 'From 10 on, a score is usually read as strong evidence.'
     : state.limit >= 3 ? 'Between 3 and 10, a score is usually read as positive but not strong evidence.'
       : state.limit > 1 ? 'Between 1 and 3, a score is weak evidence: such a difference is more typical of real variants than of arbitrary changes, but not by much.'
         : 'At 1 or below, a difference passes although its support is no more typical of real variants than of arbitrary changes.';
+  // A figure, what it counts, and on request what exactly it means.
+  const fact = (number, words, meaning) => el('span', {},
+    explain(el('b', { class: 'hint-value', tabindex: '0', text: number }), el('span', {}, meaning.map((line) => el('span', { text: line })))), words);
+  const judged = state.alleles.filter((a) => !['matches_reference', 'not_placed'].includes(a.verdict)).length;
+  const counts = model.counts;
   $('limit-note').replaceChildren(
-    everything ? fact('any', 'even a base never seen passes') : Number.isFinite(at) ? fact(percent(at), 'frequency a difference must be shown to reach') : fact('none', 'no frequency reaches this score in this run'),
-    everything ? fact('100%', 'of arbitrary base changes would pass') : Number.isFinite(at) ? fact(pct(model.chance(at)), 'of arbitrary base changes would pass') : null,
-    fact(String(supported), `alleles supported${change}`),
+    everything
+      ? fact('any', 'even a base never seen passes', [`A base that no dataset has seen scores ${scoreText(model.score(0))}, which is at or above this limit.`])
+      : Number.isFinite(at)
+        ? fact(percent(at), 'frequency a difference must be shown to reach', [
+          `A difference scores ${state.limit} or more when the data guarantee, with 95% confidence, a frequency of at least ${percent(at)} in some population of some source.`,
+          'This guaranteed frequency is lower than the observed one, the more so the fewer people were examined: 3 carriers among 200 chromosomes guarantee less than 300 among 20,000.',
+          'A difference shown to reach 1% in a population is supported whatever this limit.'])
+        : fact('none', 'no frequency reaches this score in this run', ['The score curve of this run stays below this limit even for a base that everyone carries.']),
+    everything
+      ? fact('100%', 'of arbitrary base changes would pass', ['With this limit, every single-base change that is possible in these genes would count as supported.'])
+      : Number.isFinite(at)
+        ? fact(pct(model.chance(at)), 'of arbitrary base changes would pass', [
+          `Take every single-base change that is possible in the genes of this run: ${counts.arbitrary.toLocaleString('en')} of them, three at each position. ${pct(model.chance(at))} of them score ${state.limit} or more.`,
+          'This is how often a random error in one base would pass by its score alone. It is the price of the limit: a lower limit lets more real differences through, and more errors with them.',
+          'It counts single differences. An allele with several differences passes only if each of them does.'])
+        : null,
+    fact(`${supported} of ${judged}`, `alleles supported${change}`, [
+      `${judged} of the ${state.alleles.length} alleles differ from the reference genome and could be placed on a gene; the others are identical to the reference or were not placed.`,
+      `${supported} of them are supported with this limit: every difference passes by frequency, or the whole sequence was found on phased chromosomes.`]),
     el('p', { text: `${reading}${state.limit === RUN_LIMIT ? '' : ` Verdicts, counts and the tables under Files follow this limit; the report describes the run at ${RUN_LIMIT}.`}` }));
 }
 
