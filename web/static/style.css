@@ -321,7 +321,7 @@ tbody th small { display: block; font-weight: 400; color: var(--muted); }
 
 /* ---- the evidence behind one difference ---- */
 .evidence-row > td { background: color-mix(in srgb, var(--ink) 3%, transparent); padding: 1rem 1.2rem; white-space: normal; }
-.evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.2rem 2rem; max-width: 1000px; }
+.evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.2rem 2rem; max-width: min(1000px, calc(100vw - 9rem)); }
 .evidence-part:first-child, .evidence-part:last-child { grid-column: 1 / -1; }
 .evidence h4 { margin: 0 0 0.4rem; font-size: 0.95rem; }
 .evidence p, .evidence ol { margin: 0.2rem 0; font-size: 0.9rem; }
@@ -356,3 +356,23 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 
 .pill.p-unclean { color: var(--inconclusive); border-color: color-mix(in srgb, var(--inconclusive) 55%, transparent); }
 .placement-note { border: 1px solid color-mix(in srgb, var(--inconclusive) 50%, transparent); background: color-mix(in srgb, var(--inconclusive) 9%, transparent); border-radius: 10px; padding: 0.6rem 0.8rem; font-size: 0.9rem; }
+
+/* ---- what a difference was compared with ---- */
+.example { margin: 0.9rem 0 0; font-size: 0.95rem; }
+.evidence-part:nth-child(4) { grid-column: 1 / -1; }
+.compare { width: 100%; max-width: 760px; min-width: 560px; height: auto; display: block; margin: 0.4rem 0; }
+.compare .level { fill: color-mix(in srgb, var(--ink) 4%, transparent); }
+.compare .level.mine { fill: color-mix(in srgb, var(--accent) 16%, transparent); stroke: var(--accent); stroke-width: 1; }
+.compare .level-name { font-size: 9.5px; fill: var(--muted); }
+.compare .level-score { font-size: 10.5px; font-weight: 700; fill: var(--ink); }
+.compare .level-score.s-high { fill: var(--supported); }
+.compare .level-score.s-low { fill: var(--confirm); }
+.compare .real { fill: var(--accent); }
+.compare .arbitrary { fill: var(--grey); opacity: 0.75; }
+.compare .count { font-size: 9.5px; fill: var(--ink); }
+.compare .count.muted { fill: var(--muted); }
+.compare .this { stroke: var(--confirm); stroke-width: 2; }
+.compare .this-label { font-size: 10px; font-weight: 700; fill: var(--confirm); }
+.belief { border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.9rem; margin-top: 0.6rem; max-width: 760px; }
+.belief label { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; font-size: 0.9rem; }
+.belief input[type=range] { flex: 1 1 14rem; max-width: 22rem; accent-color: var(--accent); }

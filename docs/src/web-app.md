@@ -150,3 +150,9 @@ about them has a link that sets this filter. Opening one explains why,
 with the gene it fits and the two alignment scores. An allele that fits
 another gene is still judged, but its differences, and the frequencies
 found for them, may belong to the other copy of the gene.
+
+## Trying it without a file
+
+"Try the example" on the first page loads 566 human IGHV alleles of the
+KIARVA set (174 database alleles, 392 candidates) as if you had chosen the
+file. The first run downloads about 100 MB.

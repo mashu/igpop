@@ -128,3 +128,65 @@ everywhere.)
   unusual, so is the scale.
 - It is coarse by design: seven levels, each backed by enough variants to
   estimate a ratio.
+
+## What is fixed, what is measured, and what is a convention
+
+Three things are easy to confuse.
+
+- **The levels are fixed.** Support is sorted into seven levels: never
+  seen, and six steps of ten from below 0.001% to 10% or more. They are
+  the same in every run.
+- **The score of each level is measured.** A run counts how many variants
+  of its real alleles and how many of all possible single-base changes
+  fall into each level, and divides the two shares. In the IGHV example:
+
+  | Level | Real variants (of 213) | Possible changes (of 38,316) | Score | Roughly between |
+  |---|---:|---:|---:|---|
+  | never seen | 0 | 18,812 | 0.005 | 0 and 0.08 |
+  | below 0.01% (two levels pooled) | 0 | 13,297 | 0.013 | 0 and 0.2 |
+  | 0.01 to 0.1% | 7 | 3,899 | 0.34 | 0.17 and 0.69 |
+  | 0.1 to 1% | 18 | 1,614 | 2.0 | 1.3 and 3.1 |
+  | 1 to 10% | 41 | 332 | 22 | 16 and 30 |
+  | 10% or more | 147 | 362 | 72 | 63 and 83 |
+
+  The last column is a 95% interval. A level with few real variants has a
+  score that is known only roughly.
+- **The limits 10 and 0.1 are conventions.** A ratio of ten or more is the
+  usual reading of "strong evidence"; nothing in the data singles it out.
+  They can be changed (`--supported-score`, `--confirm-score`). In this
+  example no level scores between 2.0 and 22, so any limit from 3 to 20
+  gives the same verdicts.
+
+So a score of 2 is not a rejection. It says: at this level of support
+there are twice as many real variants as arbitrary changes, proportionally.
+That speaks mildly for the difference and is reported as `inconclusive`,
+which means "the population data do not settle it".
+
+## From a score to a probability
+
+How likely a difference is to be real depends on the score and on what
+was known before looking at population data: how reliable the method is
+that produced the allele, in how many people it was seen.
+
+```text
+odds after = odds before x score
+```
+
+| Believed before | Score 2 | Score 5 | Score 22 |
+|---|---:|---:|---:|
+| 50% | 67% | 83% | 96% |
+| 80% | 89% | 95% | 99% |
+| 95% | 97% | 99% | 99.8% |
+
+An allele found in several people by a careful method starts high, and a
+score of 2 leaves it high. The verdict does not use such a prior, because
+igpop cannot know it; `--prior` adds the probability as a column, and the
+web app has a slider for it in the evidence of each difference.
+
+## Seeing what a difference was compared with
+
+In the web app, "populations and reasons" on a difference shows the
+comparison itself: every real variant of the run as a dot at its support
+(point at it for its rsID and gene), all possible changes as bars, the
+seven levels with their counts and scores, and the difference marked among
+them.

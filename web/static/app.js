@@ -428,17 +428,26 @@ function decide(group, value) {
   askCheck();
 }
 
-/** The choices for a group or an allele, as a select. */
+/** The choices for a group or an allele, as a select. The list of all
+ *  genes is long, and there can be hundreds of these selects: the genes
+ *  are added when the select is first used. */
 function decisionSelect(label, current, similarTo, onChange) {
-  const all = [...new Set(geneRows().map((r) => r.gene))].sort(sortGenes);
-  const near = all.filter((g) => g.startsWith(similarTo) || similarTo.startsWith(g) || g.replace(/[A-Z]$/, '') === similarTo);
-  const select = el('select', { 'aria-label': label },
-    el('option', { value: '', text: 'As the name says' }),
-    el('option', { value: BY_SEQUENCE, text: 'Find the gene by sequence' }),
-    el('option', { value: LEFT_OUT, text: 'Leave out of the analysis' }),
-    near.length ? el('optgroup', { label: 'Genes with a similar name' }, near.map((n) => el('option', { value: n, text: `Alleles of ${n}` }))) : null,
-    el('optgroup', { label: 'All genes of the list' }, all.filter((n) => !near.includes(n)).map((n) => el('option', { value: n, text: `Alleles of ${n}` }))));
+  const fixed = [['', 'As the name says'], [BY_SEQUENCE, 'Find the gene by sequence'], [LEFT_OUT, 'Leave out of the analysis']];
+  const select = el('select', { 'aria-label': label }, fixed.map(([value, text]) => el('option', { value, text })));
+  if (current && !fixed.some(([value]) => value === current)) select.append(el('option', { value: current, text: `Alleles of ${current}` }));
   select.value = current || '';
+  const fill = () => {
+    if (select.dataset.filled) return;
+    select.dataset.filled = 'yes';
+    const all = [...new Set(geneRows().map((r) => r.gene))].sort(sortGenes);
+    const near = all.filter((g) => g.startsWith(similarTo) || similarTo.startsWith(g) || g.replace(/[A-Z]$/, '') === similarTo);
+    const chosen = select.value;
+    for (const option of [...select.options].slice(fixed.length)) option.remove();
+    if (near.length) select.append(el('optgroup', { label: 'Genes with a similar name' }, near.map((n) => el('option', { value: n, text: `Alleles of ${n}` }))));
+    select.append(el('optgroup', { label: 'All genes of the list' }, all.filter((n) => !near.includes(n)).map((n) => el('option', { value: n, text: `Alleles of ${n}` }))));
+    select.value = chosen;
+  };
+  for (const event of ['pointerdown', 'focus', 'keydown']) select.addEventListener(event, fill, { once: true });
   select.addEventListener('change', () => onChange(select.value));
   return select;
 }
@@ -529,16 +538,23 @@ function updateNameEditor() {
     const state = linkOf(allele, known.get(allele.gene));
     if (document.activeElement !== line.input) line.input.value = allele.name;
     line.row.className = `n-${state}${first !== allele.name ? ' n-changed' : ''}`;
-    line.status.replaceChildren(
+    const shownAs = `${state}\n${allele.named}\n${allele.gene}`;
+    if (line.status.dataset.shown !== shownAs) line.status.replaceChildren(
       el('span', { class: `name-mark k-${state}`, 'aria-hidden': 'true', text: state === 'none' ? '×' : state === 'out' ? '–' : state === 'sequence' ? '?' : '✓' }),
       state === 'none' ? `no gene called ${allele.named}` : state === 'out' ? 'left out' : state === 'sequence' ? 'found by sequence during the run'
         : `${allele.gene}${state === 'rule' ? ' (built-in rule)' : state === 'yours' ? ' (your match)' : ''}`);
-    line.choice.replaceChildren(decisionSelect(`What to do with ${allele.name}`, names.mapping[allele.name], allele.named, (value) => {
-      if (value) names.mapping[allele.name] = value;
-      else delete names.mapping[allele.name];
-      keepNames();
-      askCheck();
-    }));
+    line.status.dataset.shown = shownAs;
+    // The select of a line is built once per name and decision, not on every check.
+    const made = `${allele.name}\n${names.mapping[allele.name] || ''}`;
+    if (line.choice.dataset.made !== made) {
+      line.choice.dataset.made = made;
+      line.choice.replaceChildren(decisionSelect(`What to do with ${allele.name}`, names.mapping[allele.name], allele.named, (value) => {
+        if (value) names.mapping[allele.name] = value;
+        else delete names.mapping[allele.name];
+        keepNames();
+        askCheck();
+      }));
+    }
     line.was.replaceChildren(...(first !== allele.name ? [`was ${first} `, el('button', { type: 'button', class: 'link', text: 'undo', onclick: () => { rename(first, first); askCheck(); } })] : []));
     if (first !== allele.name) changed += 1;
     const visible = (!show || (show === 'open' && state === 'none') || (show === 'changed' && first !== allele.name))
@@ -713,6 +729,15 @@ function setGeneList(rows) {
 
 function wireGeneList() {
   $('check-run').addEventListener('click', runChecked);
+  $('example').addEventListener('click', async () => {
+    try {
+      const response = await fetch(new URL(`./example_KIARVA_IGHV.fasta${new URL(import.meta.url).search}`, import.meta.url));
+      if (!response.ok) throw new Error(`status ${response.status}`);
+      await handleFiles([new File([await response.text()], 'KIARVA_IGHV.fasta', { type: 'text/plain' })]);
+    } catch (error) {
+      fail(`The example could not be loaded (${error.message}).`);
+    }
+  });
   for (const id of ['opt-build', 'opt-hap']) $(id).addEventListener('change', askCheck);
   $('gene-filter').addEventListener('input', renderGeneList);
   $('gene-reset').addEventListener('click', () => setGeneList(null));
@@ -761,6 +786,7 @@ function display(files, warnings, summary = []) {
   state.files = files;
   state.alleles = parseTSV(files['alleles.tsv']);
   state.placements = null;
+  state.calibration = null;
   // The build most alleles were judged on is the build of the run.
   const builds = new Map();
   for (const a of state.alleles) if (given(a.build)) builds.set(a.build, (builds.get(a.build) || 0) + 1);
@@ -1206,6 +1232,111 @@ function whyScore(v) {
   return steps;
 }
 
+const LEVELS = ['none', '<0.001%', '0.001-0.01%', '0.01-0.1%', '0.1-1%', '1-10%', '>=10%'];
+const LEVEL_WORDS = ['never seen', 'below 0.001%', '0.001 to 0.01%', '0.01 to 0.1%', '0.1 to 1%', '1 to 10%', '10% or more'];
+
+/** What the score of this run rests on: the calibration table with the
+ *  counts behind each level, an interval for each score, and the real
+ *  variants themselves. Worked out once per result. */
+function calibration() {
+  if (state.calibration) return state.calibration;
+  const table = state.files['score_calibration.tsv'] ? parseTSV(state.files['score_calibration.tsv']) : [];
+  const levels = LEVELS.map((name) => table.find((r) => r.support === name)).filter(Boolean);
+  const [A, T] = [levels.reduce((n, r) => n + Number(r.arbitrary_changes), 0), levels.reduce((n, r) => n + Number(r.trusted_variants), 0)];
+  const rows = levels.map((r) => {
+    // Levels that share a score were pooled: their counts go together.
+    const pool = levels.filter((x) => x.pooled_group === r.pooled_group);
+    const [a, t] = [pool.reduce((n, x) => n + Number(x.arbitrary_changes), 0), pool.reduce((n, x) => n + Number(x.trusted_variants), 0)];
+    const score = Number(r.score);
+    // The score is a ratio of two counted shares; its logarithm is roughly
+    // normal with this standard error.
+    const se = Math.sqrt(Math.max(0, 1 / (t + 0.5) - 1 / (T + 3.5) + 1 / (a + 0.5) - 1 / (A + 3.5)));
+    return { name: r.support, real: Number(r.trusted_variants), arbitrary: Number(r.arbitrary_changes), score, low: score * Math.exp(-1.96 * se), high: score * Math.exp(1.96 * se), pooled: pool.length > 1 };
+  });
+  // The real variants: distinct single-base variants of the alleles this
+  // run accepts as real.
+  const accepted = new Set(state.alleles.filter((a) => given(a.yardstick)).map((a) => a.allele_name));
+  const real = new Map();
+  for (const name of accepted) for (const v of state.variants.get(name) || []) {
+    if (v.type === 'SNV') real.set(`${v.build}|${v.contig}|${v.genome_pos}|${v.query_variant}`, v);
+  }
+  const variants = [...real.values()];
+  state.calibration = {
+    rows, A, T, variants, alleles: accepted.size,
+    genes: new Set(state.alleles.filter((a) => accepted.has(a.allele_name)).map((a) => a.gene)).size,
+    own: table.some((r) => r.score_source === 'run') || (table[0] && /run/.test(table[0].score_source || '')),
+  };
+  return state.calibration;
+}
+
+const scoreText = (x) => (x >= 10 ? x.toFixed(0) : x >= 1 ? x.toFixed(1) : x >= 0.1 ? x.toFixed(2) : x.toPrecision(1));
+
+/** A picture of what a difference was compared with: the real variants as
+ *  dots and all possible changes as bars, level by level, with the
+ *  difference itself marked. */
+function comparisonChart(v) {
+  const cal = calibration();
+  if (!cal.rows.length) return null;
+  const support = number(v.support);
+  const mine = LEVELS.indexOf(supportLevel(support));
+  const [W, H, left, top, band] = [640, 214, 8, 30, 88];
+  const dots = 78;
+  const x0 = left + band;
+  const xOfSupport = (s) => x0 + ((Math.log10(Math.max(s, 1e-6)) + 6) / 6) * (6 * band);
+  const picture = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'compare', role: 'img',
+    'aria-label': `Support levels with the number of real variants and of all possible changes at each; this difference is at the level ${LEVEL_WORDS[mine]}.` });
+  cal.rows.forEach((row, i) => {
+    const x = left + i * band;
+    picture.append(svg('rect', { x: x + 1, y: top, width: band - 2, height: H - top - 44, class: `level${i === mine ? ' mine' : ''}` }));
+    picture.append(svg('text', { x: x + band / 2, y: top - 16, 'text-anchor': 'middle', class: 'level-name' }, LEVEL_WORDS[i].replace(' to ', '–')));
+    picture.append(svg('text', { x: x + band / 2, y: top - 4, 'text-anchor': 'middle', class: `level-score${row.score >= 10 ? ' s-high' : row.score <= 0.1 ? ' s-low' : ''}` }, `score ${scoreText(row.score)}`));
+    // All possible changes: a bar whose height is their share at this level.
+    const share = row.arbitrary / cal.A;
+    const tall = Math.max(1, share * 46);
+    picture.append(svg('rect', { x: x + 10, y: H - 44 - tall, width: band - 20, height: tall, class: 'arbitrary' }));
+    picture.append(svg('text', { x: x + band / 2, y: H - 30, 'text-anchor': 'middle', class: 'count' }, `${row.real} real`));
+    picture.append(svg('text', { x: x + band / 2, y: H - 18, 'text-anchor': 'middle', class: 'count muted' }, `${row.arbitrary.toLocaleString('en')} possible`));
+  });
+  // The real variants: one dot each, at its own support.
+  const stack = new Map();
+  for (const variant of cal.variants) {
+    const s = number(variant.support);
+    const x = s > 0 ? xOfSupport(s) : left + band / 2;
+    const slot = Math.round(x / 5);
+    const n = stack.get(slot) || 0;
+    stack.set(slot, n + 1);
+    const dot = svg('circle', { cx: slot * 5, cy: top + dots - 6 - (n % 14) * 5, r: 2.1, class: 'real' });
+    dot.append(svg('title', {}, `${given(variant.rsid) ? variant.rsid : 'no rsID'} in ${variant.gene}: at least ${percent(s)}`));
+    picture.append(dot);
+  }
+  const at = support > 0 ? xOfSupport(support) : left + band / 2;
+  picture.append(svg('line', { x1: at, x2: at, y1: top, y2: H - 44, class: 'this' }));
+  picture.append(svg('text', { x: Math.min(Math.max(at, 44), W - 44), y: H - 4, 'text-anchor': 'middle', class: 'this-label' }, 'this difference'));
+  return picture;
+}
+
+/** What a score does to a belief held beforehand, as a small calculator. */
+function beliefCalculator(score, low, high) {
+  const after = (prior, x) => (prior * x) / (prior * x + (1 - prior));
+  const slider = el('input', { type: 'range', min: '5', max: '95', step: '5', value: String(Math.round(100 * (state.prior ?? 0.5))), 'aria-label': 'How likely a difference like this is to be real, before looking at population data, in percent' });
+  const before = el('b');
+  const result = el('b');
+  const range = el('span', { class: 'muted' });
+  const update = () => {
+    const prior = Number(slider.value) / 100;
+    state.prior = prior;
+    before.textContent = `${slider.value}%`;
+    result.textContent = `${Math.round(100 * after(prior, score))}%`;
+    range.textContent = Number.isFinite(low) ? ` (between ${Math.round(100 * after(prior, low))}% and ${Math.round(100 * after(prior, high))}% given how uncertain the score is)` : '';
+  };
+  slider.addEventListener('input', update);
+  update();
+  return el('div', { class: 'belief' },
+    el('p', {}, 'The score does not say how likely the difference is to be real. That also depends on what you knew before: how reliable the method is that produced the allele, how many people it was seen in. Set that here: '),
+    el('label', {}, 'Before looking at population data, I think a difference like this is real with probability ', before, slider),
+    el('p', {}, 'Then, after this evidence, it is real with probability ', result, range, '.'));
+}
+
 /** Everything behind one difference: where it is, who carries it, and why
  *  it has its score. */
 function evidencePanel(v) {
@@ -1237,7 +1368,27 @@ function evidencePanel(v) {
       groups.length ? el('p', { class: 'muted', text: 'Each person has two chromosomes, so the counts are of chromosomes. Bars are drawn relative to the population where the base is most frequent.' }) : null),
     el('div', { class: 'evidence-part' },
       el('h4', { text: 'Why this verdict and score' }),
-      el('ol', {}, whyScore(v).map((step) => el('li', { text: step })))));
+      el('ol', {}, whyScore(v).map((step) => el('li', { text: step })))),
+    comparison(v));
+}
+
+/** The part of the evidence panel that shows what a single-base difference
+ *  was compared with, and what its score is worth. */
+function comparison(v) {
+  if (v.type !== 'SNV' || !given(v.score)) return null;
+  const cal = calibration();
+  const row = cal.rows[LEVELS.indexOf(supportLevel(number(v.support)))];
+  if (!row) return null;
+  const pct = (x) => `${(100 * x).toPrecision(2).replace(/\.?0+$/, '')}%`;
+  return el('div', { class: 'evidence-part' },
+    el('h4', { text: 'What it was compared with' }),
+    el('p', {}, cal.variants.length
+      ? `Blue dots: the ${cal.variants.length} distinct single-base variants of the ${cal.alleles} alleles (${plural(cal.genes, 'gene')}) that this run accepts as real, namely the database alleles and the candidates whose whole sequence was found on several phased chromosomes. Point at a dot to see which variant it is. Grey bars: all ${cal.A.toLocaleString('en')} single-base changes that are possible in the genes of the run, which is what an arbitrary error looks like. Both are sorted by the frequency the data guarantee, in the same seven levels.`
+      : `The scores of this run come from igpop's built-in table, because the run has too few established alleles to make its own. The table was made from ${cal.T} real variants and ${cal.A.toLocaleString('en')} possible changes in human IGHV genes.`),
+    el('div', { class: 'scroll' }, comparisonChart(v)),
+    el('p', {}, `This difference is at the level "${LEVEL_WORDS[LEVELS.indexOf(row.name)]}". ${row.pooled ? 'Together with the neighbouring level that shares its score, there' : 'There'} are ${row.real} of the ${cal.T} real variants (${pct(row.real / cal.T)}) and ${row.arbitrary.toLocaleString('en')} of the ${cal.A.toLocaleString('en')} possible changes (${pct(row.arbitrary / cal.A)}) at this level${row.pooled ? ' alone' : ''}. Their ratio is the score, ${scoreText(row.score)}. ${row.real < 30 ? `With so few real variants at this level the score is known only roughly: it could be anywhere between about ${scoreText(row.low)} and ${scoreText(row.high)}.` : `With this many real variants the score is known fairly well: between about ${scoreText(row.low)} and ${scoreText(row.high)}.`}`),
+    el('p', { class: 'muted', text: 'The levels are fixed steps of ten; what the run measures is the score of each level. The limits for the verdict, 10 for "supported" and 0.1 for "needs confirmation", are conventions for strong evidence and not measured: a score between them, such as 2 or 5, speaks mildly for the difference without settling it. "Inconclusive" means exactly that, not "ruled out".' }),
+    beliefCalculator(row.score, row.low, row.high));
 }
 
 function variantTable(variants, opened) {
