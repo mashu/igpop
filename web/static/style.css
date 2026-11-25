@@ -416,7 +416,7 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .variants td:nth-child(4) .chip { margin: 0.1rem 0.2rem 0.1rem 0; display: inline-block; }
 
 /* ---- population popup ---- */
-.hint-text:has(.people-tip) { max-width: min(27rem, calc(100vw - 16px)); padding: 0.8rem 0.9rem; }
+.hint-text:has(.people-tip) { max-width: min(40rem, calc(100vw - 16px)); padding: 0.8rem 0.9rem; }
 .people-tip { display: grid; gap: 0.7rem; }
 .tip-source { display: grid; gap: 0.3rem; --tone: var(--accent); }
 .tip-source.s-gnomad { --tone: var(--neutral); }
@@ -425,7 +425,7 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .tip-head b::before { content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--tone); margin-right: 0.4rem; }
 .tip-head span, .tip-count, .tip-share { font-variant-numeric: tabular-nums; }
 .tip-head span { color: var(--muted); }
-.tip-rows { display: grid; grid-template-columns: 8.5rem 5.5rem 1fr 4rem; gap: 0.2rem 0.6rem; align-items: center; }
+.tip-rows { display: grid; grid-template-columns: minmax(6rem, 11rem) 5.5rem minmax(max-content, 1fr) max-content; gap: 0.2rem 0.6rem; align-items: center; }
 .tip-name { color: var(--muted); }
 .tip-track { position: relative; height: 0.6rem; border-radius: 3px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
 .tip-track::after { content: ""; position: absolute; left: 66.67%; top: -2px; bottom: -2px; border-left: 1px dashed var(--confirm); }
@@ -435,3 +435,6 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .tip-none { color: var(--muted); font-size: 0.8rem; }
 .tip-foot { display: flex; justify-content: space-between; gap: 1rem; padding-top: 0.55rem; border-top: 1px solid var(--line); }
 .example .link { padding: 0.4rem 0.95rem; border-radius: 999px; font-size: 0.95rem; border-color: var(--accent); color: var(--accent); background: transparent; }
+.people-tip { min-width: min(24rem, calc(100vw - 48px)); }
+.tip-none { max-width: 30rem; }
+@media (max-width: 520px) { .tip-rows { grid-template-columns: 1fr max-content; } .tip-track { display: none; } .tip-count { grid-column: 1; text-align: left; } }
