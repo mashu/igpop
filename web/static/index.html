@@ -56,10 +56,21 @@
     </section>
 
     <section id="check" class="panel" hidden>
-      <h2>The genes of <span id="check-name"></span></h2>
-      <p id="check-summary" aria-live="polite"></p>
+      <h2>Ready to analyse <span id="check-name"></span></h2>
+      <p id="check-summary" class="muted" aria-live="polite"></p>
       <p id="check-error" class="check-error" role="alert" hidden></p>
-      <div id="check-evidence"></div>
+      <div id="check-overview"></div>
+      <div class="actions">
+        <button type="button" class="primary" id="check-run">Run the analysis</button>
+        <button type="button" class="ghost" data-restart>Choose another file</button>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Details before the run">
+        <button role="tab" id="tab-check-data" aria-controls="view-check-data" aria-selected="true">Data to be read</button>
+        <button role="tab" id="tab-check-names" aria-controls="view-check-names" aria-selected="false" tabindex="-1">Gene names</button>
+        <button role="tab" id="tab-check-genes" aria-controls="view-check-genes" aria-selected="false" tabindex="-1">Gene list</button>
+      </div>
+      <div id="view-check-data" role="tabpanel" aria-labelledby="tab-check-data"><div id="check-evidence"></div></div>
+      <div id="view-check-names" role="tabpanel" aria-labelledby="tab-check-names" hidden>
       <div id="check-map"></div>
       <details id="name-editor" class="fold">
         <summary>Correct the names of your sequences<span id="name-editor-state"></span></summary>
@@ -77,7 +88,9 @@
         </form>
         <div class="scroll name-rows"><table id="name-table"></table></div>
       </details>
-      <details id="gene-editor" class="fold">
+      </div>
+      <div id="view-check-genes" role="tabpanel" aria-labelledby="tab-check-genes" hidden>
+      <details id="gene-editor" class="fold" open>
         <summary>Gene list: <span id="gene-editor-state"></span></summary>
         <p class="muted">The gene list says where each gene lies on the reference genome. An allele is matched to a gene by the part of its name before <code>*</code>. Add a gene, remove one, or load your own list (tab-separated: gene, build, contig, start, end, strand). Your list is kept in this browser.</p>
         <div class="toolbar">
@@ -98,9 +111,6 @@
         </form>
         <div class="scroll gene-rows"><table id="gene-table"></table></div>
       </details>
-      <div class="actions">
-        <button type="button" class="primary" id="check-run">Run the analysis</button>
-        <button type="button" class="ghost" data-restart>Choose another file</button>
       </div>
     </section>
 

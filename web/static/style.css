@@ -593,3 +593,36 @@ tr.n-changed.n-none input { border-color: var(--confirm); background: color-mix(
 .doubt-stack .v-inconclusive, .swatch.v-inconclusive { background: var(--inconclusive); }
 .doubt-stack .v-needs_confirmation, .swatch.v-needs_confirmation { background: var(--confirm); }
 .doubt-stack .v-not_assessed, .swatch.v-not_assessed { background: var(--grey); }
+
+/* ---- before the run: facts, one bar, details in tabs ---- */
+#check .actions { margin: 1.1rem 0 0; }
+.fact-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 1rem 0 1.2rem; max-width: 44rem; }
+.fact-tile { border: 1px solid var(--line); border-radius: 12px; padding: 0.8rem 1rem; display: grid; gap: 0.15rem; }
+.fact-label { font-weight: 650; }
+.fact-tile.good .tile-sub { color: var(--supported); }
+.fact-tile.warn { border-color: var(--confirm); }
+.fact-tile.warn .tile-sub { color: var(--confirm); font-weight: 600; }
+.judged { max-width: 44rem; }
+.judged-bar { display: flex; gap: 2px; height: 1.5rem; }
+.judged-bar i { display: block; border-radius: 4px; min-width: 6px; }
+.j-main { background: var(--accent); }
+.j-older { background: var(--neutral); }
+.j-none { background: var(--grey); }
+.j-open { background: var(--confirm); }
+.judged .legend { margin: 0.5rem 0 0; }
+.check-note { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.check-note.warn { color: var(--confirm); }
+#check .tabs { margin-top: 1.4rem; }
+#check [role=tabpanel] { padding-top: 0.9rem; }
+.plan-table { width: 100%; max-width: 44rem; margin: 0 0 1.2rem; font-size: 0.92rem; table-layout: fixed; }
+.plan-table th { width: 46%; }
+.plan-table td:nth-child(2) { width: 20%; }
+.plan-table caption { text-align: left; padding: 0.2rem 0 0.4rem; color: var(--muted); }
+.plan-table caption b { color: var(--ink); font-size: 0.98rem; margin-right: 0.4rem; }
+.plan-table th, .plan-table td { padding: 0.35rem 0.8rem 0.35rem 0; border-bottom: 0; vertical-align: middle; }
+.plan-table tbody th { font-weight: 600; }
+.plan-size { white-space: nowrap; }
+.plan-track { display: inline-block; width: 45%; height: 0.6rem; border-radius: 3px; background: color-mix(in srgb, var(--ink) 9%, transparent); vertical-align: middle; margin-right: 0.6rem; }
+.plan-track i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.plan-track i.k-haplotypes { background: var(--supported); }
+#view-check-genes .fold > summary { list-style: none; cursor: default; }
