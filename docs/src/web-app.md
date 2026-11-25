@@ -187,8 +187,8 @@ the list by it. An allele is only as well supported by frequency as its
 weakest difference.
 
 A yes/no verdict needs a cut, and no cut is given by the data. The slider
-"Count a difference as supported from a score of ..." sets it, from 1 to
-100; 10 is the usual mark for strong evidence and the value the analysis
+"Count a difference as supported from a score of ..." sets it, from 2 to
+100 (below 2 a score says too little to call anything supported); 10 is the usual mark for strong evidence and the value the analysis
 runs with. Below the slider the app says what the chosen limit means:
 
 - the support at which the score reaches it (1.7% for 10 in the IGHV

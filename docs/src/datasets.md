@@ -105,10 +105,10 @@ On the 519 IGHV alleles of the example that differ from the reference:
 
 | Sources read | Alleles supported |
 |---|---:|
-| 1000 Genomes, gnomAD and dbSNP | 399 |
-| without gnomAD | 386 |
-| without dbSNP | 384 |
-| 1000 Genomes only | 367 |
+| 1000 Genomes, gnomAD and dbSNP | 390 |
+| without gnomAD | 378 |
+| without dbSNP | 374 |
+| 1000 Genomes only | 361 |
 
 No single source is essential, and each contributes. The web app reads
 gnomAD from the project's copy at Amazon, because the server at Google
@@ -165,9 +165,15 @@ populations of 1000 Genomes and gnomAD:
   covers a site poorly, the reconstructed count is too generous. This is
   the price of using datasets that publish frequencies only. To leave any
   of them out, name them in `--dbsnp-exclude`.
-- **The COMMON flag is honoured.** A variant that dbSNP flags as COMMON is
-  classed `common` with `class_basis = dbSNP:COMMON`, but only for the most
-  frequent alternate allele of that site.
+- **The COMMON flag is honoured, with care.** dbSNP sets the flag on a
+  record, and a record can list several alternate alleles. igpop gives it
+  to one allele only: the one with the highest frequency in any study of
+  the record that is large enough to show a frequency of 1%. A study of a
+  few people, in which every allele it saw appears at one half, does not
+  decide. The flagged allele is classed `common` with
+  `class_basis = dbSNP:COMMON`, unless the data igpop reads directly
+  (1000 Genomes, gnomAD) show the allele to be rare in every population:
+  first-hand counts outrank a second-hand flag.
 
 `class_basis` shows which population decided (`dbSNP:TOPMED`,
 `gnomAD_v4.1:afr`, ...), and `dbsnp_freq` lists every reported frequency.

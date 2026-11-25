@@ -900,7 +900,8 @@ function badge(verdict) {
 
 // ---- the limit for "supported": a setting, not part of the evidence ---------
 
-const LIMITS = [1, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100];
+// Below 2 a score says too little to call anything supported.
+const LIMITS = [2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100];
 const RUN_LIMIT = 10; // the limit the analysis itself was run with
 const CONFIRM = 0.1;
 const FILTER_ORDER = ['no_population_data', 'never_observed', 'single_observation', 'rare_in_every_population', 'common_not_demonstrated', 'low_score', 'intermediate_score', 'not_scored'];
@@ -989,9 +990,14 @@ function renderLimit() {
   const supported = state.alleles.filter((a) => a.verdict === 'supported').length;
   const before = state.alleles.filter((a) => a.run.verdict === 'supported').length;
   const change = supported === before ? '' : ` (${supported > before ? `${supported - before} more` : `${before - supported} fewer`} than at ${RUN_LIMIT})`;
-  $('limit-note').textContent = Number.isFinite(at)
-    ? `A score of ${state.limit} is reached at a support of ${percent(at)}. ${pct(model.chance(at))} of all possible single-base changes in these genes score this high, which is how often an arbitrary change would pass. ${supported} alleles are supported${change}. ${state.limit === RUN_LIMIT ? '10 is the usual mark for strong evidence; the scores themselves do not depend on it.' : 'Verdicts, counts and the tables under Files follow this limit; the report describes the run at 10.'}`
-    : `No support reaches a score of ${state.limit} in this run. ${supported} alleles are supported${change}.`;
+  const fact = (number, words) => el('span', {}, el('b', { text: number }), words);
+  $('limit-note').replaceChildren(
+    Number.isFinite(at) ? fact(percent(at), 'frequency a difference must be shown to reach') : fact('none', 'no frequency reaches this score in this run'),
+    Number.isFinite(at) ? fact(pct(model.chance(at)), 'of arbitrary base changes would pass') : null,
+    fact(String(supported), `alleles supported${change}`),
+    el('p', { text: state.limit === RUN_LIMIT
+      ? '10 is the usual mark for strong evidence. The scores do not depend on it.'
+      : 'Verdicts, counts and the tables under Files follow this limit. The report describes the run at 10.' }));
 }
 
 function wireLimit() {
@@ -1021,7 +1027,8 @@ function scorePill(allele) {
   const t = Math.max(-1, Math.min(1, Math.log10(score) / 2));
   const tone = `color-mix(in srgb, var(${t >= 0 ? '--supported' : '--confirm'}) ${Math.round(100 * Math.abs(t))}%, var(--grey))`;
   return el('span', { class: 'score-pill', style: `--tone:${tone}`, title: `Weakest score among the differences of this allele: ${scoreText(score)} (${scoreWords(score)}). An allele is only as well supported by frequency as its weakest difference.` },
-    el('i', { 'aria-hidden': 'true' }), `score ${scoreText(score)}`);
+    el('i', { 'aria-hidden': 'true' }), `score ${scoreText(score)}`,
+    state.prior ? el('em', { text: `${chanceText(afterEvidence(state.prior, score)).replace('more than ', '>').replace('less than ', '<')} real` }) : null);
 }
 
 function renderTiles() {
@@ -1099,7 +1106,7 @@ function frequencyLegend() {
 function renderFolds() {
   const active = ['f-kind', 'f-hap', 'f-place'].filter((id) => $(id).value).length;
   $('fold-filters-state').textContent = active ? `: ${active} set` : '';
-  $('fold-reading-state').textContent = `: supported from a score of ${state.limit}${state.prior ? `, probability shown` : ''}`;
+  $('fold-reading-state').textContent = `: supported from a score of ${state.limit}${state.prior ? `, probability shown for a prior of ${Math.round(100 * state.prior)}%` : ''}`;
 }
 
 function visibleAlleles() {
@@ -1150,15 +1157,9 @@ function wirePrior() {
 /** Something to hold on to when choosing the setting: how many candidates
  *  of this run turned out to exist on phased chromosomes. */
 function renderPriorNote() {
-  const note = $('prior-note');
   const looked = state.alleles.filter((a) => a.trusted === 'no' && ['found_exact', 'found_with_extra', 'not_found'].includes(a.hap_status));
   const found = looked.filter((a) => a.hap_status === 'found_exact').length;
-  note.replaceChildren('This is your judgement of the method that produced the alleles; the score then moves it up or down.');
-  if (looked.length >= 20) {
-    const share = Math.min(99, Math.max(1, Math.round((100 * found) / looked.length)));
-    note.append(` For orientation: of the ${looked.length} candidates in this run whose whole sequence could be looked up on phased chromosomes, ${found} were found there. `,
-      el('button', { type: 'button', class: 'link', 'data-percent': String(share), text: `Use ${share}%` }));
-  }
+  $('prior-note').textContent = `This is your judgement of the method that produced the alleles; each score then moves it up or down. The probability appears beside every score.${looked.length >= 20 ? ` For orientation: of ${looked.length} candidates in this run whose whole sequence could be looked up on phased chromosomes, ${found} were found there.` : ''}`;
 }
 
 function renderAlleles() {
