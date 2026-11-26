@@ -6,17 +6,6 @@ use crate::config::Limits;
 use crate::score;
 use std::fmt::Write as _;
 
-#[allow(dead_code)]
-fn percent(x: f64) -> String {
-    if x >= 0.995 {
-        ">99%".to_string()
-    } else if x < 0.005 {
-        "<1%".to_string()
-    } else {
-        format!("{:.0}%", 100.0 * x)
-    }
-}
-
 /// The verdict a variant with this score gets when it is not classed common.
 fn band(score: f64, supported: f64, confirm: f64) -> &'static str {
     let limits = Limits {

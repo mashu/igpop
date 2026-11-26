@@ -62,11 +62,13 @@
   alleles*, which favours common variants: a real allele private to one
   family looks like an error to it, and should.
 - **The yardstick comes from the same file.** The trusted alleles
-  calibrate the curve and are then judged by it. Leaving out one gene at
-  a time when fitting changes little (of 104 trusted alleles with
-  differences, 99 pass with the curve of the whole run and 93 when their
-  own gene is left out), but an allele set that is wrong in a consistent
-  way would calibrate itself wrong.
+  calibrate the curve and are then judged by it. In the example this
+  circle does no harm: fitting the curve 42 times, each time without the
+  alleles of one gene, and judging that gene with the reduced curve gives
+  the same verdicts (99 of 104 trusted alleles pass either way; for 93 of
+  them every difference is `common`, which does not involve the curve).
+  An allele set that is wrong in a consistent way would still calibrate
+  itself wrong.
 - **All possible changes are treated alike.** The background does not
   distinguish kinds of base change. Transitions are more frequent in
   people than transversions, so an arbitrary transition is found more

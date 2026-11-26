@@ -13,7 +13,7 @@
 | Westlake BioBank for Chinese (WBBC) | GRCh38 | 4,480 | Counts in four regions of China: North, Central, South, Lingnan. |
 | 1000 Genomes 30x phased panel | GRCh38 | 2,598 founders | Haplotype check only. |
 
-The last four are read for GRCh38 only. They
+ALFA, GenomeAsia, ToMMo and WBBC are read for GRCh38 only. They
 add populations the first two cover thinly or as one block: Japanese,
 regions of China, Southeast Asia, and the populations of ALFA one by one
 (dbSNP passes on only its total). ALFA and ToMMo are also among the
@@ -123,17 +123,31 @@ twice.
 
 On the 519 IGHV alleles of the example that differ from the reference:
 
-| Sources read | Alleles supported |
+| Datasets read | Alleles supported |
 |---|---:|
-| 1000 Genomes, gnomAD and dbSNP | 439 |
-| without gnomAD | 423 |
-| without dbSNP | 427 |
+| all seven | 439 |
+| without gnomAD | 430 |
+| without dbSNP | 439 |
+| without ALFA, GenomeAsia, ToMMo and WBBC | 439 |
 | 1000 Genomes only | 404 |
+| all seven, without the haplotype check | 358 |
 
-No single source is essential, and each contributes. The web app reads
-gnomAD from the project's copy at Amazon, because the server at Google
-does not allow requests from web pages; with gnomAD switched off in its
-options, its results correspond to the second line.
+Equal totals hide exchanges: without dbSNP three alleles gain support and
+three lose it; without the four further datasets two gain and two lose.
+The calibration is redone in every line, so a dataset that is removed
+also stops raising the support of arbitrary changes; that is why the
+totals move so little.
+
+Read the table with the origin of the example in mind. Its alleles were
+inferred from people of the 1000 Genomes collection, so 1000 Genomes and
+gnomAD (which contains them) already hold most of what can be known about
+them. The further datasets earn their place with alleles from people
+those two cover thinly: Japanese, the regions of China, Southeast Asia.
+The haplotype check contributes more than any single frequency dataset.
+
+The web app reads gnomAD from the project's copy at Amazon, because the
+server at Google does not allow requests from web pages; with gnomAD
+switched off in its options, its results correspond to the second line.
 
 ## If a source cannot be read
 

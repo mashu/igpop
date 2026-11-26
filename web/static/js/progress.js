@@ -28,8 +28,8 @@ export function showStored(bytes, reading) {
 // of the analysis module that announce each of them.
 const STEPS = [
   { id: 'place', label: 'Placing alleles on their genes', now: 'Reading the reference sequence of each gene and aligning your alleles to it.', starts: /reference:|^aligning/ },
-  { id: 'download', label: 'Fetching population data', now: 'Fetching the regions of your genes from 1000 Genomes, gnomAD and dbSNP.', starts: /^downloading|^progress:/ },
-  { id: 'read', label: 'Reading frequencies and haplotypes', now: 'Looking up every difference in the population data.', starts: /^(1kGP|gnomAD|dbSNP|phased panel)/ },
+  { id: 'download', label: 'Fetching population data', now: 'Fetching the regions of your genes from each dataset.', starts: /^downloading|^progress:/ },
+  { id: 'read', label: 'Reading frequencies and haplotypes', now: 'Looking up every difference in the population data.', starts: /^reading / },
   { id: 'judge', label: 'Judging the alleles', now: 'Scoring every difference and writing the results.', starts: /^score:/ },
 ];
 

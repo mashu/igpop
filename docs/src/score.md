@@ -197,10 +197,10 @@ are still shown, as a ruler; they no longer decide anything.
 
   | Limit for `supported` | Reached at a support of | IGHV alleles supported (of 519) | Artificial substitutions supported (of 2,995) |
   |---:|---:|---:|---:|
-  | 2 (default) | 0.28% | 439 | 3.0% |
-  | 3 | 0.43% | 421 | 2.3% |
-  | 5 | 0.75% | 407 | 1.6% |
-  | 10 | 1.7% | 390 | 1.3% |
+  | 2 (default) | 0.29% | 439 | 2.9% |
+  | 3 | 0.44% | 423 | 2.2% |
+  | 5 | 0.77% | 412 | 1.6% |
+  | 10 | 1.7% | 389 | 1.3% |
 
   The web app has a control for the limit that shows these consequences
   while you move it.
