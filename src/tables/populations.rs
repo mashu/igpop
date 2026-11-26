@@ -48,7 +48,7 @@ impl<'a> PopulationRow<'a> {
     /// The rows of one difference: every population that looked at it.
     pub fn of(site: &'a Site<'a>) -> impl Iterator<Item = PopulationRow<'a>> + 'a {
         site.ev
-            .examined(site.lookup)
+            .strata(site.lookup)
             .into_iter()
             .map(move |(stratum, count)| PopulationRow { site, stratum, count })
     }

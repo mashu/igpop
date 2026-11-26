@@ -454,9 +454,9 @@ mod tests {
     fn levels_equal_a_direct_count() {
         let (arbitrary, trusted) = example();
         let levels = calibrate(&arbitrary, &trusted).unwrap().levels();
-        for level in 0..BINS {
+        for (level, counted) in levels.iter().enumerate() {
             let count = |values: &[f64]| values.iter().filter(|s| bin(**s) == level).count() as u64;
-            assert_eq!(levels[level], (count(&arbitrary), count(&trusted)), "level {level}");
+            assert_eq!(*counted, (count(&arbitrary), count(&trusted)), "level {level}");
         }
     }
 

@@ -255,18 +255,26 @@ impl Evidence {
             .any(|(contig, from, to)| contig == &window.coord.contig && *from <= window.start && window.end() <= *to)
     }
 
-    /// Every stratum that examined the variant's position, with its counts.
+    /// Every stratum that looked at the variant's position, with its
+    /// counts: the groups of a dataset that has a record of the variant;
+    /// the groups of a dataset that examines everyone everywhere and has
+    /// no record, with a count of zero (the variant was looked for and not
+    /// seen); and the studies dbSNP relays a frequency from.
     pub fn strata(&self, lookup: &Lookup) -> Vec<(Stratum, PopCount)> {
         let mut out = Vec::new();
+        let read = self.reads(&lookup.0);
         for (dataset, counted) in self.datasets.iter().enumerate() {
-            if let Some(record) = counted.sites.get(lookup) {
-                out.extend(
-                    record
-                        .counts
+            let stratum = |group| Stratum::Counted { dataset, group };
+            match counted.sites.get(lookup) {
+                Some(record) => out.extend(record.counts.iter().enumerate().map(|(group, count)| (stratum(group), *count))),
+                None if read && counted.dataset.complete => out.extend(
+                    counted
+                        .full
                         .iter()
                         .enumerate()
-                        .map(|(group, count)| (Stratum::Counted { dataset, group }, *count)),
-                );
+                        .map(|(group, an)| (stratum(group), PopCount::new(0, *an))),
+                ),
+                None => {}
             }
         }
         out.extend(self.dbsnp.counts(lookup).map(|(study, count)| (Stratum::Relayed(study), count)));
@@ -274,27 +282,16 @@ impl Evidence {
         out
     }
 
-    /// Every stratum that looked at the variant's position: those of
-    /// `strata`, and for a dataset that examines everyone everywhere and
-    /// has no record of the variant, its groups with a count of zero.
-    pub fn examined(&self, lookup: &Lookup) -> Vec<(Stratum, PopCount)> {
-        let mut out = self.strata(lookup);
-        if !self.reads(&lookup.0) {
-            return out;
-        }
-        for (dataset, counted) in self.datasets.iter().enumerate() {
-            if counted.dataset.complete && !counted.sites.contains_key(lookup) {
-                out.extend(
-                    counted
-                        .full
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, an)| **an > 0)
-                        .map(|(group, an)| (Stratum::Counted { dataset, group }, PopCount::new(0, *an))),
-                );
-            }
-        }
-        out
+    /// The number of strata the run can test a variant in: every group
+    /// with chromosomes in the regions read, and every relayed study in
+    /// use. A test repeated over the strata is corrected for this number,
+    /// which is fixed before any variant is looked at.
+    pub fn strata_in_use(&self) -> usize {
+        self.datasets
+            .iter()
+            .map(|counted| counted.full.iter().filter(|an| **an > 0).count())
+            .sum::<usize>()
+            + self.dbsnp.used().count()
     }
 
     /// Who a stratum is.

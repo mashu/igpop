@@ -67,17 +67,20 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
         .map(|(stratum, _)| ev.stratum_name(*stratum));
 
     let observed = ev.observed(&lookup);
-    // Class: the best stratum among those where the allele was seen at
-    // least twice (one copy can be a genotyping error), corrected for the
-    // number of strata.
+    // Class: an exact binomial test in every stratum where the allele was
+    // seen at least twice (one copy can be a genotyping error), and the
+    // best of them. Taking the best of many tests needs a correction:
+    // Bonferroni, for every stratum of the run, whether or not it has seen
+    // this variant. That number is fixed before any variant is looked at,
+    // and the correction holds however the strata overlap.
     let best = strata
         .iter()
         .filter(|(_, c)| c.ac >= 2)
         .map(|(name, c)| (c.tail_p(limits.common), c.lower95(), name))
-        // Smallest p-value; among equals, the highest guaranteed frequency.
+        // Smallest p-value; among equals, the highest lower bound.
         .min_by(|x, y| x.0.total_cmp(&y.0).then(y.1.total_cmp(&x.1)))
         .map(|(p, _, stratum)| (p, *stratum));
-    let corrected = best.map(|(p, stratum)| ((p * strata.len() as f64).min(1.0), ev.stratum_name(stratum)));
+    let corrected = best.map(|(p, stratum)| ((p * ev.strata_in_use() as f64).min(1.0), ev.stratum_name(stratum)));
     let (class, basis) = match &corrected {
         Some((p, name)) if *p <= 0.05 => (Class::Common, Some(name.clone())),
         // dbSNP's flag is second-hand. It does not count where the data read
