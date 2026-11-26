@@ -39,51 +39,6 @@
   background: transparent;
 }
 .privacy { margin: 1.6rem 0 0; font-size: 0.9rem; }
-.options { margin: 0 0 1.5rem; margin-top: 0.4rem; }
+.options { margin: 0.4rem 0 1.5rem; }
 .options summary { cursor: pointer; color: var(--muted); width: fit-content; }
 .options .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; padding: 1rem 0; }
-
-/* ---- Limits of the verdict ---- */
-.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 0.9rem; margin: 0.5rem 0 0.3rem; }
-.setting { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem 1rem; }
-.setting label { display: inline; color: var(--ink); font-size: 0.92rem; white-space: normal; }
-.setting-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; }
-.setting-head output { font-size: 1.5rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--accent); }
-.setting-head .link { margin-left: auto; }
-.setting label.check { display: flex; align-items: center; gap: 0.5rem; }
-.setting-head input[type=number] {
-  width: 5rem;
-  font: inherit;
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--accent);
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.1rem 0.4rem;
-  font-variant-numeric: tabular-nums;
-}
-.slider {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.6rem;
-  align-items: center;
-  margin: 0.7rem 0 0.8rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.slider input { width: 100%; accent-color: var(--accent); }
-.facts { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
-.facts li {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 1rem 1.1rem;
-  font-size: 0.93rem;
-  color: var(--muted);
-}
-.facts b { display: block; margin-bottom: 0.2rem; font-size: 1.05rem; color: var(--ink); font-variant-numeric: tabular-nums; }
-.facts > span { display: grid; gap: 0.1rem; font-size: 0.8rem; color: var(--muted); line-height: 1.3; }
-.facts > p { grid-column: 1 / -1; margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--muted); }
-.facts b.hint-value { width: fit-content; }

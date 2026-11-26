@@ -7,7 +7,6 @@
 .detail-section h4 { margin: 0; font-size: 1.02rem; }
 .detail-section > header p { margin: 0.1rem 0 0; font-size: 0.86rem; }
 .detail-section .reason { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; margin: 0 0 0.4rem; }
-.detail-section .aln, .detail-section .hap { margin-top: 0; }
 
 /* ---- The evidence behind one difference ---- */
 .evidence {
@@ -17,8 +16,7 @@
   max-width: min(1000px, calc(100vw - 9rem));
 }
 .evidence-part:first-child, .evidence-part:last-child { grid-column: 1 / -1; }
-.evidence p, .evidence ol { margin: 0.2rem 0; font-size: 0.9rem; }
-.evidence ol { padding-left: 1.2rem; display: grid; gap: 0.4rem; }
+.evidence p { margin: 0.2rem 0; font-size: 0.9rem; }
 .evidence-part:nth-child(4) { grid-column: 1 / -1; }
 .evidence h4 .hint { font-weight: 400; }
 .why { display: grid; gap: 0.3rem; margin: 0.2rem 0 0; }
@@ -72,9 +70,6 @@
 .swatch.this-mark { background: var(--ink); width: 2px; border-radius: 0; }
 
 /* ---- The whole sequence in people ---- */
-.hap, .aln { margin-top: 1.2rem; }
-.hap h4 { margin: 0 0 0.3rem; }
-.hap p { margin: 0.2rem 0; }
 .hap-chart { margin: 0.8rem 0 0.4rem; padding: 0.8rem 1rem; border: 1px solid var(--line); border-radius: 10px; max-width: 46rem; }
 .hap-chart h5 { margin: 0; font-size: 0.95rem; }
 .hap-chart p { margin: 0.15rem 0 0.5rem; font-size: 0.88rem; }

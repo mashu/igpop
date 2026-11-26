@@ -124,7 +124,7 @@ as supported.
 | Column | Meaning |
 |---|---|
 | `hap_exact_AFR` ... `hap_exact_SAS` | Carrier chromosomes / founder chromosomes in each superpopulation. |
-| `hap_exact_max_pop` | Superpopulation with the highest guaranteed frequency. |
+| `hap_exact_max_pop` | Superpopulation with the highest lower frequency bound. |
 | `hap_exact_pop_heterogeneity_p` | Test of "same frequency in all five superpopulations". A small value means the haplotype is population-specific. With fewer than about ten carriers the test is approximate. |
 
 Example: `IGHV1-24*01_S1381` is found on 72 chromosomes of 64 people, 70 of

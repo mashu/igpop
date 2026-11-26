@@ -34,12 +34,14 @@ Mendelian error rate.
 
 ## Which dataset a variant comes from
 
-Every row shows it three ways:
+It is shown three ways:
 
-- `evidence` lists the sources in which the variant was observed;
-- `class_basis` names the dataset and population that decided the class;
-- the `kgp_*`, `gnomad_*` and `dbsnp_*` columns hold each source's own
-  numbers.
+- `evidence` in `variants.tsv` lists the datasets in which the variant was
+  observed;
+- `support_from` and `class_basis` name the dataset and group that gave
+  the support and decided the class;
+- `populations.tsv` holds the counts of every group of every dataset that
+  looked at the position, one row each.
 
 Nothing is merged into a single frequency.
 
@@ -73,13 +75,15 @@ datasets, overlap and shared errors affect both alike. See
 **The class** asks a yes/no question: is there a population in which the
 variant demonstrably reaches `--common`? Every population of every dataset
 is tested with an exact binomial test, and the best p-value is multiplied
-by the number of populations tested. Overlap between datasets makes this
-correction stricter than necessary, never too lenient.
+by the number of populations of the run. Overlap between datasets makes
+this correction stricter than necessary, never too lenient. See
+[Method](method.md#7-the-class-is-the-difference-demonstrably-common).
 
-## What the second dataset adds
+## What gnomAD adds to 1000 Genomes
 
-- **Replication.** A variant observed in both (`evidence` lists two names)
-  was called by two pipelines in mostly different people.
+- **A second pipeline.** A variant observed in both (`evidence` lists both
+  names) was called by two pipelines. gnomAD contains the 1000 Genomes
+  samples, so this is not an independent replication in other people.
 - **Less cell-line bias.** Most gnomAD genomes are not from B-cell lines,
   so its frequencies are not distorted by V(D)J deletions in the way 1000
   Genomes frequencies near the D–J region are.
@@ -192,13 +196,16 @@ populations of 1000 Genomes and gnomAD:
   first-hand counts outrank a second-hand flag.
 
 `class_basis` shows which population decided (`dbSNP:TOPMED`,
-`gnomAD_v4.1:afr`, ...), and `dbsnp_freq` lists every reported frequency.
+`gnomAD_v4.1:afr`, ...), and `populations.tsv` lists every relayed
+frequency with its estimated counts (`counts = estimated`).
 
-Which datasets are used is decided from the data, and written to
-`<prefix>.dbsnp_datasets.tsv` together with the estimated size:
+Which studies are used is decided from the data, and written to
+`<prefix>.datasets.tsv` (rows with `dataset = dbSNP`) together with the
+estimated size:
 
 1. A dataset that re-reports a source igpop read directly in the same run
-   is left out (`1000Genomes`, `1000Genomes_30X`, `GnomAD_genomes`). On a
+   is left out (`1000Genomes`, `1000Genomes_30X`, `GnomAD_genomes`,
+   `dbGaP_PopFreq`, `TOMMO`). On a
    build where igpop has no primary source they are kept.
 2. A dataset must be large enough that seeing nothing would bound the
    frequency below `--common`: at least `3 / common` chromosomes.

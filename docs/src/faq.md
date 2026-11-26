@@ -23,8 +23,9 @@ and the alignment.
 
 **Why is `supported` not the same as "all variants common"?**
 A variant is `supported` when it is classed `common`, or when its
-guaranteed frequency is at least ten times more typical of the variants of
-real alleles than of arbitrary changes. And a whole allele is
+support (the lowest plausible frequency in its best population) is at
+least twice as typical of the variants of real alleles as of arbitrary
+changes. And a whole allele is
 `supported` when chromosomes with exactly its sequence exist in phased
 genomes, however rare its single differences are.
 

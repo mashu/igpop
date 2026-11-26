@@ -20,7 +20,9 @@ results/ighv.alignments.tsv          where each allele was placed
 results/ighv.score_model.tsv         the curve behind the score
 results/ighv.score_levels.tsv        the two groups counted per level of support
 results/ighv.haplotype_calibration.tsv  what a found haplotype is worth
-results/ighv.dbsnp_datasets.tsv      which dbSNP frequency datasets were used
+results/ighv.populations.tsv         the evidence: copies and chromosomes per variant and group of people
+results/ighv.site_quality.tsv        what each dataset says about the site of a variant
+results/ighv.datasets.tsv            the groups of people consulted, and which were used
 ```
 
 ## Options

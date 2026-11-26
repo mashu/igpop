@@ -51,21 +51,21 @@ Put candidates and trusted alleles in the same FASTA and the same run.
 
 Small sets (D and J genes, or a handful of alleles) cannot calibrate
 themselves. They are scored with a curve computed once from 566 human IGHV
-alleles (147 named trusted, 45 confirmed as haplotypes) on GRCh38 with 1000 Genomes 30x, gnomAD v4.1 genomes and the
-datasets relayed by dbSNP: 213 real variants against 38,316 possible
+alleles (147 named trusted, 45 confirmed as haplotypes) on GRCh38 with
+the seven datasets of that build: 213 real variants against 38,316 possible
 changes. A change never seen scores 0.005; for a change that was seen,
-log(score) = 4.96 + 1.11 x − 0.22 x² with x = log10(support). The two
+log(score) = 4.88 + 1.00 x − 0.26 x² with x = log10(support). The two
 groups, counted per level of support:
 
 | Support | Arbitrary changes | Variants of yardstick alleles | Score across the level |
 |---|---:|---:|---:|
-| none | 18,812 | 0 | 0.005 |
-| below 0.001% | 5,488 | 0 | 0.005 |
-| 0.001 to 0.01% | 7,809 | 0 | 0.005 to 0.05 |
-| 0.01 to 0.1% | 3,899 | 7 | 0.05 to 0.70 |
-| 0.1 to 1% | 1,614 | 18 | 0.70 to 6.4 |
-| 1 to 10% | 332 | 41 | 6.4 to 38 |
-| 10% and more | 362 | 147 | 38 to 143 |
+| none | 18,172 | 0 | 0.005 |
+| below 0.001% | 6,066 | 0 | 0.005 |
+| 0.001 to 0.01% | 7,551 | 0 | 0.005 to 0.04 |
+| 0.01 to 0.1% | 4,152 | 7 | 0.04 to 0.64 |
+| 0.1 to 1% | 1,658 | 14 | 0.64 to 6.3 |
+| 1 to 10% | 347 | 45 | 6.3 to 37 |
+| 10% and more | 370 | 147 | 37 to 132 |
 
 It is appropriate for human IGH with the default datasets. For another
 locus, or other datasets, the report warns; the better route is a run of
@@ -103,5 +103,5 @@ igpop variants --alleles my.fasta --supported-score 10 --confirm-score 0.3 -o st
 ```
 
 Section 5 of the report says at which support the score crosses each limit
-(0.28% and 0.018% for the defaults in the IGHV example), so you can see
+(0.29% and 0.021% for the defaults in the IGHV example), so you can see
 what a limit means in terms of frequency.

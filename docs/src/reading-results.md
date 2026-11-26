@@ -72,7 +72,7 @@ For each variant, `variants.tsv` holds what the verdict is made of:
 | Column | In plain words |
 |---|---|
 | `class` | `common`: shown to reach 1% in at least one population. `uncommon`: seen, but not shown to reach 1%. `absent`: never seen. |
-| `support` | The frequency the data *guarantee* in the best population (a lower confidence bound, so small studies cannot inflate it). |
+| `support` | The lowest plausible frequency in the best population: the lower end of the 95% confidence range, so small studies cannot inflate it. |
 | `score` | A likelihood ratio: how many times more often this level of support occurs among variants of real alleles than among arbitrary base changes. Around 70 = typical of real variants; 1 = no information either way; 0.01 = typical of arbitrary changes. |
 | `verdict` | The verdict of the variant by frequency: `supported` if `class` is `common` or the score is at least 2; `needs_confirmation` if the score is at most 0.1; otherwise `inconclusive`. |
 
@@ -97,7 +97,7 @@ population. Score 72.
 
 **`IGHV1-18*01_S2706`: needs_confirmation.** Two differences. One is the
 frequent rs72695948 above; the other, rs368426916, has an rsID but was found in only a handful of
-genomes: its guaranteed frequency is a few in a million
+genomes: its lowest plausible frequency is a few in a million
 (`rare_in_every_population,low_score`). An rsID is a label, not evidence:
 dbSNP records every submitted change. The allele needs independent
 confirmation of that one base.
