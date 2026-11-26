@@ -1,246 +1,59 @@
 //! Step 2: read the population data for the loci of the run, and answer one
-//! question about any variant: in which populations was it seen, how often?
+//! question about any variant: in which populations was it looked for, and
+//! how often was it seen?
 //!
-//! A *stratum* is one population of one dataset: a superpopulation of 1000
-//! Genomes, a genetic-ancestry group of gnomAD, or a dataset relayed by
-//! dbSNP. Everything downstream (class, support, score) is computed from
-//! the strata of a variant and nothing else.
+//! A *stratum* is one group of people of one dataset: a superpopulation of
+//! 1000 Genomes, a genetic-ancestry group of gnomAD, the Japanese of ToMMo,
+//! a study relayed by dbSNP. Everything downstream (class, support, score)
+//! is computed from the strata of a variant and nothing else. Strata are
+//! never pooled: the same people can be in several datasets, and a
+//! statistic that takes the best stratum does not count them twice.
 
-use crate::extra::Extra;
 use crate::fetch::{fetch_vcf, merge_regions, Cache, Region};
-use crate::freq::{self, GnomadSite, Key, KgpRelease, PopCount, Site, GNOMAD_GROUPS, POPS};
 use crate::hap::Panel;
 use crate::locus::{Placed, Status, Window};
+use crate::population::dbsnp::Dbsnp;
+use crate::population::{Ancestry, Dataset, Record};
+use crate::stats::PopCount;
+use crate::variant::Lookup;
 use crate::{io, note, tabix};
 use anyhow::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-/// A variant as (contig, (position, REF, ALT)).
-pub type Lookup = (String, Key);
-
-/// One population of one dataset, by its position in that dataset.
+/// One group of people of one dataset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stratum {
-    /// Superpopulation of 1000 Genomes (index into `POPS`).
-    Kgp(usize),
-    /// Genetic-ancestry group of gnomAD (index into `GNOMAD_GROUPS`).
-    Gnomad(usize),
-    /// Dataset relayed by dbSNP (index into the datasets in use).
-    Dbsnp(usize),
-    /// Group of a further dataset: which dataset, which group.
-    Extra(usize, usize),
+    /// A group of a dataset with counts: positions in `Evidence::datasets`
+    /// and in the groups of that dataset.
+    Counted { dataset: usize, group: usize },
+    /// A study relayed by dbSNP, by its position among the studies in use.
+    Relayed(usize),
 }
 
-/// Where each source is read from; `None` = not used in this run.
+/// A stratum in words.
+pub struct Described {
+    /// The dataset as written in the output; `dbSNP` for a relayed study.
+    pub dataset: &'static str,
+    pub group: String,
+    pub title: String,
+    pub ancestry: Ancestry,
+    /// The counts are worked out from a frequency and an estimated size.
+    pub estimated: bool,
+}
+
+/// What a run reads for the alleles of one genome build.
 pub struct Sources {
-    pub kgp: Option<String>,
-    /// Which release `kgp` is, and what to call it in the output.
-    pub kgp_release: KgpRelease,
-    pub kgp_name: &'static str,
-    pub gnomad: Option<String>,
-    pub gnomad_name: &'static str,
+    /// The datasets with counts, in the order they are reported.
+    pub datasets: Vec<Dataset>,
     pub dbsnp: Option<String>,
-    /// Further datasets with counts per group.
-    pub extras: Vec<Extra>,
+    /// Studies relayed by dbSNP that are left out by name.
+    pub dbsnp_exclude: Vec<String>,
+    /// The phased panel and the pedigree of its samples.
     pub phased: Option<String>,
     pub pedigree: String,
-    /// dbSNP datasets left out by name.
-    pub dbsnp_exclude: Vec<String>,
-    /// The frequency a `common` variant must reach (`--common`).
+    /// The frequency a `common` variant must reach (`--common`): a study
+    /// relayed by dbSNP must be large enough to show it.
     pub common: f64,
-}
-
-/// True if a stratum of `an` chromosomes is large enough to tell a common
-/// variant from a rare one: not seeing the allele at all would bound its
-/// frequency below `common`.
-pub fn informative(an: u32, common: f64) -> bool {
-    unseen(an).upper95() < common
-}
-
-fn unseen(an: u32) -> PopCount {
-    PopCount { ac: 0, an, het: 0, hom: 0 }
-}
-
-/// Largest upper bound of the frequency of an allele seen in none of the
-/// strata, whose sizes are `full`.
-pub fn absent_upper(full: &[u32]) -> f64 {
-    full.iter().map(|an| unseen(*an).upper95()).fold(f64::NAN, f64::max)
-}
-
-/// One frequency dataset relayed by dbSNP, and whether it is used.
-pub struct Dataset {
-    pub name: String,
-    pub records: u64,
-    pub smallest_af: f64,
-    /// Estimated size: one copy among all chromosomes gives the smallest
-    /// non-zero frequency a dataset can report.
-    pub chromosomes: u32,
-    pub used: bool,
-    pub reason: &'static str,
-}
-
-/// One allele of a dbSNP record with the frequencies reported for it, as
-/// (dataset, frequency).
-type Reported = (Lookup, Vec<(String, f64)>);
-
-/// What dbSNP holds for the regions read.
-#[derive(Default)]
-pub struct Dbsnp {
-    pub rsids: HashMap<Lookup, String>,
-    /// Frequencies per variant allele, as (dataset, frequency).
-    freqs: HashMap<Lookup, Vec<(String, f64)>>,
-    /// Alleles carrying the COMMON flag: of a site with several alternate
-    /// alleles, only the most frequent one. Decided in `select`.
-    pub common: HashSet<Lookup>,
-    /// Records with the COMMON flag: their alleles, each with the
-    /// frequencies reported for it.
-    flagged: Vec<Vec<Reported>>,
-    /// Per dataset: number of records, smallest non-zero frequency.
-    seen: HashMap<String, (u64, f64)>,
-    /// Decided once all lines are read, largest dataset first.
-    pub datasets: Vec<Dataset>,
-    /// The datasets in use, by name: positions in `datasets`.
-    used: Vec<usize>,
-}
-
-impl Dbsnp {
-    fn add_line(&mut self, contig: &str, line: &str) {
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 5 || f[2] == "." || f[4] == "." {
-            return;
-        }
-        let Ok(pos) = f[1].parse::<u64>() else { return };
-        let reported = f.get(7).map(|info| freq::parse_dbsnp_freq(info)).unwrap_or_default();
-        for (dataset, values) in &reported {
-            let entry = self.seen.entry(dataset.clone()).or_insert((0, f64::INFINITY));
-            entry.0 += 1;
-            for v in values.iter().skip(1).flatten().filter(|v| **v > 0.0) {
-                entry.1 = entry.1.min(*v);
-            }
-        }
-        let alts: Vec<&str> = f[4].split(',').collect();
-        let lookup = |alt: &str| (contig.to_string(), freq::trim(pos, f[3].as_bytes(), alt.as_bytes()));
-        let flagged = f.get(7).is_some_and(|info| info.split(';').any(|x| x == "COMMON"));
-        let mut alleles = Vec::new();
-        for (i, alt) in alts.iter().enumerate() {
-            let of_alt: Vec<(String, f64)> = reported
-                .iter()
-                .filter_map(|(dataset, values)| values.get(i + 1).copied().flatten().map(|v| (dataset.clone(), v)))
-                .collect();
-            self.rsids.insert(lookup(alt), f[2].to_string());
-            if flagged {
-                alleles.push((lookup(alt), of_alt.clone()));
-            }
-            self.freqs.insert(lookup(alt), of_alt);
-        }
-        if flagged {
-            self.flagged.push(alleles);
-        }
-    }
-
-    /// Decide which datasets are used. `duplicated`: datasets that re-report
-    /// a source read directly in this run.
-    fn select(&mut self, excluded: &[String], duplicated: &[&str], common: f64) {
-        self.datasets = self
-            .seen
-            .iter()
-            .map(|(name, (records, smallest_af))| {
-                let chromosomes = if smallest_af.is_finite() {
-                    (1.0 / smallest_af).round() as u32
-                } else {
-                    0
-                };
-                let reason = if excluded.contains(name) {
-                    "excluded by --dbsnp-exclude"
-                } else if duplicated.contains(&name.as_str()) {
-                    "re-report of a source read directly"
-                } else if !informative(chromosomes, common) {
-                    "too small for --common"
-                } else {
-                    "."
-                };
-                Dataset {
-                    name: name.clone(),
-                    records: *records,
-                    smallest_af: *smallest_af,
-                    chromosomes,
-                    used: reason == ".",
-                    reason,
-                }
-            })
-            .collect();
-        self.datasets
-            .sort_by(|a, b| a.smallest_af.total_cmp(&b.smallest_af).then(a.name.cmp(&b.name)));
-        self.used = (0..self.datasets.len()).filter(|i| self.datasets[*i].used).collect();
-        self.used.sort_by(|a, b| self.datasets[*a].name.cmp(&self.datasets[*b].name));
-        // dbSNP flags a record, not an allele. The flag is given to the
-        // allele of the record with the highest frequency in any dataset
-        // large enough to show a frequency of `common`: a dataset of a few
-        // people reports half of everything it sees as frequent.
-        let large: HashSet<&str> = self
-            .datasets
-            .iter()
-            .filter(|d| informative(d.chromosomes, common) && !excluded.contains(&d.name))
-            .map(|d| d.name.as_str())
-            .collect();
-        let highest = |freqs: &[(String, f64)]| {
-            freqs
-                .iter()
-                .filter(|(dataset, _)| large.contains(dataset.as_str()))
-                .map(|(_, af)| *af)
-                .fold(0.0, f64::max)
-        };
-        self.common = self
-            .flagged
-            .iter()
-            .filter_map(|alleles| {
-                alleles
-                    .iter()
-                    .map(|(lookup, freqs)| (highest(freqs), lookup))
-                    .filter(|(af, _)| *af > 0.0)
-                    .max_by(|a, b| a.0.total_cmp(&b.0))
-                    .map(|(_, lookup)| lookup.clone())
-            })
-            .collect();
-    }
-
-    /// The datasets in use, in the order `Stratum::Dbsnp` numbers them.
-    pub fn used(&self) -> impl Iterator<Item = &Dataset> {
-        self.used.iter().map(|i| &self.datasets[*i])
-    }
-
-    /// Non-zero frequencies of the used datasets for one allele, highest first.
-    pub fn relayed(&self, lookup: &Lookup) -> Vec<(String, f64)> {
-        let mut out: Vec<(String, f64)> = self
-            .freqs
-            .get(lookup)
-            .map(|all| {
-                all.iter()
-                    .filter(|(d, af)| *af > 0.0 && self.used().any(|u| &u.name == d))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-        out.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
-        out
-    }
-
-    /// One stratum per used dataset that reports this allele. dbSNP relays
-    /// a frequency without counts; the count is frequency x estimated size.
-    fn strata<'a>(&'a self, lookup: &Lookup) -> impl Iterator<Item = (Stratum, PopCount)> + 'a {
-        let reported = self.freqs.get(lookup);
-        self.used().enumerate().filter_map(move |(k, d)| {
-            let (_, af) = reported?.iter().find(|(name, _)| name == &d.name)?;
-            let ac = (af * d.chromosomes as f64).round() as u32;
-            let count = PopCount {
-                ac,
-                an: d.chromosomes,
-                het: 0,
-                hom: 0,
-            };
-            Some((Stratum::Dbsnp(k), count))
-        })
-    }
 }
 
 /// True for a whole chromosome (1-22, X, Y, with or without `chr`), false
@@ -284,11 +97,11 @@ pub struct Download {
 /// program able to download concurrently can fetch it ahead.
 pub fn downloads(sources: &Sources, windows: &[Window], placed: &[Placed]) -> Vec<Download> {
     let frequency = frequency_regions(windows, placed);
-    let mut out: Vec<Download> = [&sources.kgp, &sources.gnomad, &sources.dbsnp]
-        .into_iter()
-        .flatten()
-        .cloned()
-        .chain(sources.extras.iter().map(|extra| extra.spec.to_string()))
+    let mut out: Vec<Download> = sources
+        .datasets
+        .iter()
+        .map(|dataset| dataset.spec.clone())
+        .chain(sources.dbsnp.clone())
         .map(|spec| Download {
             spec,
             regions: frequency.clone(),
@@ -304,150 +117,129 @@ pub fn downloads(sources: &Sources, windows: &[Window], placed: &[Placed]) -> Ve
     out
 }
 
+/// A dataset as read for the loci of a run.
+pub struct Counted {
+    pub dataset: Dataset,
+    pub sites: HashMap<Lookup, Record>,
+    /// Per group, the chromosomes of a fully called site: the largest
+    /// number examined at any record of the regions read.
+    pub full: Vec<u32>,
+    /// The same over all people of the dataset.
+    pub full_all: u32,
+}
+
+impl Counted {
+    fn read(dataset: Dataset, regions: &[Region], cache: Cache) -> Result<Self> {
+        let mut sites = HashMap::new();
+        for (contig, line) in fetch_vcf(&dataset.spec, regions, cache)? {
+            for (key, record) in dataset.layout.parse(&line) {
+                sites.insert((contig.clone(), key), record);
+            }
+        }
+        let mut full = vec![0; dataset.groups.len()];
+        let mut full_all = 0;
+        for record in sites.values() {
+            full_all = full_all.max(record.all().an);
+            for (most, count) in full.iter_mut().zip(&record.counts) {
+                *most = (*most).max(count.an);
+            }
+        }
+        Ok(Counted {
+            dataset,
+            sites,
+            full,
+            full_all,
+        })
+    }
+
+    /// The site criteria the record of this variant fails.
+    pub fn failures(&self, lookup: &Lookup) -> Vec<String> {
+        self.sites.get(lookup).map_or(Vec::new(), |record| {
+            record
+                .quality
+                .failures(record.all().an, self.dataset.complete.then_some(self.full_all))
+        })
+    }
+}
+
 pub struct Evidence {
     pub sources: Sources,
     /// The regions whose population data was read.
     regions: Vec<Region>,
-    pub kgp: HashMap<Lookup, Site>,
-    /// Chromosomes genotyped at a fully called site, per superpopulation:
-    /// the denominator for a variant without a record.
-    pub kgp_full: [u32; 5],
-    pub gnomad: HashMap<Lookup, GnomadSite>,
-    pub gnomad_full: [u32; 9],
-    pub gnomad_full_total: u32,
+    /// The datasets that were read, in the order of `sources.datasets`.
+    pub datasets: Vec<Counted>,
     pub dbsnp: Dbsnp,
-    /// Per further dataset that was read, in the order of
-    /// `sources.extras`: the counts of its groups per variant.
-    pub extras: Vec<HashMap<Lookup, Vec<PopCount>>>,
     pub panel: Option<Panel>,
 }
 
 impl Evidence {
     /// Read every source for the loci that need it. Frequencies: loci with
     /// at least one variant. Phased panel: loci with any placed allele.
-    pub fn load(sources: Sources, windows: &[Window], placed: &[Placed], cache: Cache) -> Result<Self> {
+    pub fn load(mut sources: Sources, windows: &[Window], placed: &[Placed], cache: Cache) -> Result<Self> {
         let regions = frequency_regions(windows, placed);
-        let mut ev = Evidence {
-            sources,
-            regions,
-            kgp: HashMap::new(),
-            kgp_full: [0; 5],
-            gnomad: HashMap::new(),
-            gnomad_full: [0; 9],
-            gnomad_full_total: 0,
-            dbsnp: Dbsnp::default(),
-            extras: Vec::new(),
-            panel: None,
-        };
-        if ev.regions.is_empty() {
-            (ev.sources.kgp, ev.sources.gnomad, ev.sources.dbsnp) = (None, None, None);
-            ev.sources.extras.clear();
+        if regions.is_empty() {
+            sources.datasets.clear();
+            sources.dbsnp = None;
         }
-        // Further datasets add evidence; one that cannot be read is left
-        // out and the run continues.
-        let mut read = Vec::new();
-        for extra in std::mem::take(&mut ev.sources.extras) {
-            note!("{}: {}", extra.name, extra.spec);
-            match fetch_vcf(extra.spec, &ev.regions, cache) {
-                Ok(lines) => {
-                    let mut sites = HashMap::new();
-                    for (contig, line) in lines {
-                        for (key, counts) in extra.parse(&line) {
-                            sites.insert((contig.clone(), key), counts);
-                        }
-                    }
-                    ev.extras.push(sites);
-                    read.push(extra);
-                }
-                Err(e) => note!("warning: {} could not be read and is left out: {e:#}", extra.title),
+        let mut datasets = Vec::new();
+        for dataset in std::mem::take(&mut sources.datasets) {
+            note!("{}: {}", dataset.name, dataset.spec);
+            let (required, title) = (dataset.required, dataset.title);
+            match Counted::read(dataset, &regions, cache) {
+                Ok(counted) => datasets.push(counted),
+                Err(e) if required => return Err(e),
+                Err(e) => note!("warning: {title} could not be read and is left out: {e:#}"),
             }
         }
-        ev.sources.extras = read;
-
-        if let Some(spec) = &ev.sources.kgp {
-            note!("{}: {spec}", ev.sources.kgp_name);
-            for (contig, line) in fetch_vcf(spec, &ev.regions, cache)? {
-                for (key, site) in ev.sources.kgp_release.parse(&line) {
-                    ev.kgp.insert((contig.clone(), key), site);
-                }
-            }
-            for site in ev.kgp.values() {
-                for (full, pop) in ev.kgp_full.iter_mut().zip(&site.pops) {
-                    *full = (*full).max(pop.an);
-                }
-            }
-        }
-        if let Some(spec) = &ev.sources.gnomad {
-            note!("{}: {spec}", ev.sources.gnomad_name);
-            for (contig, line) in fetch_vcf(spec, &ev.regions, cache)? {
-                for (key, site) in freq::parse_gnomad_line(&line) {
-                    ev.gnomad.insert((contig.clone(), key), site);
-                }
-            }
-            for site in ev.gnomad.values() {
-                ev.gnomad_full_total = ev.gnomad_full_total.max(site.total.an);
-                for (full, group) in ev.gnomad_full.iter_mut().zip(&site.groups) {
-                    *full = (*full).max(group.an);
-                }
-            }
-        }
-        if let Some(spec) = &ev.sources.dbsnp {
+        sources.datasets = datasets.iter().map(|counted| counted.dataset.clone()).collect();
+        let mut dbsnp = Dbsnp::default();
+        if let Some(spec) = &sources.dbsnp {
             note!("dbSNP: {spec}");
             // If dbSNP is unavailable the run continues without it.
-            let lines = fetch_vcf(spec, &ev.regions, cache).unwrap_or_else(|e| {
+            let lines = fetch_vcf(spec, &regions, cache).unwrap_or_else(|e| {
                 note!("warning: dbSNP could not be read; no rsIDs, no relayed frequencies: {e:#}");
                 Vec::new()
             });
             for (contig, line) in lines {
-                ev.dbsnp.add_line(&contig, &line);
+                dbsnp.add_line(&contig, &line);
             }
-            let mut duplicated: Vec<&str> = Vec::new();
-            if ev.sources.kgp.is_some() {
-                duplicated.extend(["1000Genomes", "1000Genomes_30X"]);
-            }
-            if ev.sources.gnomad.is_some() {
-                duplicated.push("GnomAD_genomes");
-            }
-            duplicated.extend(ev.sources.extras.iter().flat_map(|extra| extra.replaces.iter().copied()));
-            ev.dbsnp.select(&ev.sources.dbsnp_exclude, &duplicated, ev.sources.common);
+            // A study that reports people read directly is left out.
+            let duplicated: Vec<&str> = sources
+                .datasets
+                .iter()
+                .flat_map(|dataset| dataset.replaces.iter().copied())
+                .collect();
+            dbsnp.select(&sources.dbsnp_exclude, &duplicated, sources.common);
         }
-
         let hap_regions = haplotype_regions(windows, placed);
         if hap_regions.is_empty() {
-            ev.sources.phased = None;
+            sources.phased = None;
         }
-        if let Some(spec) = &ev.sources.phased {
+        let mut panel = None;
+        if let Some(spec) = &sources.phased {
             note!("phased panel: {spec}");
             // Additional evidence: if the panel is unavailable the run
             // continues without the haplotype check.
-            match load_panel(spec, &ev.sources.pedigree, &hap_regions, cache) {
-                Ok(panel) => {
-                    note!("  {} founders, {} haplotypes", panel.founders, 2 * panel.founders);
-                    ev.panel = Some(panel);
+            match load_panel(spec, &sources.pedigree, &hap_regions, cache) {
+                Ok(loaded) => {
+                    note!("  {} founders, {} haplotypes", loaded.founders, 2 * loaded.founders);
+                    panel = Some(loaded);
                 }
                 Err(e) => note!("warning: haplotype check skipped: {e:#}"),
             }
         }
-        Ok(ev)
-    }
-
-    pub fn kgp_full_total(&self) -> u32 {
-        self.kgp_full.iter().sum()
-    }
-
-    /// True if the 1000 Genomes / gnomAD data cover the loci of the run, so
-    /// that a variant without a record there counts as "looked for, absent".
-    pub fn kgp_read(&self) -> bool {
-        self.sources.kgp.is_some() && self.kgp_full_total() > 0
-    }
-
-    pub fn gnomad_read(&self) -> bool {
-        self.sources.gnomad.is_some() && self.gnomad_full_total > 0
+        Ok(Evidence {
+            sources,
+            regions,
+            datasets,
+            dbsnp,
+            panel,
+        })
     }
 
     /// True if at least one source with allele counts was consulted.
     pub fn counted(&self) -> bool {
-        self.kgp_read() || self.gnomad_read() || self.dbsnp.used().next().is_some() || self.extras.iter().any(|sites| !sites.is_empty())
+        self.datasets.iter().any(|counted| counted.full_all > 0) || self.dbsnp.used().next().is_some()
     }
 
     /// True if the population data of this run cover the contig: a variant
@@ -463,33 +255,106 @@ impl Evidence {
             .any(|(contig, from, to)| contig == &window.coord.contig && *from <= window.start && window.end() <= *to)
     }
 
-    /// Every stratum that genotyped the variant's position, with its counts.
+    /// Every stratum that examined the variant's position, with its counts.
     pub fn strata(&self, lookup: &Lookup) -> Vec<(Stratum, PopCount)> {
         let mut out = Vec::new();
-        if let Some(site) = self.kgp.get(lookup) {
-            out.extend(site.pops.iter().enumerate().map(|(i, c)| (Stratum::Kgp(i), *c)));
-        }
-        if let Some(site) = self.gnomad.get(lookup) {
-            out.extend(site.groups.iter().enumerate().map(|(i, c)| (Stratum::Gnomad(i), *c)));
-        }
-        out.extend(self.dbsnp.strata(lookup));
-        for (k, sites) in self.extras.iter().enumerate() {
-            if let Some(counts) = sites.get(lookup) {
-                out.extend(counts.iter().enumerate().map(|(i, c)| (Stratum::Extra(k, i), *c)));
+        for (dataset, counted) in self.datasets.iter().enumerate() {
+            if let Some(record) = counted.sites.get(lookup) {
+                out.extend(
+                    record
+                        .counts
+                        .iter()
+                        .enumerate()
+                        .map(|(group, count)| (Stratum::Counted { dataset, group }, *count)),
+                );
             }
         }
-        out.retain(|(_, c)| c.an > 0);
+        out.extend(self.dbsnp.counts(lookup).map(|(study, count)| (Stratum::Relayed(study), count)));
+        out.retain(|(_, count)| count.an > 0);
         out
     }
 
-    /// A stratum as `dataset:population`.
-    pub fn stratum_name(&self, stratum: Stratum) -> String {
-        match stratum {
-            Stratum::Kgp(i) => format!("{}:{}", self.sources.kgp_name, POPS[i]),
-            Stratum::Gnomad(i) => format!("{}:{}", self.sources.gnomad_name, GNOMAD_GROUPS[i]),
-            Stratum::Dbsnp(k) => format!("dbSNP:{}", self.dbsnp.used().nth(k).map_or("?", |d| d.name.as_str())),
-            Stratum::Extra(k, i) => format!("{}:{}", self.sources.extras[k].name, self.sources.extras[k].groups[i]),
+    /// Every stratum that looked at the variant's position: those of
+    /// `strata`, and for a dataset that examines everyone everywhere and
+    /// has no record of the variant, its groups with a count of zero.
+    pub fn examined(&self, lookup: &Lookup) -> Vec<(Stratum, PopCount)> {
+        let mut out = self.strata(lookup);
+        if !self.reads(&lookup.0) {
+            return out;
         }
+        for (dataset, counted) in self.datasets.iter().enumerate() {
+            if counted.dataset.complete && !counted.sites.contains_key(lookup) {
+                out.extend(
+                    counted
+                        .full
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, an)| **an > 0)
+                        .map(|(group, an)| (Stratum::Counted { dataset, group }, PopCount::new(0, *an))),
+                );
+            }
+        }
+        out
+    }
+
+    /// Who a stratum is.
+    pub fn describe(&self, stratum: Stratum) -> Described {
+        match stratum {
+            Stratum::Counted { dataset, group } => {
+                let dataset = &self.datasets[dataset].dataset;
+                let group = &dataset.groups[group];
+                Described {
+                    dataset: dataset.name,
+                    group: group.code.to_string(),
+                    title: group.title.to_string(),
+                    ancestry: group.ancestry,
+                    estimated: false,
+                }
+            }
+            Stratum::Relayed(study) => {
+                let study = self.dbsnp.used().nth(study);
+                let name = study.map_or("?", |s| s.name.as_str()).to_string();
+                Described {
+                    dataset: "dbSNP",
+                    group: name.clone(),
+                    title: name,
+                    ancestry: study.map_or(Ancestry::Other, |s| s.ancestry()),
+                    estimated: true,
+                }
+            }
+        }
+    }
+
+    /// A stratum as `dataset:group`.
+    pub fn stratum_name(&self, stratum: Stratum) -> String {
+        let described = self.describe(stratum);
+        format!("{}:{}", described.dataset, described.group)
+    }
+
+    /// The sources in which the variant was seen at least once, by name.
+    /// A record whose count is zero after a dataset's own genotype
+    /// filtering is not an observation.
+    pub fn observed(&self, lookup: &Lookup) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = self
+            .datasets
+            .iter()
+            .filter(|counted| counted.sites.get(lookup).is_some_and(|record| record.all().ac > 0))
+            .map(|counted| counted.dataset.name)
+            .collect();
+        if !self.dbsnp.relayed(lookup).is_empty() {
+            out.push("dbSNP");
+        }
+        out
+    }
+
+    /// The site criteria the variant's position fails, per dataset that
+    /// has any to report.
+    pub fn failures(&self, lookup: &Lookup) -> Vec<(&'static str, Vec<String>)> {
+        self.datasets
+            .iter()
+            .map(|counted| (counted.dataset.name, counted.failures(lookup)))
+            .filter(|(_, failed)| !failed.is_empty())
+            .collect()
     }
 }
 
@@ -513,72 +378,4 @@ fn load_panel(spec: &str, pedigree: &str, regions: &[Region], cache: Cache) -> R
         panel.add_line(&contig, &line);
     }
     Ok(panel)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// An rsID and its frequencies belong to one exact change. A base
-    /// change recorded at the position of a deletion is another variant,
-    /// and of a record with several alternate alleles only the one that
-    /// is the same change counts.
-    #[test]
-    fn dbsnp_matches_the_exact_change_only() {
-        let mut db = Dbsnp::default();
-        db.add_line("chr14", "NC_000014.9\t106185188\trs1\tG\tA\t.\t.\tRS=1;VC=SNV;FREQ=TOPMED:0.5,0.5");
-        db.add_line(
-            "chr14",
-            "NC_000014.9\t106185188\trs2\tGAAC\tG\t.\t.\tRS=2;VC=DEL;FREQ=TOPMED:0.99,0.01",
-        );
-        // The repeat written out in full, as dbSNP does: three alleles.
-        db.add_line(
-            "chr14",
-            "NC_000014.9\t106116762\trs3\tAACTACT\tA,AACT,AACTACTACT\t.\t.\tRS=3;VC=INDEL;FREQ=TOPMED:0.9,0.01,0.02,0.07",
-        );
-        let at = |pos: u64, r: &str, a: &str| ("chr14".to_string(), (pos, r.as_bytes().to_vec(), a.as_bytes().to_vec()));
-        let rs = |pos, r, a| db.rsids.get(&at(pos, r, a)).map(String::as_str);
-        // The deletion of AAC after 106185188 is rs2, never the base change rs1.
-        assert_eq!(rs(106185188, "GAAC", "G"), Some("rs2"));
-        assert_eq!(rs(106185188, "G", "A"), Some("rs1"));
-        assert_eq!(db.freqs[&at(106185188, "GAAC", "G")], vec![("TOPMED".to_string(), 0.01)]);
-        // Another deletion at the same place has no record at all.
-        assert_eq!(rs(106185188, "GA", "G"), None);
-        // One repeat unit more, one less, two less: each its own allele.
-        assert_eq!(db.freqs[&at(106116762, "A", "AACT")], vec![("TOPMED".to_string(), 0.07)]);
-        assert_eq!(db.freqs[&at(106116762, "AACT", "A")], vec![("TOPMED".to_string(), 0.02)]);
-        assert_eq!(db.freqs[&at(106116762, "AACTACT", "A")], vec![("TOPMED".to_string(), 0.01)]);
-        assert_eq!(rs(106116762, "A", "C"), None);
-    }
-
-    /// dbSNP flags a record, not an allele. The flag goes to the allele
-    /// that is most frequent in a dataset of adequate size, not to one
-    /// that a study of a few people happens to report at one half.
-    #[test]
-    fn common_flag_goes_to_the_frequent_allele() {
-        let mut db = Dbsnp::default();
-        // Sizes of the studies, as other records reveal them.
-        db.add_line("chr14", "NC_000014.9\t1\trs9\tA\tC\t.\t.\tRS=9;FREQ=1000Genomes_30X:0.9998,0.000156|TOMMO:0.9999,0.0000129|GoESP:0.9999,0.0000772|GnomAD_genomes:0.9999,0.0000067");
-        db.add_line(
-            "chr14",
-            "NC_000014.9\t106714751\trs1\tG\tA,C\t.\t.\tRS=1;FREQ=1000Genomes_30X:0.9861,0.0139,.|SGDP_PRJ:0.5,.,0.5|TOMMO:0.9553,0.04469,.;COMMON",
-        );
-        // The frequent allele has no 1000 Genomes frequency at all.
-        db.add_line(
-            "chr14",
-            "NC_000014.9\t106770643\trs2\tG\tA,C,T\t.\t.\tRS=2;FREQ=1000Genomes_30X:0.9948,0.005192,.,.|GnomAD_genomes:0.9489,.,0.05109,.|TOMMO:0.9364,.,0.06,.;COMMON",
-        );
-        db.add_line(
-            "chr14",
-            "NC_000014.9\t106770746\trs3\tC\tA,G,T\t.\t.\tRS=3;FREQ=1000Genomes_30X:0.9992,.,.,0.0007987|GoESP:0.9913,0.008701,.,.|SGDP_PRJ:0.5,.,.,0.5|TOMMO:0.8824,.,.,0.1176;COMMON",
-        );
-        db.select(&[], &[], 0.01);
-        let common = |pos: u64, r: &str, a: &str| {
-            db.common
-                .contains(&("chr14".to_string(), (pos, r.as_bytes().to_vec(), a.as_bytes().to_vec())))
-        };
-        assert!(common(106714751, "G", "A") && !common(106714751, "G", "C"));
-        assert!(common(106770643, "G", "C") && !common(106770643, "G", "A"));
-        assert!(common(106770746, "C", "T") && !common(106770746, "C", "A"));
-    }
 }

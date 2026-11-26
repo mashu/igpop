@@ -6,6 +6,31 @@
 use crate::align::{Alignment, Op};
 use anyhow::{bail, Result};
 
+/// A variant as population files name it: 1-based position, REF and ALT,
+/// trimmed to the shortest form (see `trim`).
+pub type Key = (u64, Vec<u8>, Vec<u8>);
+
+/// A variant on a contig.
+pub type Lookup = (String, Key);
+
+/// The key of one ALT allele of a VCF record: bases shared by REF and ALT
+/// are trimmed, the end first, then the start, keeping one. Records with
+/// several ALT alleles are split this way, so that the same change has the
+/// same key whatever else the record holds.
+pub fn trim(mut pos: u64, reference: &[u8], alternate: &[u8]) -> Key {
+    let (mut r, mut a) = (reference.to_vec(), alternate.to_vec());
+    while r.len() > 1 && a.len() > 1 && r.last() == a.last() {
+        r.pop();
+        a.pop();
+    }
+    while r.len() > 1 && a.len() > 1 && r[0] == a[0] {
+        r.remove(0);
+        a.remove(0);
+        pos += 1;
+    }
+    (pos, r, a)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Variant {
     /// 0-based offset of the first REF base inside the window.
@@ -138,6 +163,13 @@ pub fn call(aln: &Alignment, query: &[u8], window: &[u8]) -> Result<Vec<Variant>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trimming_matches_normalised_form() {
+        assert_eq!(trim(100, b"GAC", b"G"), (100, b"GAC".to_vec(), b"G".to_vec()));
+        assert_eq!(trim(100, b"GAC", b"GAT"), (102, b"C".to_vec(), b"T".to_vec()));
+        assert_eq!(trim(100, b"CAA", b"CA"), (100, b"CA".to_vec(), b"C".to_vec()));
+    }
     use crate::align::{align, Scoring};
 
     fn variants(q: &[u8], w: &[u8]) -> Vec<(usize, String, String)> {
