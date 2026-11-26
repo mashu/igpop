@@ -8,11 +8,12 @@
   differs between the two genes then appears as a variant of one of them.
   All datasets share this error, so their agreement does not rule it out.
   igpop reports the symptoms ([site quality](site-qc.md)) and cannot
-  recover the truth. In the IGHV example, 390 of 537 distinct differences
+  recover the truth. In the IGHV example, 391 of 538 distinct differences
   lie in sequence that gnomAD flags as duplicated, and 276 of the 439
-  supported alleles have at least one difference at a site that 1000
-  Genomes or gnomAD flag. Most of these alleles are real; the flags say
-  that the population data alone cannot prove it.
+  supported alleles have at least one difference at a site that fails a
+  criterion of 1000 Genomes or a filter of gnomAD (245 of the 252 that
+  are supported by frequency alone). Most of these alleles are real; the
+  flags say that the population data alone cannot prove it.
 - **No long reads.** Assemblies from long reads and pangenome graphs
   resolve these genes much better. igpop does not read them yet: they
   cover hundreds of people, not tens of thousands, and have no common

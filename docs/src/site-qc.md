@@ -74,11 +74,12 @@ of the gnomAD rows.
 ## How much of IGHV is flagged
 
 A great deal, which is why these criteria are reported and not applied.
-Of the 537 distinct differences of the IGHV example, 390 lie in sequence
+Of the 538 distinct differences of the IGHV example, 391 lie in sequence
 gnomAD marks as a segmental duplication, 162 fail a criterion in 1000
-Genomes, 120 fail a gnomAD filter, and 226 fail one or the other. Of the
-439 supported alleles, 276 have at least one difference at such a site.
-Many of them are long-established alleles. Dropping every flagged site
+Genomes, 121 fail a gnomAD filter, and 227 fail one or the other. Of the
+439 supported alleles, 276 have at least one difference at such a site;
+of the 252 supported by frequency alone, 245 do. Many of them are
+long-established alleles. Dropping every flagged site
 would discard most of the evidence in exactly the genes igpop is for;
 the flags are a prompt to look at the haplotype check and at the
 populations, not a verdict.
