@@ -54,14 +54,14 @@ export class Store {
       for (let attempt = 0; attempt < 12 && !handles; attempt += 1) {
         try {
           handles = await both({ mode: 'readwrite-unsafe' });
-        } catch (error) {
+        } catch {
           // No shared mode in this browser, or another tab holds the files
           // alone: open them alone, waiting a little for a page that is
           // being reloaded to let go.
           try {
             handles = await both();
             shared = false;
-          } catch (taken) {
+          } catch {
             await wait(300);
           }
         }
@@ -71,7 +71,7 @@ export class Store {
       store.writer = shared ? await claimWriting() : true;
       store.load();
       return store;
-    } catch (error) {
+    } catch {
       return null;
     }
   }

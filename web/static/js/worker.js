@@ -11,8 +11,8 @@ const at = (path) => new URL(`${path}${stamp}`, import.meta.url);
 
 let store = null;
 let igpop = null;
-const ready = Promise.all([import(at('./pkg/igpop_web.js')), import(at('./store.js'))]).then(async ([module, { Store }]) => {
-  await module.default({ module_or_path: at('./pkg/igpop_web_bg.wasm') });
+const ready = Promise.all([import(at('../pkg/igpop_web.js')), import(at('./store.js'))]).then(async ([module, { Store }]) => {
+  await module.default({ module_or_path: at('../pkg/igpop_web_bg.wasm') });
   igpop = module;
   store = await Store.open();
   igpop.use_store(store);
