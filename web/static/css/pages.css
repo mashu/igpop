@@ -1,0 +1,24 @@
+/* The other tabs of the results: data, method, report, files. */
+
+.prose h3 { font-size: 1.4rem; }
+.prose h4 { font-size: 1.1rem; margin-top: 1.8rem; }
+.prose td, .prose th { overflow-wrap: anywhere; }
+.files { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.7rem; }
+.file {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--ink);
+}
+.file:hover { border-color: var(--accent); }
+.file b { font-family: var(--mono); font-size: 0.9rem; overflow-wrap: anywhere; }
+.file span, .file small { color: var(--muted); font-size: 0.85rem; }
+.data-build { margin-bottom: 1.6rem; }
+.data-table { max-width: 820px; }
+.data-table .bar-fill { max-width: 70%; }
+.data-table tfoot td { border-bottom: 0; font-size: 0.85rem; }
+.ancestry-key { margin: 0 0 0.4rem; }

@@ -1,8 +1,9 @@
 //! The main score: how much more typical a variant's population support
 //! is of the variants of real alleles than of arbitrary base changes.
 //!
-//! Support is one number per variant: the largest frequency its counts
-//! guarantee in some population (see `evidence::support`). Two groups of
+//! Support is one number per variant: the lower confidence bound of its
+//! frequency in the population where that bound is highest (see
+//! `evidence::support`). Two groups of
 //! single-base changes are compared in the same data: every change that
 //! is possible in the loci of the run ("arbitrary"), and the changes found
 //! in alleles accepted as real ("real").
@@ -29,7 +30,7 @@
 use anyhow::{bail, Result};
 
 /// Upper edges of the support levels; level 0 is "no support at all". The
-/// levels do not enter the score: they are a ruler for tables and pictures.
+/// levels do not enter the score: they are a ruler for tables.
 const EDGES: [f64; 5] = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1];
 pub const BINS: usize = EDGES.len() + 2;
 pub const LABELS: [&str; BINS] = ["none", "<0.001%", "0.001-0.01%", "0.01-0.1%", "0.1-1%", "1-10%", ">=10%"];
@@ -159,6 +160,25 @@ impl Calibration {
             }
         }
         Some(10f64.powf(high))
+    }
+
+    /// The two groups counted per level of support, as (possible changes,
+    /// real variants): the curve's data on a coarse ruler, for tables.
+    pub fn levels(&self) -> [(u64, u64); BINS] {
+        let c = self.counts;
+        // Possible changes with a support of at least each edge. The edges
+        // are points of the kept grid, eight steps apart.
+        let at_least = |edge: usize| (self.tail[8 * (edge + 1)] * c.arbitrary as f64).round() as u64;
+        let mut out = [(0, 0); BINS];
+        out[0] = (c.arbitrary - c.arbitrary_seen, c.trusted - c.trusted_seen);
+        out[1].0 = c.arbitrary_seen - at_least(0);
+        for (edge, level) in out.iter_mut().skip(2).enumerate() {
+            level.0 = at_least(edge) - if edge + 1 < EDGES.len() { at_least(edge + 1) } else { 0 };
+        }
+        for support in &self.real {
+            out[bin(*support)].1 += 1;
+        }
+        out
     }
 
     /// The text of `score_model.tsv`, which `parse` reads back.
@@ -340,12 +360,9 @@ pub fn calibrate(arbitrary: &[f64], trusted: &[f64]) -> Option<Calibration> {
 }
 
 /// The calibration of a run of 566 human IGHV alleles (KIARVA) on GRCh38
-/// against 1000 Genomes 30x, gnomAD v4.1 genomes and the datasets relayed
-/// by dbSNP: used when a run has too few real variants of its own.
+/// against every default dataset of that build: used when a run has too
+/// few real variants of its own.
 const BUILTIN: &str = include_str!("../data/score_model.tsv");
-/// Its counts per support level, for display.
-pub const BUILTIN_ARBITRARY: [u64; BINS] = [18812, 5488, 7809, 3899, 1614, 332, 362];
-pub const BUILTIN_TRUSTED: [u64; BINS] = [0, 0, 0, 7, 18, 41, 147];
 
 pub fn builtin() -> Calibration {
     parse(BUILTIN, "built-in score model").expect("the built-in score model is complete")
@@ -430,6 +447,18 @@ mod tests {
             trusted.push(10f64.powf(-3.0 + 3.0 * (i as f64 + 0.5) / 200.0));
         }
         (arbitrary, trusted)
+    }
+
+    /// The levels are recovered from what a calibration keeps: they
+    /// equal a direct count of the two groups.
+    #[test]
+    fn levels_equal_a_direct_count() {
+        let (arbitrary, trusted) = example();
+        let levels = calibrate(&arbitrary, &trusted).unwrap().levels();
+        for (level, counted) in levels.iter().enumerate() {
+            let count = |values: &[f64]| values.iter().filter(|s| bin(**s) == level).count() as u64;
+            assert_eq!(*counted, (count(&arbitrary), count(&trusted)), "level {level}");
+        }
     }
 
     #[test]

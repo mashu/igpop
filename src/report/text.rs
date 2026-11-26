@@ -1,295 +1,10 @@
-//! The plain-language run report, `<prefix>.report.md`: what was found,
-//! which alleles to look at, how the score was calibrated in this run and
-//! whether the run itself looks healthy.
+//! The report as Markdown text.
 
-use crate::assess::{self, AlleleResult, Class, HaplotypeCheck, Limits, ScoreModel, ScoreSource, Verdict};
-use crate::evidence::Evidence;
-use crate::freq::KgpRelease;
-use crate::locus::Status;
-use crate::score::{self, Calibration};
+use super::{Row, View, VERDICTS};
+use crate::assess::{variant_verdict, Class};
+use crate::config::Limits;
+use crate::score;
 use std::fmt::Write as _;
-
-/// Verdicts in the order they are listed.
-pub const VERDICTS: [Verdict; 6] = [
-    Verdict::Supported,
-    Verdict::Inconclusive,
-    Verdict::NeedsConfirmation,
-    Verdict::NotAssessed,
-    Verdict::MatchesReference,
-    Verdict::NotPlaced,
-];
-
-/// The run, as its steps left it.
-pub struct Input<'a> {
-    pub prefix: &'a str,
-    pub build: &'a str,
-    /// Other builds used for genes the main build lacks: the build, its
-    /// data, and the number of alleles judged on it.
-    pub other_builds: Vec<(&'a str, &'a Evidence, usize)>,
-    pub alleles: String,
-    pub coords: String,
-    pub limits: &'a Limits,
-    pub results: &'a [AlleleResult<'a>],
-    pub ev: &'a Evidence,
-    pub model: &'a ScoreModel,
-    pub haplotypes: &'a HaplotypeCheck,
-    pub requests: u64,
-    pub bytes: u64,
-}
-
-/// One allele, as the report shows it.
-struct Row {
-    allele: String,
-    trusted: bool,
-    verdict: &'static str,
-    reason: String,
-    notes: String,
-    /// Haplotype check status.
-    hap: &'static str,
-}
-
-/// The run reduced to what the report prints.
-struct View<'a> {
-    prefix: &'a str,
-    build: &'a str,
-    alleles: &'a str,
-    coords: &'a str,
-    common: f64,
-    supported: f64,
-    confirm: f64,
-    rows: Vec<Row>,
-    /// (locus status, number of alleles).
-    statuses: Vec<(&'static str, usize)>,
-    /// (dataset, where it was read from, what it contributed).
-    datasets: Vec<(String, String, String)>,
-    requests: u64,
-    bytes: u64,
-    calibration: Option<&'a Calibration>,
-    calibration_source: &'a str,
-    /// Counts behind the scores in use; `None` if they came from a file.
-    counts: Option<([u64; score::BINS], [u64; score::BINS])>,
-    /// Single-base variants carried only by candidate alleles, per support level.
-    candidate_only: [u64; score::BINS],
-    /// Alleles supported by frequency only, by haplotype only, by both.
-    routes: [usize; 3],
-    /// Haplotype calibration: the limit, the chromosomes it requires, and
-    /// (chromosomes, share of arbitrary changes found that often).
-    coincidence_limit: f64,
-    required: Option<u32>,
-    coincidence: Vec<(u32, f64)>,
-    warnings: Vec<String>,
-}
-
-fn count(input: &Input, status: Status) -> usize {
-    input.results.iter().filter(|r| r.placed.status == status).count()
-}
-
-/// What each source contributed: (dataset, read from, contribution).
-fn datasets(input: &Input) -> Vec<(String, String, String)> {
-    let mut out = datasets_of(input.build, input.ev);
-    for (build, ev, _) in &input.other_builds {
-        out.extend(datasets_of(build, ev));
-    }
-    out
-}
-
-fn datasets_of(build: &str, ev: &Evidence) -> Vec<(String, String, String)> {
-    let mut out = Vec::new();
-    let phase3 = ev.sources.kgp_release == KgpRelease::Phase3;
-    if let Some(spec) = &ev.sources.kgp {
-        out.push((
-            if phase3 {
-                "1000 Genomes phase 3".to_string()
-            } else {
-                "1000 Genomes 30x, unrelated samples".to_string()
-            },
-            spec.clone(),
-            format!(
-                "allele counts in 5 populations, {} chromosomes{}",
-                ev.kgp_full_total(),
-                if phase3 { "" } else { "; site quality" }
-            ),
-        ));
-    }
-    if let Some(spec) = &ev.sources.gnomad {
-        out.push((
-            format!("gnomAD genomes ({})", ev.sources.gnomad_name),
-            spec.clone(),
-            format!(
-                "allele counts in {} genetic ancestry groups, {} chromosomes",
-                ev.gnomad_full.iter().filter(|an| **an > 0).count(),
-                ev.gnomad_full_total
-            ),
-        ));
-    }
-    if let Some(spec) = &ev.sources.dbsnp {
-        let used: Vec<&str> = ev.dbsnp.datasets.iter().filter(|d| d.used).map(|d| d.name.as_str()).collect();
-        let mut by_name = used.clone();
-        by_name.sort();
-        out.push((
-            "dbSNP".to_string(),
-            spec.clone(),
-            format!(
-                "rsIDs, COMMON flag; frequencies of {} submitted datasets used as evidence ({})",
-                used.len(),
-                by_name.join(", ")
-            ),
-        ));
-    }
-    for (extra, sites) in ev.sources.extras.iter().zip(&ev.extras) {
-        out.push((
-            extra.title.to_string(),
-            extra.spec.to_string(),
-            format!(
-                "allele counts in {}: {}; {} variants of the regions read",
-                match extra.groups.len() {
-                    1 => "one group".to_string(),
-                    n => format!("{n} groups"),
-                },
-                extra.groups.join(", "),
-                sites.len()
-            ),
-        ));
-    }
-    if let (Some(spec), Some(panel)) = (&ev.sources.phased, &ev.panel) {
-        out.push((
-            if phase3 {
-                "1000 Genomes phase 3, phased genotypes".to_string()
-            } else {
-                "1000 Genomes 30x phased panel".to_string()
-            },
-            spec.clone(),
-            format!("haplotype check on {} founder chromosomes", 2 * panel.founders),
-        ));
-    }
-    for row in &mut out {
-        row.0 = format!("{build}: {}", row.0);
-    }
-    out
-}
-
-/// Things about this run that limit how far its results can be relied on.
-/// Each says what happened and what to do.
-pub fn warnings(input: &Input) -> Vec<String> {
-    let (ev, model) = (input.ev, input.model);
-    let mut out = Vec::new();
-    let with_variants = input.results.iter().any(|r| !r.variants.is_empty());
-    if ev.sources.phased.is_some() && ev.panel.is_none() {
-        out.push("the phased panel could not be read, so the haplotype check is missing (`hap_status = not_checked`). Running again usually fixes it.".to_string());
-    }
-    if !ev.counted() && with_variants {
-        out.push(format!(
-            "no dataset with allele counts was read for {}, so there is no score; a variant can only be `supported` through dbSNP's COMMON flag.",
-            input.build
-        ));
-    }
-    if model.source == ScoreSource::BuiltIn {
-        out.push(
-            "scores come from the built-in curve, not from your alleles. This is the intended behaviour for small sets (D, J, a handful of alleles)."
-                .to_string(),
-        );
-        let mut foreign: Vec<&str> = input
-            .results
-            .iter()
-            .map(|r| r.placed.gene.as_str())
-            .filter(|gene| !gene.starts_with("IGH"))
-            .collect();
-        foreign.sort();
-        foreign.dedup();
-        if !foreign.is_empty() {
-            out.push(format!(
-                "the built-in curve was made from IGH genes, but this run holds other genes ({} ...). Variation in other loci may be distributed differently: prefer a run with at least {} trusted variants of the same locus, or pass its `score_model.tsv` with `--calibration`.",
-                foreign.iter().take(3).copied().collect::<Vec<_>>().join(", "),
-                score::MIN_TRUSTED
-            ));
-        }
-    }
-    if model.source == ScoreSource::Run {
-        let nt: u64 = model.trusted.iter().sum();
-        if nt < 100 {
-            out.push(format!(
-                "the calibration rests on only {nt} trusted variants, so the score curve is not pinned down well (see the intervals in section 5); verdicts near the limits can change with a few more trusted alleles."
-            ));
-        }
-        let established: u64 = model.trusted[score::BINS - 2..].iter().sum();
-        if 2 * established < nt {
-            out.push(format!(
-                "only {established} of {nt} trusted variants reach 1% in any population. Trusted alleles are expected to carry mostly established variants: check that the coordinates match the genome build and that the trusted set (`--trusted`, `--candidate-marker`) really is trusted."
-            ));
-        }
-    }
-    let unclean = [Status::AmbiguousLocus, Status::LowIdentity, Status::NoCoordinates].map(|s| count(input, s));
-    if unclean.iter().sum::<usize>() > 0 {
-        out.push(format!(
-            "{} allele(s) were not placed cleanly ({} ambiguous_locus, {} low_identity, {} no_coordinates); see section 3.",
-            unclean.iter().sum::<usize>(),
-            unclean[0],
-            unclean[1],
-            unclean[2]
-        ));
-    }
-    if ev.sources.dbsnp.is_some() && ev.dbsnp.rsids.is_empty() && with_variants {
-        out.push("dbSNP could not be read: rsIDs, the COMMON flag and relayed frequencies are missing in this run. Running again usually fixes it.".to_string());
-    }
-    out
-}
-
-pub fn render(input: &Input) -> String {
-    let view = View {
-        prefix: input.prefix,
-        build: input.build,
-        alleles: &input.alleles,
-        coords: &input.coords,
-        common: input.limits.common,
-        supported: input.limits.supported,
-        confirm: input.limits.confirm,
-        rows: input
-            .results
-            .iter()
-            .map(|r| Row {
-                allele: r.placed.allele.clone(),
-                trusted: r.trusted,
-                verdict: r.verdict.as_str(),
-                reason: r.reason.clone(),
-                notes: r.notes.join("; "),
-                hap: r.hap_status(),
-            })
-            .collect(),
-        statuses: Status::ALL.iter().map(|s| (s.as_str(), count(input, *s))).collect(),
-        datasets: datasets(input),
-        requests: input.requests,
-        bytes: input.bytes,
-        calibration: input.model.calibration.as_ref(),
-        calibration_source: &input.model.description,
-        counts: input.model.counts(),
-        candidate_only: if input.ev.counted() {
-            assess::candidate_only(input.results)
-        } else {
-            [0; score::BINS]
-        },
-        routes: ["frequency", "haplotype", "frequency+haplotype"]
-            .map(|route| input.results.iter().filter(|r| r.supported_by() == route).count()),
-        coincidence_limit: input.limits.coincidence,
-        required: input.haplotypes.required(input.limits.coincidence),
-        coincidence: match &input.haplotypes.coincidence {
-            Some(c) => [1, 2, 3, 5, 10, 20, 50].map(|k| (k, c.rate(k))).to_vec(),
-            None => Vec::new(),
-        },
-        warnings: warnings(input),
-    };
-    write_report(&view)
-}
-
-#[allow(dead_code)]
-fn percent(x: f64) -> String {
-    if x >= 0.995 {
-        ">99%".to_string()
-    } else if x < 0.005 {
-        "<1%".to_string()
-    } else {
-        format!("{:.0}%", 100.0 * x)
-    }
-}
 
 /// The verdict a variant with this score gets when it is not classed common.
 fn band(score: f64, supported: f64, confirm: f64) -> &'static str {
@@ -299,10 +14,10 @@ fn band(score: f64, supported: f64, confirm: f64) -> &'static str {
         confirm,
         coincidence: f64::NAN,
     };
-    assess::variant_verdict(Class::Uncommon, Some(score), &limits).as_str()
+    variant_verdict(Class::Uncommon, Some(score), &limits).as_str()
 }
 
-fn write_report(r: &View) -> String {
+pub(super) fn write_report(r: &View) -> String {
     let mut o = String::new();
     let verdicts = VERDICTS.map(|v| v.as_str());
     let count = |verdict: &str, trusted: Option<bool>| {
@@ -617,14 +332,14 @@ fn write_report(r: &View) -> String {
                 r.confirm,
                 crossing(r.confirm),
             );
-            if let Some((a, t)) = &r.counts {
+            if let Some(levels) = &r.levels {
                 let _ = writeln!(
                     o,
                     "The two groups counted per level of support (a ruler for reading; the levels do not enter the score):\n"
                 );
                 let _ = writeln!(o, "| support | arbitrary changes | trusted variants |\n|---|---:|---:|");
-                for i in 0..score::BINS {
-                    let _ = writeln!(o, "| {} | {} | {} |", score::LABELS[i], a[i], t[i]);
+                for (label, (arbitrary, trusted)) in score::LABELS.iter().zip(levels) {
+                    let _ = writeln!(o, "| {label} | {arbitrary} | {trusted} |");
                 }
             }
             let _ = writeln!(

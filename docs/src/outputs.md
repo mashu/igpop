@@ -5,8 +5,22 @@ Start with `<prefix>.report.md`; it is described in
 same results in full.
 
 All tables are tab-separated with a header line. A `.` means "not
-applicable or not available"; `-` in `evidence`, `vcf_ref` and `vcf_alt`
-means "no record".
+applicable or not available"; `-` in `evidence` means "no record".
+
+| File | One row per | Holds |
+|---|---|---|
+| `variants.tsv` | difference of an allele | verdict, score, class, and where the evidence comes from |
+| `populations.tsv` | difference and group of people | copies, chromosomes, frequency with its bounds |
+| `site_quality.tsv` | difference and dataset | what the dataset says about the site |
+| `datasets.tsv` | group of people of the run | size, whether it was used and why not |
+| `alleles.tsv`, `final.tsv` | allele | verdict, reason, haplotype check |
+| `score_model.tsv`, `score_levels.tsv` | — | the score curve of the run |
+| `haplotype_calibration.tsv` | number of chromosomes | what a found haplotype is worth |
+| `alignments.tsv`, `alignments.txt` | allele | where it was placed |
+
+A difference is identified everywhere by the same five columns: `build`,
+`contig`, `genome_pos`, `reference_bases`, `query_variant`. Use them to
+join `variants.tsv` with `populations.tsv` and `site_quality.tsv`.
 
 ## `<prefix>.variants.tsv`
 
@@ -22,7 +36,7 @@ identical to the reference has no rows here (it still appears in
 | `gene` | Locus the allele was placed on (after `--gene-aliases`). |
 | `build` | Genome build the allele was placed and judged on: `--build`, or another build for a gene the first one lacks. |
 | `rsid` | dbSNP identifier of exactly this position and base change, or `.`. A label only: having an rsID is not evidence that a variant is real. |
-| `evidence` | Sources in which the variant was observed, e.g. `1kGP_30x;gnomAD_v4.1;dbSNP` (`dbSNP` = a used dataset relayed by dbSNP reports a non-zero frequency), or `-` if none. |
+| `evidence` | Datasets in which the variant was observed at least once, e.g. `1kGP_30x;gnomAD_v4.1;ToMMo_61k;dbSNP` (`dbSNP` = a study relayed by dbSNP reports a non-zero frequency), or `-` if none. The counts are in `populations.tsv`. |
 | `contig` | Reference contig. |
 | `genome_pos` | 1-based reference position. For insertions and deletions this is the base before the event, as in VCF. |
 | `aln_pos` | 1-based position in the allele sequence as supplied. |
@@ -31,7 +45,6 @@ identical to the reference has no rows here (it still appears in
 | `type` | `SNV`, `INS` or `DEL`. |
 | `reference_bases` | The bases of the reference genome that the difference replaces, on the reference strand. For an insertion or deletion they begin with the base before it, as in VCF. |
 | `query_variant` | The allele's base(s), written on the **reference strand** (for a minus-strand gene this is the complement of what the allele FASTA shows). |
-| `vcf_ref`, `vcf_alt` | REF and ALT fields of the matching 1000 Genomes record, `-` if there is none. `vcf_alt` lists every ALT at the site. |
 
 ### Verdict, score and class
 
@@ -44,17 +57,19 @@ identical to the reference has no rows here (it still appears in
 | `score_low`, `score_high` | A 95% interval for the score: how well the calibration knows it at this support. |
 | `chance` | Share of all possible single-base changes in the genes of the run that are supported at least as well as this variant. |
 | `filters` | Why the variant is not `supported`: what the data show, then how that scores, e.g. `rare_in_every_population,low_score`. `.` for a supported variant. See [Why an allele did not pass](filters.md). |
-| `support` | The number the score is based on: the largest lower 95% bound of the allele frequency over all populations of all datasets (1000 Genomes, gnomAD, datasets relayed by dbSNP). 0 if never seen. |
-| `support_from` | The population that gives it, as `dataset:population`. |
+| `support` | The number the score is based on: the largest lower 95% bound of the allele frequency over all groups of all datasets. 0 if never seen. It is the largest `AF_lower95` of the variant in `populations.tsv`. |
+| `support_from` | The group that gives it, as `dataset:group` (`gnomAD_v4.1:afr`, `ToMMo_61k:Japanese`, `dbSNP:TOPMED`). |
 | `class` | `common`, `uncommon`, `absent` or `not_assessed` (below). |
 | `class_basis` | What made the variant `common`: the dataset and population that passed the test (`gnomAD_v4.1:afr`), or `dbSNP:COMMON`. |
-| `class_p` | p-value of the best population, corrected for the number of populations tested. `.` if the allele was nowhere seen twice. |
+| `class_p` | p-value of the best group, multiplied by the number of groups of the run (Bonferroni; the number of rows with `used = yes` for this build in `datasets.tsv`). `.` if the allele was nowhere seen twice. See [Method](method.md#7-the-class-is-the-difference-demonstrably-common). |
+| `site_quality` | What the datasets say against the site, as `dataset:criterion,...;dataset:...`, or `.` if nothing. Reported, never used in a verdict. Details in `site_quality.tsv`. |
+| `dbsnp_common` | `yes` if dbSNP's COMMON flag applies to exactly this allele. |
 
 | Class | Meaning |
 |---|---|
-| `common` | In at least one population the allele was seen at least twice **and** an exact binomial test rejects "frequency below `--common`" (default 1%) at 5% after Bonferroni correction for the number of populations tested. Or: dbSNP flags exactly this allele as COMMON. |
+| `common` | In at least one group the allele was seen at least twice **and** an exact binomial test rejects "frequency below `--common`" (default 1%) at 5% after Bonferroni correction for the number of groups of the run. Or: dbSNP flags exactly this allele as COMMON and no dataset read directly shows it to be rare everywhere. |
 | `uncommon` | Seen in at least one dataset, but not shown to reach `--common` anywhere. |
-| `absent` | Not seen in any dataset that was consulted. |
+| `absent` | Looked for by at least one dataset that examines every position, and seen in none. |
 | `not_assessed` | No dataset could be consulted, and no COMMON flag. |
 
 The test adapts to dataset size: three copies in 200 chromosomes do not
@@ -63,71 +78,73 @@ miscalled genotype. The dbSNP COMMON flag is a curated external label, not
 a test result; it applies to one allele per site, the most frequent
 alternate allele.
 
-### 1000 Genomes 30x (`kgp_*`)
-
-Counts are from the 2,504 unrelated samples only.
-
-| Column | Meaning |
-|---|---|
-| `kgp_site_qc` | `PASS`, or the consortium site filters this record fails. See [Site quality filters](site-qc.md). |
-| `kgp_filter` | FILTER field of the record (GATK VQSR). |
-| `kgp_AC`, `kgp_AN`, `kgp_AF` | Allele count, chromosomes genotyped, and their ratio over all five superpopulations. |
-| `kgp_AF_AFR` … `kgp_AF_SAS` | Allele frequency per superpopulation (African, American, East Asian, European, South Asian). |
-| `kgp_AC/AN_AFR` … | The counts behind those frequencies, as `AC/AN`. |
-| `kgp_max_pop` | Superpopulation with the highest lower bound. |
-| `kgp_max_pop_AF` | Its allele frequency. |
-| `kgp_max_pop_AF_lower95` | Its exact one-sided 95% lower bound. |
-| `kgp_any_pop_AF_upper95` | Largest exact one-sided 95% upper bound over the superpopulations. For an absent variant this is what zero observations still allow. |
-| `kgp_pop_heterogeneity_p` | p-value of a likelihood-ratio test that the frequency is the same in all superpopulations. Small values mean the variant is enriched in some populations. |
-| `kgp_het`, `kgp_hom` | Heterozygous and homozygous-alternate individuals. |
-| `kgp_excess_het_p` | p-value for an excess of heterozygotes over all samples (small = excess). |
-| `kgp_mendelian_error_rate` | Fraction of trios whose genotypes at this site are impossible by inheritance. |
-| `kgp_vqslod` | GATK's log-odds that the site is a true variant. |
-
-### gnomAD v4.1 genomes (`gnomad_*`)
-
-| Column | Meaning |
-|---|---|
-| `gnomad_filter` | FILTER field: `PASS`, `AC0`, `AS_VQSR`, `InbreedingCoeff`. See [Site quality filters](site-qc.md). |
-| `gnomad_flags` | Region flags on the record: `lcr` (low-complexity region), `segdup` (segmental duplication). |
-| `gnomad_AC`, `gnomad_AN`, `gnomad_AF` | Counts and frequency over all genomes. |
-| `gnomad_nhomalt` | Homozygous-alternate individuals. |
-| `gnomad_max_group` | Genetic-ancestry group with the highest lower bound (`afr`, `ami`, `amr`, `asj`, `eas`, `fin`, `mid`, `nfe`, `sas`). |
-| `gnomad_max_group_AF` | Its allele frequency. |
-| `gnomad_max_group_AF_lower95` | Its one-sided 95% lower bound. |
-| `gnomad_any_group_AF_upper95` | Largest upper bound over the groups. |
-| `gnomad_groups` | Copies and chromosomes in every genetic ancestry group, as `group:AC/AN;...`. |
-
-### Further datasets
-
-| Column | Meaning |
-|---|---|
-| `more_groups` | Copies and chromosomes in every group of ALFA, GenomeAsia, ToMMo 61KJPN and WBBC that examined the position, as `dataset:group:AC/AN;...`. `.` if none did. |
-
-These groups count as evidence exactly like the populations of 1000
-Genomes and gnomAD, and appear in `support_from` and `class_basis` as
-`ALFA:European`, `GenomeAsia:Southeast Asian`, `ToMMo_61k:Japanese` or
-`WBBC:South China`.
-
-### Frequencies relayed by dbSNP
-
-| Column | Meaning |
-|---|---|
-| `dbsnp_common` | `yes` if dbSNP's COMMON flag applies to exactly this allele. |
-| `dbsnp_datasets` | Number of used dbSNP datasets reporting a non-zero frequency for this allele. |
-| `dbsnp_max_dataset`, `dbsnp_max_AF` | The dataset with the highest reported frequency, and that frequency. |
-| `dbsnp_freq` | All used datasets with a non-zero frequency, as `dataset:AF`, highest first. |
-
-Each used dataset also acts as one more population in the test and in
-`support`, with counts reconstructed from its frequency and estimated
-size. See [Datasets and combining evidence](datasets.md).
-
 ### Locus context
 
 | Column | Meaning |
 |---|---|
 | `locus_status` | `ok`, or `ambiguous_locus` if the allele aligns at least as well to another locus. |
 | `shares_locus_with` | Other genes annotated at exactly the same interval. Population data at such a locus mixes reads from all of them. |
+
+## `<prefix>.populations.tsv`
+
+The evidence itself: one row per difference and per group of people that
+looked at its position. Everything igpop concludes about a difference is
+computed from its rows here.
+
+| Column | Meaning |
+|---|---|
+| `build`, `contig`, `genome_pos`, `reference_bases`, `query_variant` | The difference, as in `variants.tsv`. |
+| `rsid` | Its dbSNP identifier, or `.`. |
+| `dataset` | `1kGP_30x`, `gnomAD_v4.1`, `ALFA`, `GenomeAsia`, `ToMMo_61k`, `WBBC`, or `dbSNP` for a study relayed by dbSNP (on GRCh37: `1kGP_phase3`, `gnomAD_v2.1`, `dbSNP`). |
+| `group` | The group of people within the dataset: `AFR`, `nfe`, `Japanese`, `South China`, `TOPMED`, ... Described in `datasets.tsv`. |
+| `counts` | `reported`: the dataset gives copies and chromosomes. `estimated`: a study relayed by dbSNP gives a frequency only; the counts are worked out from it and from the estimated size of the study. |
+| `AC`, `AN` | Copies of the allele, and chromosomes examined at this position. `AC` is 0 where a dataset that examines every position has no record of the difference. |
+| `AF` | `AC / AN`. |
+| `AF_lower95`, `AF_upper95` | The lowest and the highest frequency the counts are compatible with (exact one-sided 95% bounds). |
+
+A difference has no row for a group that says nothing about it: a group
+of ALFA or a relayed study without a record at the position.
+
+## `<prefix>.site_quality.tsv`
+
+One row per difference and per dataset that has a record of it: what the
+dataset itself says about the site. See
+[Site quality filters](site-qc.md).
+
+| Column | Meaning |
+|---|---|
+| `build` ... `rsid` | The difference, as above. |
+| `dataset` | The dataset the row is about. |
+| `failed` | `PASS`, or the criteria the site fails in this dataset: `FILTER=...` (the dataset's own filter), `missingness>5%`, `HWE`, `mendelian_errors>5%`. Only measures the dataset publishes are judged. |
+| `filter` | The FILTER field of the record. |
+| `region_flags` | Flags on the record, e.g. `segdup` (segmental duplication), `lcr` (low-complexity sequence). |
+| `AC`, `AN` | Copies and chromosomes over all people of the dataset. |
+| `people_one_copy`, `people_two_copies` | Heterozygous and homozygous carriers, where published. |
+| `hwe_p` | Hardy-Weinberg p-value per group, where published. |
+| `excess_het_p` | p-value for an excess of heterozygotes (small = excess). |
+| `mendelian_error_rate` | Share of parent-child trios whose genotypes are impossible by inheritance (1000 Genomes). |
+| `vqslod` | The call set's own log-odds that the site is a true variant. |
+
+## `<prefix>.datasets.tsv`
+
+One row per group of people the run could consult: what the evidence was
+drawn from. The rows with `used = yes` for a build are the strata of that
+build; their number is the factor of the Bonferroni correction.
+
+| Column | Meaning |
+|---|---|
+| `build` | Genome build the row belongs to. |
+| `dataset`, `dataset_title` | Short name as in the other tables, and the name in words. |
+| `group`, `group_title` | The group as in the other tables, and in words. |
+| `ancestry` | Continental group, for colour and orientation only: `african`, `american`, `east_asian`, `european`, `middle_eastern`, `south_asian`, `other`. |
+| `counts` | `reported` or `estimated`, as in `populations.tsv`. |
+| `chromosomes` | The most chromosomes the group has at any position read (for an estimated study: its estimated size). |
+| `used`, `reason` | Whether the group is evidence in this run, and if not, why: left out by name, a copy of a dataset read directly, too small to show a frequency of `--common`, or no chromosomes in the genes read. |
+| `every_position_examined` | `yes` if a difference without a record counts as "looked for and not seen" (0 copies). |
+| `records` | Records of the dataset in the regions read. |
+| `smallest_nonzero_AF` | For an estimated study: the smallest frequency it reports, from which its size is estimated. |
+| `people` | People in the dataset, where it has a fixed number. |
+| `read_from` | File or address the dataset was read from. |
 
 ## `<prefix>.alleles.tsv` and `<prefix>.final.tsv`
 
@@ -155,7 +172,7 @@ the rows with verdict `supported` (by frequency or by haplotype) or
 | `uncommon`, `uncommon_str` | Number and list of all variants **not** classed common (`uncommon` + `absent` + `not_assessed`). Same meaning as in IgSNPer. |
 | `absent`, `absent_str` | The subset never seen in any dataset. |
 | `not_assessed` | The subset for which no dataset could be consulted. |
-| `site_qc_flagged`, `site_qc_flagged_str` | Variants observed in 1000 Genomes at a site that fails a site filter. These overlap the classes above. |
+| `site_qc_flagged`, `site_qc_flagged_str` | Variants at a site that fails a criterion in some dataset (`site_quality` in `variants.tsv` is not `.`). These overlap the classes above. |
 | `hap_tested` | Variants that are sites of the phased panel / all variants. |
 | `hap_untested_str` | The variants that are not. |
 | `hap_total` | Founder chromosomes in the panel. |
@@ -214,19 +231,6 @@ How much a found haplotype is worth in this run
 | `chromosomes` | A number of founder chromosomes. |
 | `coincidence` | Share of arbitrary single-base changes of real chromosomes whose sequence is found on at least that many chromosomes. |
 | `supports` | Whether an allele found on that many chromosomes is supported by its haplotype. |
-
-## `<prefix>.dbsnp_datasets.tsv`
-
-One row per frequency dataset found in the dbSNP records that were read.
-
-| Column | Meaning |
-|---|---|
-| `dataset` | Name as it appears in dbSNP's `FREQ` field (`TOPMED`, `TOMMO`, `dbGaP_PopFreq`, …). |
-| `records` | Records in which the dataset reports frequencies. |
-| `smallest_nonzero_AF` | Smallest non-zero frequency it reports in those records. |
-| `implied_chromosomes` | `1 / smallest_nonzero_AF`: roughly how many chromosomes the dataset genotyped. |
-| `used` | Whether it feeds the `dbsnp_*` columns. |
-| `reason` | Why not: excluded by name, a re-report of a source igpop read directly, or too small for `--common`. |
 
 ## `<prefix>.alignments.tsv`
 

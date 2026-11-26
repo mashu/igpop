@@ -3,9 +3,8 @@
 
 use crate::align::{align, revcomp, score_only, Alignment, Op, Scoring};
 use crate::fetch::merge_regions;
-use crate::freq::Key;
 use crate::io::{Coord, Reference, Strand};
-use crate::variant::Kind;
+use crate::variant::{Key, Kind, Lookup};
 use crate::{par, render, variant};
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
@@ -166,7 +165,7 @@ impl Placed {
     }
 
     /// The variant as (contig, key), the form evidence is looked up by.
-    pub fn lookup(&self, called: &Called) -> (String, Key) {
+    pub fn lookup(&self, called: &Called) -> Lookup {
         (self.contig().to_string(), called.key.clone())
     }
 }

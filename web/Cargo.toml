@@ -1,6 +1,6 @@
 [package]
 name = "igpop-web"
-version = "0.22.0"
+version = "0.23.0"
 edition = "2021"
 description = "igpop compiled to WebAssembly for the browser app"
 license = "MIT"

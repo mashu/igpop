@@ -26,6 +26,7 @@ const PER_SERVER: usize = 3;
 
 /// One remote file and the regions to read of it.
 struct Remote {
+    title: String,
     url: String,
     regions: Vec<Region>,
 }
@@ -156,7 +157,11 @@ pub async fn download(downloads: Vec<Download>) {
         }
         for (url, regions) in files {
             let server = url.split('/').nth(2).unwrap_or("").to_string();
-            servers.entry(server).or_default().push(Remote { url, regions });
+            servers.entry(server).or_default().push(Remote {
+                title: download.title.clone(),
+                url,
+                regions,
+            });
         }
     }
     let regions: usize = servers.values().flatten().map(|f| f.regions.len()).sum();
@@ -166,7 +171,7 @@ pub async fn download(downloads: Vec<Download>) {
     DONE.with(|done| done.set((0, 0, regions)));
     // What is to come, per file, so that the page can show each source.
     for file in servers.values().flatten() {
-        note!("plan: {} regions of {}", file.regions.len(), file.url);
+        note!("plan: {} regions of {} at {}", file.regions.len(), file.title, file.url);
     }
     note!(
         "downloading {regions} regions from {} servers, up to {PER_SERVER} at a time per server",
@@ -174,7 +179,7 @@ pub async fn download(downloads: Vec<Download>) {
     );
     // Servers side by side; the files of one server one after another.
     let per_server = servers.into_values().map(|files| async move {
-        for Remote { url, regions } in files {
+        for Remote { url, regions, .. } in files {
             let name = url.rsplit('/').next().unwrap_or(&url).to_string();
             if let Err(error) = file(url, regions).await {
                 note!("  {name}: could not be downloaded ahead ({error:#}); it will be read during the analysis");

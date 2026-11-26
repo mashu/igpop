@@ -46,9 +46,9 @@ Think of a diagnostic test. A positive result means little if healthy
 people often test positive too. What matters is how much more often
 patients test positive than healthy people. The score is that ratio.
 
-1. **Measure the support of a variant.** In every population of 1000
-   Genomes and gnomAD, and in every dataset relayed by dbSNP, igpop computes the lowest frequency the
-   data are compatible with (the lower 95% confidence bound). The largest
+1. **Measure the support of a variant.** In every group of people of
+   every dataset, igpop computes the lowest frequency the data are
+   compatible with (the lower 95% confidence bound). The largest
    of these is the variant's *support*. A bound is used instead of the raw
    frequency so that 3 copies in 200 chromosomes do not count like 300 in
    20,000.
@@ -73,27 +73,27 @@ patients test positive than healthy people. The score is that ratio.
      log(score) = b0 + b1 x + b2 x².
 
 For the KI IGHV set (213 real variants, 38,316 possible changes, of which
-18,812 were never seen) the curve is
-log(score) = 4.96 + 1.11 x − 0.22 x², and a change never seen scores 0.005.
+18,172 were never seen) the curve is
+log(score) = 4.88 + 1.00 x − 0.26 x², and a change never seen scores 0.005.
 Some points on it:
 
 | Support (lowest compatible frequency) | Score | 95% interval | Arbitrary changes supported at least as well |
 |---|---:|---:|---:|
 | never seen | 0.005 | up to 0.08 | 100% |
-| 0.01% | 0.05 | 0.02 to 0.13 | 16% |
-| 0.03% | 0.19 | 0.10 to 0.35 | 15% |
-| 0.1% | 0.70 | 0.47 to 1.1 | 6.0% |
-| 0.3% | 2.1 | 1.6 to 2.9 | 3.5% |
-| 1% | 6.4 | 4.8 to 8.6 | 1.8% |
-| 3% | 16 | 12 to 21 | 1.5% |
-| 10% | 38 | 31 to 47 | 0.9% |
-| 30% | 75 | 63 to 90 | 0.6% |
+| 0.01% | 0.04 | 0.01 to 0.11 | 17% |
+| 0.03% | 0.16 | 0.08 to 0.31 | 13% |
+| 0.1% | 0.64 | 0.42 to 0.99 | 6.2% |
+| 0.3% | 2.0 | 1.5 to 2.8 | 3.0% |
+| 1% | 6.3 | 4.8 to 8.5 | 1.9% |
+| 3% | 16 | 12 to 21 | 1.4% |
+| 10% | 37 | 30 to 46 | 1.0% |
+| 30% | 73 | 61 to 87 | 0.4% |
 
 Read the line for 3% as: a variant shown to reach 3% in some population is
 16 times more typical of real variants than of arbitrary changes, and only
-1.5% of all possible changes are supported that well. The score reaches 2,
-the default limit for `supported`, at a support of 0.28%; it reaches 10 at
-1.7% and falls to 0.1 at 0.018%.
+1.4% of all possible changes are supported that well. The score reaches 2,
+the default limit for `supported`, at a support of 0.29%; it reaches 10 at
+1.7% and falls to 0.1 at 0.021%.
 
 The curve itself is written to `<prefix>.score_model.tsv`; the two groups
 counted in seven levels of support, for reading, to
@@ -105,7 +105,7 @@ Earlier versions sorted support into seven fixed levels (steps of ten) and
 gave every variant of a level the same score. That is easy to read, but a
 level lumps together variants that differ ten-fold in support: with levels,
 a variant at 0.9% scored 2 and one at 1.1% scored 22, although the data
-hardly distinguish them. On the curve they score 5.9 and 6.9. The levels
+hardly distinguish them. On the curve they score 5.8 and 6.9. The levels
 are still shown, as a ruler; they no longer decide anything.
 
 ## What makes this work across datasets
@@ -197,10 +197,10 @@ are still shown, as a ruler; they no longer decide anything.
 
   | Limit for `supported` | Reached at a support of | IGHV alleles supported (of 519) | Artificial substitutions supported (of 2,995) |
   |---:|---:|---:|---:|
-  | 2 (default) | 0.28% | 439 | 3.0% |
-  | 3 | 0.43% | 421 | 2.3% |
-  | 5 | 0.75% | 407 | 1.6% |
-  | 10 | 1.7% | 390 | 1.3% |
+  | 2 (default) | 0.29% | 439 | 2.9% |
+  | 3 | 0.44% | 423 | 2.2% |
+  | 5 | 0.77% | 412 | 1.6% |
+  | 10 | 1.7% | 389 | 1.3% |
 
   The web app has a control for the limit that shows these consequences
   while you move it.

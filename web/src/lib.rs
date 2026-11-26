@@ -241,14 +241,14 @@ fn configure(job: &Object) -> Config {
 /// The built-in gene list: `gene, build, contig, start, end, strand`.
 #[wasm_bindgen]
 pub fn gene_list() -> String {
-    igpop::BUILTIN_COORDS.to_string()
+    igpop::catalogue::COORDINATES.to_string()
 }
 
 /// The built-in table of alleles whose gene is not the part of their
 /// name before `*`: `allele, gene`.
 #[wasm_bindgen]
 pub fn gene_aliases() -> String {
-    igpop::BUILTIN_ALIASES.to_string()
+    igpop::catalogue::ALIASES.to_string()
 }
 
 /// The genes of a FASTA file and whether the gene list has them, before

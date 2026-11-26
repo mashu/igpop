@@ -1,0 +1,44 @@
+/* The start page: where the file is given. */
+
+.hero h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.08; letter-spacing: -0.035em; margin: 2.5rem 0 1rem; max-width: 18ch; }
+.hero .lead { max-width: 54ch; }
+.lead { font-size: 1.15rem; color: var(--muted); max-width: 62ch; }
+.drop {
+  margin: 2rem 0 1rem;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  background: var(--surface);
+  border: 2px dashed var(--line);
+  border-radius: calc(var(--radius) * 1.5);
+  display: grid;
+  gap: 0.4rem;
+  justify-items: center;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.drop.over { transform: scale(1.01); }
+.drop svg {
+  width: 44px;
+  height: 44px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.drop strong { font-size: 1.25rem; }
+.drop span { color: var(--muted); max-width: 52ch; }
+.example { margin: 0.9rem 0 0; font-size: 0.95rem; display: flex; gap: 0.6rem; align-items: baseline; }
+.example .link {
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+.privacy { margin: 1.6rem 0 0; font-size: 0.9rem; }
+.options { margin: 0.4rem 0 1.5rem; }
+.options summary { cursor: pointer; color: var(--muted); width: fit-content; }
+.options .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; padding: 1rem 0; }

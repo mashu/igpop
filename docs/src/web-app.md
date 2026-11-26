@@ -145,7 +145,7 @@ each name says who is in it. Genes that lie outside the chromosomes and
 get no population data, and genes judged with the older data of GRCh37,
 are named under the bar at the top of the page.
 
-After the run, the tab **Data used** shows what each source had to say:
+After the run, the tab **Data used** shows what each dataset had to say:
 how many of the distinct differences of the run it has seen, for how many
 it showed a frequency of 1% or more, how many alleles the phased panel
 could look up completely and how many it found. The studies that dbSNP
@@ -171,9 +171,10 @@ answers.
 ## The evidence behind one difference
 
 Pointing at a difference in the table (its description or its frequency
-line) shows a short summary: how many chromosomes carry it in each source,
-the three populations where it is most frequent, the guaranteed frequency
-and the score. The full evidence opens with "show".
+line) shows a short summary: how many chromosomes carry it in each dataset
+that has seen it, the three populations where it is most frequent, the
+datasets that looked for it and did not see it, the lowest plausible
+frequency and the score. The full evidence opens with "show".
 
 In an opened allele, "show" in the Details column of a difference (or a click
 on it in the alignment) shows:
@@ -182,13 +183,14 @@ on it in the alignment) shows:
   bases.
 - **Who carries it**: every population that looked at the position, with
   the number of chromosomes that carry the base out of those examined: the
-  five continental groups of 1000 Genomes, the ancestry groups of gnomAD, the populations of ALFA, GenomeAsia, ToMMo (Japan) and WBBC (China), and the studies dbSNP passes on. Populations without
-  a single copy are listed too. The colour of a bar is the continental
+  five continental groups of 1000 Genomes, the ancestry groups of gnomAD, the populations of ALFA, GenomeAsia, ToMMo (Japan) and WBBC (China), and the studies dbSNP passes on. A dataset
+  that looked for the base and did not see it is one line with the number
+  of chromosomes it examined. The colour of a bar is the continental
   group of its population (European, African, East Asian, Middle Eastern,
   South Asian, American; grey for mixed or other), the same in every source. For dbSNP studies the counts are worked
   out from the estimated study size and marked "about".
-- **Why this verdict and score**: which population gives the guaranteed
-  frequency (the support), the score that support has on the curve of the
+- **Why this verdict and score**: which population gives the lowest
+  plausible frequency (the support), the score that support has on the curve of the
   run and how well that score is known, how many of all possible changes
   are supported at least as well, and whether a test showed a frequency of
   1% or more.
@@ -227,7 +229,7 @@ A yes/no verdict needs a cut, and no cut is given by the data. The field
 0.1 from 0 to 100; the slider under it covers 0 to 20. The analysis runs
 with 2. Under the slider the app says what the chosen limit means:
 
-- the support at which the score reaches it (0.28% for 2 in the IGHV
+- the support at which the score reaches it (0.29% for 2 in the IGHV
   example, 1.7% for 10),
 - the share of all possible single-base changes that score this high,
   which is how often an arbitrary change would pass,

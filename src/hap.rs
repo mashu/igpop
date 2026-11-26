@@ -4,7 +4,9 @@
 //! Only founders (samples without a parent in the panel) are counted, so
 //! that a chromosome transmitted in a trio is not counted twice.
 
-use crate::freq::{self, Key, PopCount, POPS};
+use crate::population::KGP_GROUPS;
+use crate::stats::PopCount;
+use crate::variant::{trim, Key};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// One alternate allele of the panel with the haplotypes that carry it.
@@ -52,15 +54,6 @@ impl Assessment {
     }
 }
 
-pub fn total(counts: &[PopCount; 5]) -> PopCount {
-    counts.iter().fold(PopCount::default(), |t, p| PopCount {
-        ac: t.ac + p.ac,
-        an: t.an + p.an,
-        het: 0,
-        hom: 0,
-    })
-}
-
 impl Panel {
     /// `header`: the `#CHROM` line of the phased VCF. `pedigree`: lines of
     /// `family sample father mother sex population superpopulation`.
@@ -77,7 +70,7 @@ impl Panel {
                 continue;
             }
             let founder = !present.contains(f[2]) && !present.contains(f[3]);
-            if let (true, Some(pop)) = (founder, POPS.iter().position(|p| *p == f[6])) {
+            if let (true, Some(pop)) = (founder, KGP_GROUPS.iter().position(|g| g.code == f[6])) {
                 group.insert(f[1], pop);
             }
         }
@@ -148,7 +141,7 @@ impl Panel {
                     bits,
                 });
             } else {
-                let key = freq::trim(pos, f[3].as_bytes(), alt.as_bytes());
+                let key = trim(pos, f[3].as_bytes(), alt.as_bytes());
                 let to = key.0 + key.1.len().max(1) as u64 - 1;
                 out.push(Carried {
                     from: key.0,
@@ -161,11 +154,11 @@ impl Panel {
     }
 
     fn count(&self, bits: &[u64]) -> [PopCount; 5] {
-        std::array::from_fn(|p| PopCount {
-            ac: bits.iter().zip(&self.masks[p]).map(|(b, m)| (b & m).count_ones()).sum(),
-            an: self.masks[p].iter().map(|m| m.count_ones()).sum(),
-            het: 0,
-            hom: 0,
+        std::array::from_fn(|p| {
+            PopCount::new(
+                bits.iter().zip(&self.masks[p]).map(|(b, m)| (b & m).count_ones()).sum(),
+                self.masks[p].iter().map(|m| m.count_ones()).sum(),
+            )
         })
     }
 
@@ -299,6 +292,7 @@ impl Coincidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stats::total;
 
     fn panel() -> Panel {
         // s1 and s2 are founders, s3 is their child.

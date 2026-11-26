@@ -21,11 +21,11 @@
 
 # How it works
 
+- [Method, step by step](method.md)
+- [Datasets and combining evidence](datasets.md)
 - [The score](score.md)
 - [Automatic calibration](calibration.md)
-- [Method](method.md)
 - [Site quality filters](site-qc.md)
-- [Datasets and combining evidence](datasets.md)
 - [Limitations](limitations.md)
 
 # For maintainers

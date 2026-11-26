@@ -1,0 +1,163 @@
+/* The alignment of the alleles of one gene. */
+
+/* ---- Head: title and key ---- */
+.aln summary { cursor: pointer; font-weight: 600; }
+.aln-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem 1.2rem;
+  margin: 0.7rem 0 0;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: var(--surface);
+  font-size: 0.86rem;
+}
+.aln-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.9rem; }
+.aln-title b { font-size: 0.98rem; }
+.aln-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.aln-key { display: inline-flex; align-items: center; gap: 0.35rem; }
+.aln-key .nt {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 0 0.28em;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  line-height: 1.5;
+}
+.aln-key .nt.nv-inconclusive { box-shadow: inset 0 -3px 0 var(--inconclusive); }
+.aln-key .nt.nv-needs_confirmation { outline: 2px solid var(--confirm); border-radius: 2px; }
+.aln-more { color: var(--accent); font-weight: 600; }
+
+/* ---- The grid: names on the left, sequences on the right ---- */
+.aln-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  max-height: 26rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  border-radius: 0 0 10px 10px;
+  line-height: 1.75;
+  background: var(--surface);
+}
+.aln-names { position: sticky; left: 0; z-index: 2; background: var(--surface); border-right: 1px solid var(--line); }
+.aln-names .aln-line {
+  padding: 0 0.7rem;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--mono);
+}
+.aln-seqs { position: relative; padding: 0 0.6rem; box-sizing: content-box; cursor: crosshair; }
+.aln-line { white-space: pre; height: 1.75em; color: color-mix(in srgb, var(--muted) 55%, transparent); }
+/* Every second line is tinted; :where() keeps this rule weaker than the highlights below. */
+:where(.aln-seqs, .aln-names) :where(.aln-line:nth-child(even):not(.aln-ruler)) { background: color-mix(in srgb, var(--ink) 2.5%, transparent); }
+.aln-ref { letter-spacing: 0; color: var(--ink); font-weight: 600; border-bottom: 1px solid var(--line); }
+.aln-line.current { font-weight: 700; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.aln-line.over { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.aln-line.current.over { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.aln-verdict { flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: transparent; }
+
+/* ---- Rulers above the sequences: position numbers, ticks, regions ---- */
+.aln-ruler { font-size: inherit; position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.aln-names .aln-ruler { color: var(--muted); font-family: inherit; font-size: 0.92em; }
+.aln-numbers { height: 1.5em; line-height: 1.5; font-size: 0.92em; }
+.aln-number { position: absolute; transform: translateX(-50%); color: var(--muted); font-variant-numeric: tabular-nums; }
+.aln-ticks { top: 1.38em; height: 0.55em; border-bottom: 1px solid var(--line); }
+.aln-ticks:has(+ .aln-regions) { border-bottom: 0; }
+.aln-seqs .aln-ticks {
+  background: linear-gradient(to right, var(--muted) 0 1px, transparent 1px) calc(var(--from) + 9.5ch) 100% / 10ch 100% repeat-x, linear-gradient(to right, color-mix(in srgb, var(--muted) 55%, transparent) 0 1px, transparent 1px) calc(var(--from) + 4.5ch) 100% / 5ch 45% repeat-x, var(--surface);
+}
+.aln-regions { top: 1.93em; height: 1.6em; line-height: 1.6; border-bottom: 1px solid var(--line); }
+.aln-region small { font-size: 0.78em; font-family: inherit; }
+.aln-region {
+  display: inline-block;
+  text-align: center;
+  overflow: hidden;
+  vertical-align: top;
+  color: var(--muted);
+  cursor: pointer;
+  height: 1.15em;
+  line-height: 1.15;
+  margin-top: 0.2em;
+  border-radius: 4px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.aln-region.cdr { color: var(--ink); font-weight: 600; background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.aln-names .aln-regions { height: calc(1.6em / 0.92); line-height: 1.6; font-size: 0.92em; }
+.aln-region:hover, .aln-region[aria-pressed=true] { background: color-mix(in srgb, var(--accent) 38%, transparent); color: var(--ink); }
+.aln-region:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.aln-region + .aln-region { box-shadow: inset 2px 0 0 var(--surface); }
+
+/* ---- Bases, and the verdict of a difference ---- */
+.nt { font-weight: 700; border-radius: 2px; }
+.nt-A { color: #1f7a4d; }
+.nt-C { color: #1d5fbf; }
+.nt-G { color: #9a6200; }
+.nt-T { color: #b3401f; }
+.nt-gap, .nt-N { color: var(--ink); }
+@media (prefers-color-scheme: dark) {
+  .nt-A { color: #58c58f; }
+  .nt-C { color: #7fb0f0; }
+  .nt-G { color: #e0a84a; }
+  .nt-T { color: #f08a6c; }
+}
+.aln-line .nt { background: color-mix(in srgb, currentColor 16%, transparent); padding: 0; border-radius: 3px; }
+.aln-line .nt.nv-inconclusive, .aln-line .nt.nv-not_assessed { box-shadow: inset 0 -3px 0 var(--inconclusive); }
+.aln-line .nt.nv-not_assessed { box-shadow: inset 0 -3px 0 var(--grey); }
+.aln-line .nt.nv-needs_confirmation { outline: 2px solid var(--confirm); outline-offset: 0; border-radius: 2px; }
+
+/* ---- What the pointer is on ---- */
+.aln-column {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1ch;
+  margin-left: 0.6rem;
+  pointer-events: none;
+  z-index: 1;
+  outline: 0;
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  box-shadow: inset 1px 0 0 var(--accent), inset -1px 0 0 var(--accent);
+}
+.aln-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin-left: 0.6rem;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  box-shadow: inset 1px 0 0 var(--accent), inset -1px 0 0 var(--accent);
+  pointer-events: none;
+  z-index: 0;
+}
+.aln-band[hidden] { display: none; }
+.aln-tip {
+  position: fixed;
+  z-index: 30;
+  display: grid;
+  gap: 0.3rem;
+  max-width: 24rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.aln-tip[hidden] { display: none; }

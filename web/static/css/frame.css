@@ -1,0 +1,42 @@
+/* What surrounds every page: the head, the four steps, the foot. */
+
+.top { display: flex; justify-content: space-between; align-items: center; padding: 1rem clamp(1rem, 4vw, 3rem); }
+.top nav { display: flex; gap: 1.25rem; }
+.brand { font-weight: 800; font-size: 1.5rem; letter-spacing: -0.03em; color: var(--ink); text-decoration: none; }
+.brand span { color: var(--accent); }
+main { max-width: 1120px; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 3rem) 4rem; }
+footer { text-align: center; color: var(--muted); padding: 2rem 1rem 3rem; font-size: 0.9rem; }
+
+/* ---- The four steps of a run ---- */
+.stages {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0;
+  margin: 1.6rem 0 0;
+  padding: 0;
+  counter-reset: step;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+.stages li { counter-increment: step; display: flex; align-items: center; gap: 0.45rem; }
+.stages li::before {
+  content: counter(step);
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.stages li + li { margin-left: 0.6rem; }
+.stages li:not(:last-child)::after { content: ""; width: 2rem; height: 1.5px; background: var(--line); margin-left: 0.6rem; }
+.stages li.done { color: var(--ink); }
+.stages li.done::before { content: "\2713"; background: var(--supported); border-color: var(--supported); color: var(--surface); }
+.stages li.now { color: var(--ink); font-weight: 700; }
+.stages li.now::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.stages + .panel, .stages + section { margin-top: 1rem; }

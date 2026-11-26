@@ -44,11 +44,11 @@ jobs:
         run: |
           mkdir -p site/app/pkg
           cp -r docs/book/. site/
-          cp web/static/* site/app/
+          cp -r web/static/. site/app/
           cp web/pkg/*.js web/pkg/*.wasm site/app/pkg/
           # Stamp the page with this build, so that browsers load every
-          # part of the app anew after a deployment (see worker.js).
-          sed -i "s/?v=BUILD/?v=${GITHUB_SHA::8}/g" site/app/index.html
+          # part of the app anew after a deployment (see js/engine.js).
+          sed -i "s/?v=BUILD/?v=${GITHUB_SHA::8}/g" site/app/index.html site/app/js/*.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
