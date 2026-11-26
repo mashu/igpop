@@ -59,7 +59,7 @@ pub fn assess_variant(judge: &Judge, placed: &Placed, called: &Called) -> Varian
     let id = format!("{rsid}({reference}>{alternate}:{},{pos})", called.allele_pos);
     let strata = ev.strata(&lookup);
     let support = evidence::support(&strata);
-    // The population whose counts guarantee that frequency.
+    // The population with that lower bound.
     let support_from = strata
         .iter()
         .filter(|(_, c)| c.ac > 0)

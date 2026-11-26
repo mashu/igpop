@@ -1,0 +1,60 @@
+/* Colours, sizes and type: the values every other file uses. */
+
+/* igpop web app. One stylesheet, no external assets. Colours are defined
+ once as variables, with a dark variant; verdicts always carry an icon and
+ a word besides their colour. */
+:root {
+  --paper: #f5f5f9;
+  --surface: #ffffff;
+  --ink: #1d1b33;
+  --muted: #5f5d75;
+  --line: #dddbe8;
+  --accent: #5b3fb8;
+  --accent-ink: #ffffff;
+  --supported: #1f7a4d;
+  --inconclusive: #9a6200;
+  --confirm: #b3401f;
+  --neutral: #4a5a78;
+  --grey: #6b7280;
+  --tint: 12%;
+  --radius: 14px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  color-scheme: light dark;
+  --a-european: #2a78d6;
+  --a-african: #eb6834;
+  --a-east_asian: #1baf7a;
+  --a-middle_eastern: #eda100;
+  --a-south_asian: #e87ba4;
+  --a-american: #008300;
+  --c-main: #3a6fc4;
+  --c-older: #c96a3a;
+  --c-freq: #5b3fb8;
+  --c-hap: #9a7410;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #15141f;
+    --surface: #1e1c2b;
+    --ink: #ecebf5;
+    --muted: #a9a6bd;
+    --line: #322f45;
+    --accent: #a594f9;
+    --accent-ink: #17142b;
+    --supported: #58c58f;
+    --inconclusive: #e0a84a;
+    --confirm: #f08a6c;
+    --neutral: #9db2dc;
+    --grey: #9aa3b2;
+    --tint: 18%;
+    --a-european: #3987e5;
+    --a-african: #d95926;
+    --a-east_asian: #199e70;
+    --a-middle_eastern: #c98500;
+    --a-south_asian: #d55181;
+    --a-american: #0ca30c;
+    --c-main: #6f9ae0;
+    --c-older: #d98a5f;
+    --c-freq: #a594f9;
+    --c-hap: #c9a04a;
+  }
+}

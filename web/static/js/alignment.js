@@ -66,7 +66,7 @@ export function alignmentPanel(block, alleleName, opened = new Map()) {
     for (const v of state.variants.get(name) || []) {
       if (v.verdict === 'supported' || v.type === 'INS') continue;
       const pos = Number(v.genome_pos);
-      const covered = v.type === 'SNV' ? [pos] : Array.from({ length: Math.max(0, v.vcf_ref.length - 1) }, (_, k) => pos + 1 + k);
+      const covered = v.type === 'SNV' ? [pos] : Array.from({ length: Math.max(0, v.reference_bases.length - 1) }, (_, k) => pos + 1 + k);
       for (const p of covered) {
         const c = aln.positions.indexOf(p);
         if (c >= 0) marks.set(c, v.verdict);
@@ -149,11 +149,11 @@ export function alignmentPanel(block, alleleName, opened = new Map()) {
     // The difference of this allele at this position, if it has one.
     const variant = (state.variants.get(row) || []).find((v) => (v.type === 'SNV'
       ? Number(v.genome_pos) === pos
-      : Math.abs(Number(v.genome_pos) - pos) <= Math.max(v.vcf_ref.length, v.vcf_alt.length)));
+      : Math.abs(Number(v.genome_pos) - pos) <= Math.max(v.reference_bases.length, v.query_variant.length)));
     if (variant && !BASE_WORDS[base] || (variant && base === '-')) {
       const seen = frequencies(variant);
       const best = seen.reduce((top, m) => (m.af > top.af ? m : top), { af: 0 });
-      const counted = populations(variant).filter((g) => g.total && g.total.an > 0)
+      const counted = populations(variant).filter((g) => g.total && g.total.ac > 0)
         .map((g) => `${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')} chromosomes in ${g.source}`);
       parts.push(
         el('span', {}, given(variant.rsid) ? variant.rsid : 'no rsID', ' ', badge(variant.verdict)),
@@ -198,7 +198,7 @@ export function alignmentPanel(block, alleleName, opened = new Map()) {
     const pos = aln.positions[col];
     const variant = (state.variants.get(alleleName) || []).find((v) => (v.type === 'SNV'
       ? Number(v.genome_pos) === pos
-      : Math.abs(Number(v.genome_pos) - pos) <= Math.max(v.vcf_ref.length, v.vcf_alt.length)));
+      : Math.abs(Number(v.genome_pos) - pos) <= Math.max(v.reference_bases.length, v.query_variant.length)));
     const open = variant && /[A-Za-z-]/.test((aln.rows.get(alleleName) || '')[col] || '') && opened.get(Number(variant.genome_pos));
     if (open) { leave(); open(); }
   };

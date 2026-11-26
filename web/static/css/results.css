@@ -1,0 +1,208 @@
+/* The results: the tallies, the list of alleles, the table of differences. */
+
+.results-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+.results-head h2 { font-size: 1.9rem; letter-spacing: -0.02em; margin: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.8rem; margin: 1.2rem 0; }
+.tile {
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+  display: grid;
+  gap: 0.1rem;
+  padding: 1rem 1.1rem 1.2rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.tile:hover { transform: translateY(-2px); border-color: var(--v); }
+.tile[aria-pressed=true] {
+  border-color: var(--v);
+  box-shadow: 0 0 0 2px var(--v);
+  background: color-mix(in srgb, var(--v) var(--tint), var(--surface));
+}
+.tile-count { font-size: 2.2rem; font-weight: 750; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.tile-label { font-weight: 650; color: var(--v); }
+.tile-sub { font-size: 0.8rem; color: var(--muted); }
+.tile-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: var(--share);
+  background: var(--v);
+}
+.limit-setting {
+  display: grid;
+  grid-template-columns: auto minmax(10rem, 22rem) auto;
+  gap: 0.2rem 0.8rem;
+  align-items: center;
+  margin: 0.6rem 0 0;
+  font-size: 0.92rem;
+}
+.limit-setting input[type=range] { accent-color: var(--accent); width: 100%; }
+.limit-setting p { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 640px) {
+  .limit-setting { grid-template-columns: 1fr; }
+}
+.limit-setting label { display: inline; color: var(--ink); font-size: inherit; white-space: nowrap; }
+.limit-setting b { font-variant-numeric: tabular-nums; }
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem 0.05rem 0.4rem;
+}
+.score-pill i { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--tone); flex: none; }
+
+/* ---- Alleles by number of unsupported differences ---- */
+#fold-doubt[open] { order: 1; }
+.doubt-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 9.5rem;
+  max-width: 30rem;
+  border-bottom: 1px solid var(--line);
+  margin-top: 0.3rem;
+}
+.doubt-bar {
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 0 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  position: relative;
+}
+.doubt-bar:disabled { cursor: default; color: var(--muted); }
+.doubt-count { font-size: 0.8rem; font-variant-numeric: tabular-nums; text-align: center; }
+.doubt-stack { display: flex; flex-direction: column; gap: 2px; min-height: 8px; }
+.doubt-bar:disabled .doubt-stack { min-height: 0; }
+.doubt-stack i { display: block; min-height: 2px; border-radius: 3px 3px 0 0; }
+.doubt-stack i + i { border-radius: 0; }
+.doubt-name {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding-top: 0.2rem;
+  white-space: nowrap;
+}
+.doubt-bar:hover:not(:disabled) .doubt-stack, .doubt-bar:focus-visible .doubt-stack { outline: 2px solid var(--ink); outline-offset: 2px; }
+.doubt-bar[aria-pressed=true] .doubt-stack { outline: 2px solid var(--accent); outline-offset: 2px; }
+.doubt-bar[aria-pressed=true] .doubt-name { color: var(--ink); font-weight: 700; }
+.doubt-chart:has([aria-pressed=true]) .doubt-bar[aria-pressed=false] .doubt-stack { opacity: 0.35; }
+.doubt-axis { margin: 1.6rem 0 0.3rem; font-size: 0.8rem; max-width: 30rem; text-align: center; }
+
+/* ---- One allele in the list ---- */
+.gene h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 1.6rem 0 0.5rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--v); border-radius: 10px; margin-bottom: 0.45rem; }
+.card summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+.card summary::-webkit-details-marker { display: none; }
+.card summary::after { content: "▸"; margin-left: auto; color: var(--muted); transition: transform 0.15s; }
+.card[open] summary::after { transform: rotate(90deg); }
+.card summary:hover { background: color-mix(in srgb, var(--v) 6%, transparent); }
+.name { font-family: var(--mono); font-weight: 650; }
+.route { font-size: 0.8rem; color: var(--supported); }
+.reason { font-weight: 550; overflow-wrap: anywhere; }
+.pill.h-found_exact { color: var(--supported); border-color: color-mix(in srgb, var(--supported) 50%, transparent); }
+.pill.h-found_exact::before { content: "⛓ "; }
+.pill.p-unclean { color: var(--inconclusive); border-color: color-mix(in srgb, var(--inconclusive) 55%, transparent); }
+.placement-note {
+  border: 1px solid color-mix(in srgb, var(--inconclusive) 50%, transparent);
+  background: color-mix(in srgb, var(--inconclusive) 9%, transparent);
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+/* ---- The table of differences ---- */
+.variants th[scope=row] { min-width: 8.5rem; font-weight: 400; }
+.variants th[scope=row] > a, .variants th[scope=row] > .muted { display: block; font-weight: 600; }
+.variants th[scope=row] small { display: block; color: var(--muted); }
+.variants + .legend { margin: 0.5rem 0 0; }
+.variants td:nth-child(4) { max-width: 14rem; white-space: normal; }
+.variants td:nth-child(4) .chip { margin: 0.1rem 0.2rem 0.1rem 0; display: inline-block; }
+.strip { width: 260px; height: 38px; display: block; }
+.strip .scale { font-size: 8.5px; fill: var(--muted); }
+.strip .axis { stroke: var(--line); stroke-width: 1.5; }
+.strip .one-percent, .key .line { stroke: var(--confirm); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.strip-cell small { display: block; color: var(--muted); font-size: 0.78rem; max-width: 260px; }
+.evidence-row > td { background: color-mix(in srgb, var(--ink) 3%, transparent); padding: 1rem 1.2rem; white-space: normal; }
+.other-end {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: normal;
+  max-width: 7.5rem;
+  line-height: 1.25;
+}
+
+/* ---- Populations in a popup ---- */
+.people-tip b + span { margin-top: -0.2rem; }
+.hint-text:has(.people-tip) { max-width: min(40rem, calc(100vw - 16px)); padding: 0.8rem 0.9rem; }
+.people-tip { display: grid; gap: 0.7rem; min-width: min(24rem, calc(100vw - 48px)); }
+.tip-source { display: grid; gap: 0.3rem; }
+.tip-head { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+.tip-head span, .tip-count, .tip-share { font-variant-numeric: tabular-nums; }
+.tip-head span { color: var(--muted); }
+.tip-rows {
+  display: grid;
+  grid-template-columns: minmax(6rem, 11rem) 5.5rem minmax(max-content, 1fr) max-content;
+  gap: 0.2rem 0.6rem;
+  align-items: center;
+}
+.tip-name { color: var(--muted); }
+.tip-track { position: relative; height: 0.6rem; border-radius: 3px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.tip-track::after {
+  content: "";
+  position: absolute;
+  left: 66.67%;
+  top: -2px;
+  bottom: -2px;
+  border-left: 1px dashed var(--confirm);
+}
+.tip-track i { display: block; height: 100%; border-radius: 3px; }
+.tip-count { color: var(--muted); text-align: right; white-space: nowrap; }
+.tip-share { text-align: right; font-weight: 600; white-space: nowrap; }
+.tip-none { color: var(--muted); font-size: 0.8rem; max-width: 30rem; }
+.tip-foot { display: flex; justify-content: space-between; gap: 1rem; padding-top: 0.55rem; border-top: 1px solid var(--line); }
+@media (max-width: 520px) {
+  .tip-rows { grid-template-columns: 1fr max-content; }
+  .tip-track { display: none; }
+  .tip-count { grid-column: 1; text-align: left; }
+}
+.hint-value.plain { border-bottom: 0; display: block; cursor: default; }
+.hint:has(> .plain) { display: block; }

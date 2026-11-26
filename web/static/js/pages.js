@@ -2,6 +2,7 @@
 // files.
 
 import { $, el, plural } from './dom.js?v=BUILD';
+import { datasetsOf, populations } from './populations.js?v=BUILD';
 import { comparisonChart, scoreModel } from './score.js?v=BUILD';
 import { isCandidate, state } from './state.js?v=BUILD';
 import { given, number, parseTSV } from './tsv.js?v=BUILD';
@@ -22,21 +23,18 @@ export function renderData() {
     return;
   }
   const builds = [...new Set(all.map((v) => v.build).filter(given))];
-  const title = (name) => ({ '1kGP_30x': '1000 Genomes, 30x', '1kGP_phase3': '1000 Genomes, phase 3', dbSNP: 'Studies collected by dbSNP' }[name] || name.replace('gnomAD_v', 'gnomAD v').replace(/$/, name.startsWith('gnomAD') ? ' genomes' : ''));
   const sections = builds.map((build) => {
     const mine = all.filter((v) => v.build === build);
     const assessed = mine.filter((v) => v.class !== 'not_assessed');
-    const sources = [...new Set(mine.flatMap((v) => (given(v.evidence) ? v.evidence.split(';') : [])))];
-    const chromosomes = (name) => {
-      const column = name.startsWith('1kGP') ? 'kgp_AN' : name.startsWith('gnomAD') ? 'gnomad_AN' : null;
-      const most = column ? Math.max(0, ...mine.map((v) => number(v[column])).filter((x) => x > 0)) : 0;
-      return most ? `${most.toLocaleString('en')} chromosomes` : '';
-    };
-    const rows = sources.map((name) => ({
-      name,
-      seen: mine.filter((v) => given(v.evidence) && v.evidence.split(';').includes(name)).length,
-      common: mine.filter((v) => v.class === 'common' && given(v.class_basis) && v.class_basis.split(':')[0] === name).length,
-    })).sort((a, b) => b.seen - a.seen);
+    // Per dataset: how many chromosomes it holds, how many of the
+    // differences it has seen, and how many it shows to be common.
+    const seenBy = mine.map((v) => populations(v));
+    const rows = datasetsOf(build).map((from) => ({
+      from,
+      chromosomes: [...from.groups.values()].reduce((sum, group) => sum + (group.used ? group.chromosomes : 0), 0),
+      seen: seenBy.filter((groups) => groups.some((g) => g.source === from.title && g.rows.some((r) => r.ac > 0))).length,
+      common: mine.filter((v) => v.class === 'common' && given(v.class_basis) && v.class_basis.split(':')[0] === from.name).length,
+    })).filter((r) => r.chromosomes > 0);
     const never = assessed.filter((v) => !given(v.evidence)).length;
     const alleles = state.alleles.filter((a) => a.build === build && Number(a.n_variants) > 0);
     const looked = alleles.filter((a) => ['found_exact', 'found_with_extra', 'not_found'].includes(a.hap_status));
@@ -47,36 +45,35 @@ export function renderData() {
       build !== state.build ? el('p', { class: 'muted', text: `These genes are missing from ${state.build} and were judged with the older, smaller data of ${build}.` }) : null,
       el('div', { class: 'scroll' }, el('table', { class: 'data-table' },
         el('caption', { text: 'Frequencies: has anyone been seen with the same base?' }),
-        el('thead', {}, el('tr', {}, ...['Data source', 'Size', `Differences it has seen (of ${mine.length})`, 'Shown by it to be common'].map((h) => el('th', { scope: 'col', text: h })))),
+        el('thead', {}, el('tr', {}, ...['Dataset', 'Size', `Differences it has seen (of ${mine.length})`, 'Shown by it to be common'].map((h) => el('th', { scope: 'col', text: h })))),
         el('tbody', {}, rows.map((r) => el('tr', {},
-          el('th', { scope: 'row', text: title(r.name) }),
-          el('td', { class: 'muted', text: r.name === 'dbSNP' ? 'many studies, see below' : chromosomes(r.name) }),
+          el('th', { scope: 'row', text: r.from.title }),
+          el('td', { class: 'muted', text: r.from.estimated ? `${r.from.groups.size} studies, sizes estimated` : `${plural([...r.from.groups.values()].filter((g) => g.used).length, 'group')}, up to ${r.chromosomes.toLocaleString('en')} chromosomes` }),
           el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * r.seen) / mine.length}%` }), ` ${r.seen}`),
           el('td', { class: 'num', text: String(r.common) })))),
-        el('tfoot', {}, el('tr', {}, el('td', { colspan: '4', class: 'muted', text: `${never} of the differences ${never === 1 ? 'was' : 'were'} seen in no source${mine.length - assessed.length ? `; ${mine.length - assessed.length} could not be looked up at all` : ''}. A difference counts once per source; "shown to be common" names the source whose population proved a frequency of 1% or more.` }))))),
+        el('tfoot', {}, el('tr', {}, el('td', { colspan: '4', class: 'muted', text: `${never} of the differences ${never === 1 ? 'was' : 'were'} seen in no dataset${mine.length - assessed.length ? `; ${mine.length - assessed.length} could not be looked up at all` : ''}. A difference counts once per source; "shown to be common" names the source whose population proved a frequency of 1% or more.` }))))),
       panel ? el('p', {}, el('b', { text: 'Whole sequences: ' }), `the phased panel has ${panel.toLocaleString('en')} chromosomes. ${looked.length} of ${alleles.length} alleles could be looked up completely, and ${found.length} of those were found with their exact sequence.`) : null);
   });
-  view.append(el('p', { text: 'Which data the verdicts rest on, and how much each source had to say about the alleles of this run.' }), ...sections);
+  view.append(el('p', { text: 'Which data the verdicts rest on, and how much each dataset had to say about the alleles of this run.' }), ...sections);
 
-  // The studies behind dbSNP, by how many of the differences they report.
-  const studies = new Map();
-  for (const v of all) {
-    if (!given(v.dbsnp_freq)) continue;
-    for (const entry of v.dbsnp_freq.split(';')) {
-      const [name, af] = entry.split(':');
-      if (Number(af) > 0) studies.set(name, (studies.get(name) || 0) + 1);
-    }
-  }
-  const sizes = new Map((state.files['dbsnp_datasets.tsv'] ? parseTSV(state.files['dbsnp_datasets.tsv']) : []).map((d) => [d.dataset, d]));
-  if (studies.size) {
-    const top = Math.max(...studies.values());
-    view.append(el('details', { class: 'fold' }, el('summary', { text: `The ${studies.size} studies behind dbSNP` }),
-      el('p', { class: 'muted', text: 'dbSNP passes on frequencies from these studies without the number of people. igpop estimates each size from the smallest frequency the study reports; a larger study can demonstrate rarer variants.' }),
+  // Every population of the run, by how many of the differences it has seen.
+  for (const build of builds) {
+    const mine = all.filter((v) => v.build === build).map((v) => populations(v));
+    const groups = datasetsOf(build).flatMap((from) => [...from.groups.values()].filter((group) => group.used).map((group) => ({
+      from,
+      group,
+      seen: mine.filter((sources) => sources.some((g) => g.source === from.title && g.rows.some((r) => r.name === group.title && r.ac > 0))).length,
+    })));
+    if (!groups.length) continue;
+    const top = Math.max(1, ...groups.map((g) => g.seen));
+    view.append(el('details', { class: 'fold' }, el('summary', { text: `The ${groups.length} populations${builds.length > 1 ? ` of ${build}` : ''}, one by one` }),
+      el('p', { class: 'muted', text: 'Every group of people the verdicts can rest on. A larger group can demonstrate rarer variants. dbSNP passes on frequencies of its studies without the number of people; igpop estimates each size from the smallest frequency the study reports.' }),
       el('div', { class: 'scroll' }, el('table', { class: 'data-table' },
-        el('thead', {}, el('tr', {}, ...['Study', 'Estimated size', 'Differences it reports'].map((h) => el('th', { scope: 'col', text: h })))),
-        el('tbody', {}, [...studies].sort((a, b) => b[1] - a[1]).map(([name, seen]) => el('tr', {},
-          el('th', { scope: 'row', text: name }),
-          el('td', { class: 'muted', text: sizes.has(name) && Number(sizes.get(name).implied_chromosomes) ? `${Number(sizes.get(name).implied_chromosomes).toLocaleString('en')} chromosomes` : '' }),
+        el('thead', {}, el('tr', {}, ...['Dataset', 'Population', 'Chromosomes', 'Differences it has seen'].map((h) => el('th', { scope: 'col', text: h })))),
+        el('tbody', {}, groups.map(({ from, group, seen }) => el('tr', {},
+          el('td', { class: 'muted', text: from.title }),
+          el('th', { scope: 'row' }, el('i', { class: `swatch a-${group.ancestry}` }), ` ${group.title}`),
+          el('td', { class: 'num', text: `${from.estimated ? 'about ' : ''}${group.chromosomes.toLocaleString('en')}` }),
           el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * seen) / top}%` }), ` ${seen}`))))))));
   }
 }
@@ -99,7 +96,7 @@ export function renderMethod() {
     el('div', { class: 'scroll' }, comparisonChart(null)),
     el('div', { class: 'scroll' }, el('table', { class: 'data-table' },
       el('caption', { text: 'Points on the curve' }),
-      el('thead', {}, el('tr', {}, ...['Support: frequency guaranteed in the best population', 'Score', 'How well the score is known', 'Possible changes supported at least as well'].map((h) => el('th', { scope: 'col', text: h })))),
+      el('thead', {}, el('tr', {}, ...['Support: lowest plausible frequency in the best population', 'Score', 'How well the score is known', 'Possible changes supported at least as well'].map((h) => el('th', { scope: 'col', text: h })))),
       el('tbody', {}, points.map((support) => el('tr', {},
         el('th', { scope: 'row', text: support > 0 ? percent(support) : 'never seen' }),
         el('td', { class: 'num', text: scoreText(model.score(support)) }),

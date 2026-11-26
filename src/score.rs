@@ -1,8 +1,9 @@
 //! The main score: how much more typical a variant's population support
 //! is of the variants of real alleles than of arbitrary base changes.
 //!
-//! Support is one number per variant: the largest frequency its counts
-//! guarantee in some population (see `evidence::support`). Two groups of
+//! Support is one number per variant: the lower confidence bound of its
+//! frequency in the population where that bound is highest (see
+//! `evidence::support`). Two groups of
 //! single-base changes are compared in the same data: every change that
 //! is possible in the loci of the run ("arbitrary"), and the changes found
 //! in alleles accepted as real ("real").

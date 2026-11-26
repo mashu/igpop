@@ -5,6 +5,7 @@ import { $, el, hint, plural, selectTab } from './dom.js?v=BUILD';
 import { haplotypePanel } from './haplotype.js?v=BUILD';
 import { CONFIRM, rememberVerdicts, renderLimit } from './limit.js?v=BUILD';
 import { renderData, renderFiles, renderMethod, renderReport } from './pages.js?v=BUILD';
+import { loadPopulations } from './populations.js?v=BUILD';
 import { isCandidate, on, show, state } from './state.js?v=BUILD';
 import { given, number, parseAlignments, parseTSV } from './tsv.js?v=BUILD';
 import { changeWords, detailSection, scoreWords, variantTable } from './variants.js?v=BUILD';
@@ -25,6 +26,7 @@ export function display(files, warnings, summary = []) {
     if (!state.variants.has(row.allele_name)) state.variants.set(row.allele_name, []);
     state.variants.get(row.allele_name).push(row);
   }
+  loadPopulations(files);
   state.alignments = parseAlignments(files['alignments.txt']);
   rememberVerdicts(files);
   state.verdict = '';
@@ -179,7 +181,7 @@ function renderDoubt() {
         el('span', { text: 'Select one or more bars to show only those alleles in the list below; select a bar again to release it.' })))),
     el('div', { class: 'doubt-chart', role: 'group', 'aria-label': 'Alleles by number of unsupported differences' }, bars),
     el('p', { class: 'doubt-axis muted', text: 'unsupported differences in the allele' }),
-    state.doubt.size ? el('button', { type: 'button', class: 'link', text: 'Show all again', onclick: () => { state.doubt.clear(); renderAlleles(); } }) : null);
+    state.doubt.size ? el('button', { type: 'button', class: 'link', text: 'Show all again', onclick: () => { state.doubt.clear(); renderAlleles(); } }) : '');
 }
 
 function visibleAlleles() {
@@ -306,7 +308,7 @@ function alleleDetail(allele) {
     el('p', { class: 'reason' }, badge(allele.verdict), ' ', idWords(allele.reason).replace(/variant\(s\)/g, variants.length === 1 ? 'difference' : 'differences').replace(/\bvariants\b/g, 'differences')),
     verdictRule(allele, variants),
     placement,
-    given(allele.notes) ? el('p', { class: 'muted', text: `Keep in mind: ${allele.notes.replace(/difference\(s\)/g, 'differences').replace(' (column kgp_site_qc says why)', '').replace(/1kGP_30x/g, '1000 Genomes 30x').replace(/1kGP_phase3/g, '1000 Genomes phase 3').replace(/gnomAD_v/g, 'gnomAD v')}.` }) : null)];
+    given(allele.notes) ? el('p', { class: 'muted', text: `Keep in mind: ${allele.notes.replace(/difference\(s\)/g, 'differences').replace(' (column site_quality says why)', '')}.` }) : null)];
   if (variants.length) parts.push(detailSection('Differences from the reference genome', 'Is each difference, taken by itself, carried by people?', variantTable(variants, opened)));
   const hap = haplotypePanel(allele);
   if (hap) parts.push(hap);

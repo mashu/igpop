@@ -1,0 +1,93 @@
+/* While a run is in progress. */
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 1.2rem 0 1rem;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+}
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+.steps .step-mark {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1.5px solid currentColor;
+}
+.steps li.current { color: var(--ink); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); font-weight: 600; }
+.steps li.current .step-mark { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.steps li.done { color: var(--supported); }
+.steps li.done .step-mark { font-size: 0; }
+.steps li.done .step-mark::after { content: "\2713"; font-size: 0.9rem; }
+@media (max-width: 720px) {
+  .steps { grid-template-columns: 1fr 1fr; }
+}
+.bar { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 18%, transparent); overflow: hidden; }
+.bar i {
+  display: block;
+  height: 100%;
+  width: 35%;
+  background: var(--accent);
+  border-radius: 4px;
+  animation: slide 1.6s ease-in-out infinite;
+}
+.bar.known i { animation: none; transform: none; transition: width 0.3s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .bar i { animation: none; width: 100%; opacity: 0.5; }
+  .bar.known i { opacity: 1; transition: none; }
+}
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+.now { margin: 0.8rem 0 0; min-height: 1.5em; }
+.log-details { margin-top: 0.8rem; font-size: 0.9rem; }
+.log-details summary { cursor: pointer; color: var(--muted); }
+.log {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.88rem;
+}
+.log li { padding: 0.15rem 0; overflow-wrap: anywhere; }
+.log li.done { color: var(--muted); }
+.log li.done::before { content: "\2713  "; color: var(--supported); }
+.log li:not(.done)::before { content: "\2026  "; color: var(--accent); }
+.log small { color: var(--muted); }
+.sources { width: 100%; max-width: 54rem; margin: 0.9rem 0 0; font-size: 0.9rem; border-collapse: collapse; }
+.sources th, .sources td { padding: 0.28rem 0.9rem 0.28rem 0; border: 0; text-align: left; vertical-align: middle; }
+.sources th { font-weight: 500; white-space: nowrap; color: var(--muted); }
+.sources tr.active th, .sources tr.complete th { color: var(--ink); }
+.sources td:nth-child(2) { width: 34%; min-width: 7rem; }
+.sources .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.source-track {
+  display: flex;
+  gap: 2px;
+  height: 0.5rem;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+.source-track i { display: block; height: 100%; transition: width 0.25s ease; }
+.source-track i.kept { background: color-mix(in srgb, var(--accent) 45%, var(--grey)); }
+.source-track i.new { background: var(--accent); }
+.source-track i[style="width:0%"] { display: none; }
+@media (max-width: 640px) {
+  .sources td:last-child { display: none; }
+}
+.sources td:last-child { white-space: nowrap; }

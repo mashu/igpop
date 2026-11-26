@@ -3,7 +3,6 @@
 import { $, el } from './dom.js?v=BUILD';
 import { post } from './engine.js?v=BUILD';
 import { on } from './state.js?v=BUILD';
-import { sourceTitle } from './populations.js?v=BUILD';
 
 /** How much downloaded data this browser keeps, with a way to delete it. */
 export function showStored(bytes, reading) {
@@ -34,7 +33,7 @@ const STEPS = [
   { id: 'judge', label: 'Judging the alleles', now: 'Scoring every difference and writing the results.', starts: /^score:/ },
 ];
 
-export const run = { step: -1, started: 0, timer: null, sources: new Map(), store: '', kept: '' };
+export const run = { step: -1, started: 0, timer: null, sources: new Map(), titles: new Map(), store: '', kept: '' };
 
 export function startProgress() {
   run.step = -1;
@@ -82,23 +81,6 @@ function setBar(share) {
   if (share == null) bar.firstElementChild.style.width = '';
 }
 
-/** The source a data file belongs to, in the words of the results. */
-function sourceOf(url) {
-  const u = url.toLowerCase();
-  if (u.includes('population_frequency')) return 'ALFA, by population';
-  if (u.includes('ga100k')) return 'GenomeAsia pilot';
-  if (u.includes('tommo')) return 'ToMMo 61KJPN (Japan)';
-  if (u.includes('wbbc')) return 'Westlake BioBank (China)';
-  if (u.includes('gnomad')) return /2\.1/.test(u) ? 'gnomAD v2.1 (GRCh37)' : 'gnomAD v4.1';
-  if (/\/snp\/|gcf_/.test(u)) return u.includes('gcf_000001405.25') ? 'dbSNP (GRCh37)' : 'dbSNP';
-  if (u.includes('phase3')) return '1000 Genomes phase 3 (GRCh37)';
-  if (u.includes('phased')) return 'Phased chromosomes of 1000 Genomes';
-  if (/1000g|1000genomes/.test(u)) return '1000 Genomes, 30x';
-  return url.split('/').pop();
-}
-
-/** The table of sources under the bar: how far each one is, and how much
- *  of it was already in the browser. */
 function renderSources() {
   const table = $('sources');
   table.hidden = !run.sources.size || run.step !== 1;
@@ -123,17 +105,19 @@ const STEP_WORDS = [
   [/^aligning (\d+) alleles to (\d+) loci on (\S+)/, (m) => `${m[1]} alleles aligned to ${m[2]} genes on ${m[3]}`],
   [/^finding the gene of (\d+) alleles by sequence/, (m) => `Gene of ${m[1]} alleles found by sequence`],
   [/^downloading (\d+) regions from (\d+) servers.*/, (m) => `Population data for ${m[1]} regions of the genome`],
-  [/^phased panel: .*/, () => 'Phased chromosomes read'],
-  [/^(1kGP\w*|gnomAD\S*|dbSNP|ALFA|GenomeAsia|ToMMo_61k|WBBC): .*/, (m) => `${sourceTitle(m[1])} read`],
+  [/^reading (.+?): \S+$/, (m) => `${m[1][0].toUpperCase()}${m[1].slice(1)} read`],
   [/^(\d+) founders, (\d+) haplotypes/, (m) => `${Number(m[2]).toLocaleString('en')} chromosomes of ${Number(m[1]).toLocaleString('en')} unrelated people`],
   [/^(\d+) regions, (\d+) from cache/, (m) => `${m[1]} regions`],
   [/^score: calibrated from (.*)/, (m) => `Score calibrated from ${m[1].replace(/^this run: /, '')}`],
 ];
 
 export function logLine(message) {
-  const planned = message.match(/^plan: (\d+) regions of (\S+)/);
+  // What is to come: so many regions of a source, at an address. A
+  // source read from several files (one per chromosome) is one line.
+  const planned = message.match(/^plan: (\d+) regions of (.+) at (\S+)$/);
   if (planned) {
-    const name = sourceOf(planned[2]);
+    const name = `${planned[2][0].toUpperCase()}${planned[2].slice(1)}`;
+    run.titles.set(planned[3], name);
     const source = run.sources.get(name) || { total: 0, kept: 0, downloaded: 0, failed: 0 };
     source.total += Number(planned[1]);
     run.sources.set(name, source);
@@ -146,7 +130,7 @@ export function logLine(message) {
   if (counted) {
     // One line per region: shown as bars, not as text.
     const [done, total, kept] = [Number(counted[1]), Number(counted[2]), Number(counted[3] || 0)];
-    const source = counted[5] && run.sources.get(sourceOf(counted[5]));
+    const source = counted[5] && run.sources.get(run.titles.get(counted[5]));
     if (source) source[counted[4]] += 1;
     if (run.step === 1) {
       setBar(done / total);
@@ -156,8 +140,8 @@ export function logLine(message) {
     return;
   }
   if (run.step !== 1) $('sources').hidden = true;
-  const dataset = text.match(/^(1kGP\w*|gnomAD\S*|dbSNP|ALFA|GenomeAsia|ToMMo_61k|WBBC|phased panel):/);
-  if (dataset && run.step === 2) $('progress-now').textContent = `Reading ${dataset[1] === 'phased panel' ? 'the phased chromosomes' : sourceTitle(dataset[1])}.`;
+  const reading = text.match(/^reading (.+?): \S+$/);
+  if (reading && run.step === 2) $('progress-now').textContent = `Reading ${reading[1]}.`;
   const aligning = text.match(/^aligning (\d+) alleles to (\d+) loci on (\S+)/);
   if (aligning && run.step === 0) $('progress-now').textContent = `Aligning ${aligning[1]} alleles to ${aligning[2]} genes on ${aligning[3]}.`;
   const worded = STEP_WORDS.map(([pattern, words]) => [text.trim().match(pattern), words]).find(([match]) => match);

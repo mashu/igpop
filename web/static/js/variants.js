@@ -2,7 +2,7 @@
 // difference when it is opened.
 
 import { el, explain, hint, plural, svg } from './dom.js?v=BUILD';
-import { ancestry, ancestryLegend, frequencies, populations, stratumWords } from './populations.js?v=BUILD';
+import { ancestryLegend, failures, frequencies, populations, stratumWords } from './populations.js?v=BUILD';
 import { comparison, scoreModel } from './score.js?v=BUILD';
 import { state } from './state.js?v=BUILD';
 import { given, number } from './tsv.js?v=BUILD';
@@ -11,9 +11,7 @@ import { SITE_QC, badge, chips, pct, percent, scoreText } from './words.js?v=BUI
 /** The key to the frequency lines, shown with each table of differences. */
 function frequencyLegend() {
   return el('div', { class: 'legend' },
-    el('span', { class: 'key' }, mark('kgp', 6, 6), ' 1000 Genomes population'),
-    el('span', { class: 'key' }, mark('gnomad', 6, 6), ' gnomAD group'),
-    el('span', { class: 'key' }, mark('dbsnp', 6, 6), ' another study'),
+    el('span', { class: 'key' }, 'One dot per population that has seen the base, coloured like the bars. '),
     el('span', { class: 'key' }, el('i', { class: 'line' }), ' 1% line'));
 }
 
@@ -32,7 +30,7 @@ function scoreHint() {
   const points = model ? [[0, 'never seen in any dataset'], [1e-4, 'shown to reach 0.01% in a population'], [1e-3, 'shown to reach 0.1%'], [1e-2, 'shown to reach 1%'], [1e-1, 'shown to reach 10%']] : [];
   return el('span', {},
     el('b', { text: 'How to read the score' }),
-    el('span', { text: 'The score says how much more typical the frequency of this base is of the variants of real alleles than of an arbitrary base change (what an error would give). It rises smoothly with the frequency the data guarantee:' }),
+    el('span', { text: 'The score says how much more typical the frequency of this base is of the variants of real alleles than of an arbitrary base change (what an error would give). It rises smoothly with the lowest frequency the counts are compatible with:' }),
     points.length ? el('span', { class: 'hint-table' }, points.map(([support, words]) => el('span', {},
       el('b', { text: scoreText(model.score(support)) }),
       el('span', { text: `${words}: ${scoreWords(model.score(support))}` })))) : null,
@@ -57,16 +55,6 @@ function stripHint() {
 
 export const xOf = (af) => STRIP.pad + ((Math.max(Math.log10(af), LOG_MIN) - LOG_MIN) / -LOG_MIN) * (STRIP.width - 2 * STRIP.pad);
 
-export function mark(kind, x, y) {
-  if (kind === 'kgp') return svgIcon(svg('circle', { cx: x, cy: y, r: 4, class: 'm-kgp' }));
-  if (kind === 'gnomad') return svgIcon(svg('path', { d: `M${x} ${y - 5}l5 5-5 5-5-5z`, class: 'm-gnomad' }));
-  return svgIcon(svg('rect', { x: x - 3.5, y: y - 3.5, width: 7, height: 7, class: 'm-dbsnp' }));
-}
-
-function svgIcon(shape) {
-  return svg('svg', { viewBox: '0 0 12 12', width: 12, height: 12, 'aria-hidden': 'true' }, shape);
-}
-
 function strip(v) {
   const marks = frequencies(v);
   const best = marks.reduce((top, m) => (m.af > top.af ? m : top), { af: 0 });
@@ -87,9 +75,7 @@ function strip(v) {
   picture.append(svg('line', { x1: xOf(0.01), x2: xOf(0.01), y1: 1, y2: 2 * mid - 1, class: 'one-percent' }));
   for (const m of marks) {
     const x = xOf(m.af);
-    const shape = m.kind === 'kgp' ? svg('circle', { cx: x, cy: mid, r: 4, class: 'm-kgp' })
-      : m.kind === 'gnomad' ? svg('path', { d: `M${x} ${mid - 5}l5 5-5 5-5-5z`, class: 'm-gnomad' })
-        : svg('rect', { x: x - 3.5, y: mid - 3.5, width: 7, height: 7, class: 'm-dbsnp' });
+    const shape = svg('circle', { cx: x, cy: mid, r: 3.5, class: `seen a-${m.ancestry}` });
     shape.append(svg('title', {}, `${m.name}: ${percent(m.af)}`));
     picture.append(shape);
   }
@@ -101,8 +87,8 @@ function whyBrief(v) {
   const support = number(v.support);
   const fact = (name, value) => el('div', {}, el('dt', { text: name }), el('dd', {}, value));
   return el('dl', { class: 'why' },
-    fact('Best evidence', support > 0 && given(v.support_from) ? stratumWords(v.support_from).replace(/^the /, '') : 'never seen'),
-    support > 0 ? fact('Guaranteed frequency', `at least ${percent(support)}`) : null,
+    fact('Best evidence', support > 0 && given(v.support_from) ? stratumWords(v.build, v.support_from).replace(/^the /, '') : 'never seen'),
+    support > 0 ? fact('Lowest plausible frequency', percent(support)) : null,
     fact('Score', given(v.score) ? `${v.score_basis === 'borrowed' ? 'at least ' : ''}${scoreText(Number(v.score))}` : 'none'),
     fact('Common (1% or more)', v.class === 'common' ? 'yes' : 'no'),
     fact('Verdict', badge(v.verdict)));
@@ -112,9 +98,9 @@ function whyBrief(v) {
 function whyScore(v) {
   const steps = [];
   const support = number(v.support);
-  if (!(support > 0)) steps.push('No population of any source has seen this base, so no frequency is guaranteed.');
-  else if (given(v.support_from)) steps.push(`The strongest evidence comes from ${stratumWords(v.support_from)}. Its counts guarantee, with 95% confidence, a frequency of at least ${percent(support)} there. This guaranteed frequency is what igpop calls the support; it is lower than the observed frequency, the more so the fewer people were examined.`);
-  else steps.push(`The counts guarantee, with 95% confidence, a frequency of at least ${percent(support)} in some population.`);
+  if (!(support > 0)) steps.push('No population of any dataset has seen this base.');
+  else if (given(v.support_from)) steps.push(`The strongest evidence comes from ${stratumWords(v.build, v.support_from)}. With its counts, the frequency there is at least ${percent(support)}: the lower end of the 95% confidence range. This lowest plausible frequency is what igpop calls the support. It is below the observed frequency, the more so the fewer people were examined.`);
+  else steps.push(`In its best population the frequency is at least ${percent(support)}: the lower end of the 95% confidence range.`);
   if (given(v.score)) {
     const model = scoreModel();
     const score = Number(v.score);
@@ -126,7 +112,7 @@ function whyScore(v) {
     if (v.score_basis === 'borrowed') steps.push('This is an insertion or deletion. The curve is made from single-base changes, so the score is borrowed from it and is a lower bound: random insertions and deletions turn up in population data far more rarely than random base changes, so the same support counts at least as much.');
   } else steps.push(v.type === 'SNV' ? 'No score could be given.' : 'No score: the curve is made from single-base changes and is borrowed for insertions and deletions only as a lower bound. For this support the bound is below 1 and says nothing, so the verdict rests on whether the change was seen at all.');
   if (v.class === 'common') steps.push(given(v.class_basis) && v.class_basis !== 'dbSNP:COMMON'
-    ? `Apart from the score, a test shows that the frequency reaches 1% in ${stratumWords(v.class_basis)}${given(v.class_p) ? ` (p = ${Number(v.class_p).toPrecision(2)} after correction for the number of populations)` : ''}. A common variant is supported whatever its score.`
+    ? `Apart from the score, a test shows that the frequency reaches 1% in ${stratumWords(v.build, v.class_basis)}${given(v.class_p) ? ` (p = ${Number(v.class_p).toPrecision(2)} after correction for the number of populations)` : ''}. A common variant is supported whatever its score.`
     : 'dbSNP marks this base as common. A common variant is supported whatever its score.');
   else if (support > 0) steps.push(`No population shows a frequency of 1% or more${given(v.class_p) ? ` (best test: p = ${Number(v.class_p).toPrecision(2)})` : ''}, so the verdict follows the score: ${state.limit} or more is supported, 0.1 or less needs confirmation, in between inconclusive.`);
   return steps;
@@ -136,44 +122,39 @@ function whyScore(v) {
  *  it has its score. */
 function evidencePanel(v) {
   const groups = populations(v);
-  const top = Math.max(1e-12, ...groups.flatMap((g) => g.rows.map((r) => (r.af ?? (r.an ? r.ac / r.an : 0)))));
-  const bar = (r) => {
-    const af = r.af ?? (r.an ? r.ac / r.an : 0);
-    return el('tr', { class: af > 0 ? '' : 'zero' },
-      el('th', { scope: 'row', text: r.name }),
-      el('td', {}, el('span', { class: `bar-fill a-${ancestry(r.name)}`, style: `--share:${(100 * af) / top}%` })),
-      el('td', { class: 'num', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
-      el('td', { class: 'num', text: percent(af) }));
-  };
+  const [carried, without] = bySeen(groups);
+  const top = Math.max(1e-12, ...carried.flatMap((g) => g.rows.map(share)));
+  const bar = (r) => el('tr', { class: share(r) > 0 ? '' : 'zero' },
+    el('th', { scope: 'row', text: r.name }),
+    el('td', {}, el('span', { class: `bar-fill a-${r.ancestry}`, style: `--share:${(100 * share(r)) / top}%` })),
+    el('td', { class: 'num', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? 'about ' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
+    el('td', { class: 'num', text: percent(share(r)) }));
   const kind = { SNV: 'single-base change', INS: 'insertion', DEL: 'deletion' }[v.type] || v.type;
   return el('div', { class: 'evidence' },
     el('div', { class: 'evidence-part' },
       el('h4', { text: 'Where' }),
       el('p', {}, `Base ${v.aln_pos} of your sequence (counted from its first base${given(v.aln_pos_genome_strand) && v.aln_pos_genome_strand !== v.aln_pos ? `; base ${v.aln_pos_genome_strand} when the allele is read along the forward strand of the genome, because this gene lies on the reverse strand` : ''}), ${v.build || ''} ${v.contig}:${Number(v.genome_pos).toLocaleString('en')} on the genome. `,
-        `A ${kind}: the reference genome has ${referenceBases(v) || v.vcf_ref}, this allele has ${v.query_variant}`,
+        `A ${kind}: the reference genome has ${v.reference_bases}, this allele has ${v.query_variant}`,
         el('span', { class: 'muted', text: ' (written on the forward strand of the genome, as in the population files; the alignment below shows the gene in its own direction).' }))),
     el('div', { class: 'evidence-part' },
       el('h4', {}, 'Who carries it ', hint('How to read the bars', el('span', { class: 'help-text' }, el('span', { text: 'Each person has two chromosomes, so the counts are of chromosomes.' }), el('span', { text: 'Bars are drawn relative to the population where the base is most frequent. Their colour is the continental group of the population.' })))),
-      groups.length ? groups.map((g) => el('table', { class: 'people' },
+      carried.map((g) => el('table', { class: 'people' },
         el('caption', {}, el('b', { text: g.source }), g.total && g.total.an > 0 ? `: ${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')} chromosomes carry it` : '',
           g.note ? el('small', { class: 'muted', text: ` ${g.note}` }) : null),
         el('thead', { class: 'sr' }, el('tr', {}, ...['Population', 'Share', 'Chromosomes with it', 'Frequency'].map((h) => el('th', { scope: 'col', text: h })))),
-        el('tbody', {}, g.rows.sort((a, b) => (b.af ?? b.ac / b.an) - (a.af ?? a.ac / a.an)).map(bar))))
-        : el('p', { class: 'muted', text: 'No source has a record of this base at this position.' }),
-      groups.length ? ancestryLegend() : null),
+        el('tbody', {}, g.rows.sort((a, b) => share(b) - share(a)).map(bar)))),
+      without.length ? el('p', { class: 'not-seen' }, el('b', { text: carried.length ? 'Looked for and not seen in: ' : 'Looked for and seen nowhere: ' }), without.map(examined).join('; '), '.') : null,
+      groups.length ? null : el('p', { class: 'muted', text: 'No dataset has a record of this base at this position.' }),
+      carried.length ? ancestryLegend() : null),
     el('div', { class: 'evidence-part' },
       el('h4', {}, 'Why this verdict ', hint('The reasoning step by step', el('span', { class: 'help-text' }, whyScore(v).map((step, i) => el('span', { text: `${i + 1}. ${step}` }))))),
       whyBrief(v)),
     comparison(v));
 }
 
-/** The bases of the reference genome a difference replaces, on the
- *  forward strand. */
-const referenceBases = (v) => (given(v.reference_bases) ? v.reference_bases : v.vcf_ref && v.vcf_ref !== '-' && !v.vcf_alt.includes(',') ? v.vcf_ref : '');
-
 /** A difference in words: from what to what. */
 export function changeWords(v) {
-  const [from, to] = [referenceBases(v), v.query_variant];
+  const [from, to] = [v.reference_bases, v.query_variant];
   if (v.type === 'SNV') return from ? `base change ${from} to ${to}` : `base change to ${to}`;
   // Insertions and deletions are written with the base before them.
   if (v.type === 'DEL') return from ? `deletion of ${from.slice(to.length)}` : `deletion, leaving ${to}`;
@@ -181,35 +162,47 @@ export function changeWords(v) {
   return `${v.type} ${to}`;
 }
 
+/** The frequency of one row of population data. */
+const share = (r) => r.af ?? (r.an ? r.ac / r.an : 0);
+
+/** The datasets of a difference in two lists: those that have seen it, and
+ *  those that looked for it and have not. */
+function bySeen(groups) {
+  const seen = (g) => g.rows.some((r) => share(r) > 0);
+  return [groups.filter(seen), groups.filter((g) => !seen(g))];
+}
+
+/** A dataset that has not seen a difference, with the chromosomes it examined. */
+const examined = (g) => (g.total && g.total.an > 0 ? `${g.source} (${g.total.an.toLocaleString('en')} chromosomes)` : g.source);
+
 /** The population data of one difference, briefly, for a popup: per
  *  source the chromosomes that carry it, and the populations where it is
  *  most frequent as bars on the scale of the frequency line. */
 function peoplePopup(v) {
-  const groups = populations(v);
+  const [carried, without] = bySeen(populations(v));
   const support = number(v.support);
-  const share = (r) => r.af ?? (r.an ? r.ac / r.an : 0);
   // The same scale as the frequency line: one in a million to 100%.
   const width = (af) => `${Math.max(2, Math.min(100, ((Math.log10(af) - LOG_MIN) / -LOG_MIN) * 100))}%`;
-  const kind = (source) => (/1000 Genomes/.test(source) ? 'kgp' : /gnomAD/.test(source) ? 'gnomad' : 'dbsnp');
-  const blocks = groups.map((g) => {
-    const seen = [...g.rows].filter((r) => share(r) > 0).sort((x, y) => share(y) - share(x));
+  const blocks = carried.map((g) => {
+    const seen = g.rows.filter((r) => share(r) > 0).sort((x, y) => share(y) - share(x));
     const top = seen.slice(0, 3);
-    return el('span', { class: `tip-source s-${kind(g.source)}` },
+    return el('span', { class: 'tip-source' },
       el('span', { class: 'tip-head' }, el('b', { text: g.source }),
         g.total && g.total.an > 0 ? el('span', { text: `${g.total.ac.toLocaleString('en')} of ${g.total.an.toLocaleString('en')}` }) : null),
-      top.length ? el('span', { class: 'tip-rows' }, top.flatMap((r) => [
+      el('span', { class: 'tip-rows' }, top.flatMap((r) => [
         el('span', { class: 'tip-name', text: r.name }),
-        el('span', { class: 'tip-track' }, el('i', { class: `a-${ancestry(r.name)}`, style: `width:${width(share(r))}` })),
+        el('span', { class: 'tip-track' }, el('i', { class: `a-${r.ancestry}`, style: `width:${width(share(r))}` })),
         el('span', { class: 'tip-count', text: Number.isFinite(r.ac) && r.an ? `${r.estimated ? '~' : ''}${r.ac.toLocaleString('en')} of ${r.an.toLocaleString('en')}` : '' }),
         el('span', { class: 'tip-share', text: percent(share(r)) }),
-      ])) : el('span', { class: 'tip-none', text: 'not seen' }),
+      ])),
       seen.length > top.length ? el('span', { class: 'tip-none', text: `and ${plural(seen.length - top.length, 'more population')}` }) : null);
   });
+  if (without.length) blocks.push(el('span', { class: 'tip-none', text: `${carried.length ? 'Not seen in' : 'Looked for and seen nowhere'}: ${without.map(examined).join('; ')}.` }));
   return el('span', { class: 'people-tip' },
-    blocks.length ? blocks : el('span', { text: 'No source has a record of this base at this position.' }),
-    blocks.length ? el('span', { class: 'tip-none', text: 'Counts are chromosomes. Bars run from 0.0001% to 100% in steps of ten; the line marks 1%.' }) : null,
+    blocks.length ? blocks : el('span', { text: 'No dataset has a record of this base at this position.' }),
+    carried.length ? el('span', { class: 'tip-none', text: 'Counts are chromosomes. Bars run from 0.0001% to 100% in steps of ten; the line marks 1%.' }) : null,
     support > 0 || given(v.score) ? el('span', { class: 'tip-foot' },
-      support > 0 ? el('span', {}, 'Guaranteed frequency ', el('b', { text: `at least ${percent(support)}` })) : el('span', { text: 'Never seen' }),
+      support > 0 ? el('span', {}, 'Lowest plausible frequency ', el('b', { text: percent(support) })) : el('span', { text: 'Never seen' }),
       given(v.score) ? el('span', {}, 'Score ', el('b', { text: scoreText(Number(v.score)) })) : null) : null);
 }
 
@@ -251,18 +244,17 @@ export function variantTable(variants, opened) {
     el('tbody', {}, rows)), frequencyLegend());
 }
 
-/** A note under the reasons when the position fails 1000 Genomes site checks. */
+/** A note under the reasons when the position fails a dataset's site checks. */
 function siteQuality(v) {
-  if (!given(v.kgp_site_qc) || v.kgp_site_qc === 'PASS') return null;
-  const failed = v.kgp_site_qc.split(/[;,]/).filter(Boolean);
-  const words = failed.map((item) => (SITE_QC.find(([pattern]) => pattern.test(item)) || [null, item])[1]);
+  const failed = failures(v);
+  if (!failed.length) return null;
+  const words = (item) => (SITE_QC.find(([pattern]) => pattern.test(item)) || [null, item])[1];
   return el('span', { class: 'qc' }, explain(
     el('span', { class: 'chip chip-qc hint-value', tabindex: '0', text: 'less reliable position' }),
     el('span', {},
-      el('b', { text: 'The 1000 Genomes genotypes are less reliable here' }),
-      el('span', { text: 'The project checks every position of the genome. This one fails:' }),
-      el('span', { class: 'hint-list' }, words.map((w) => el('span', { text: `\u2022 ${w}` }))),
-      el('span', { text: 'This is common in antibody genes, which exist in several similar copies. It does not mean the variant is wrong. It means its frequency in 1000 Genomes is less certain, and that the haplotype check cannot use this position.' }))));
+      el('b', { text: 'The genotypes at this position are less reliable' }),
+      ...failed.map(({ source, failed: items }) => el('span', { class: 'hint-list' }, el('span', { text: `${source}:` }), items.map((item) => el('span', { text: `\u2022 ${words(item)}` })))),
+      el('span', { text: 'This is common in antibody genes, which exist in several similar copies. It does not mean the variant is wrong. It means its frequency in that dataset is less certain.' }))));
 }
 
 function scoreCell(v) {

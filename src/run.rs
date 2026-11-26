@@ -157,9 +157,22 @@ impl<'a> Session<'a> {
 
     /// The tabix-indexed files `finish` will read, with their regions.
     pub fn downloads(&self) -> Vec<evidence::Download> {
+        let main = self.stages.first().map(|stage| stage.build.as_str());
         self.stages
             .iter()
-            .flat_map(|stage| evidence::downloads(&stage.sources, &stage.windows, &stage.placed))
+            .flat_map(|stage| {
+                // Two builds can read a source of the same name.
+                let other = (Some(stage.build.as_str()) != main).then_some(&stage.build);
+                evidence::downloads(&stage.sources, &stage.windows, &stage.placed)
+                    .into_iter()
+                    .map(move |download| evidence::Download {
+                        title: match other {
+                            Some(build) => format!("{} ({build})", download.title),
+                            None => download.title,
+                        },
+                        ..download
+                    })
+            })
             .collect()
     }
 

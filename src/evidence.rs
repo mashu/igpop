@@ -86,8 +86,15 @@ fn haplotype_regions(windows: &[Window], placed: &[Placed]) -> Vec<Region> {
     loci(windows, placed, |p| p.placement.is_some() && p.status != Status::LowIdentity)
 }
 
+/// What the two sources that are not datasets with counts are called in
+/// progress messages.
+const DBSNP: &str = "dbSNP";
+const PHASED: &str = "the phased chromosomes of 1000 Genomes";
+
 /// One tabix-indexed file a run reads, and the regions it reads of it.
 pub struct Download {
+    /// What the file is, in words.
+    pub title: String,
     /// Path or URL; `{contig}` stands for the contig name.
     pub spec: String,
     pub regions: Vec<Region>,
@@ -100,15 +107,17 @@ pub fn downloads(sources: &Sources, windows: &[Window], placed: &[Placed]) -> Ve
     let mut out: Vec<Download> = sources
         .datasets
         .iter()
-        .map(|dataset| dataset.spec.clone())
-        .chain(sources.dbsnp.clone())
-        .map(|spec| Download {
+        .map(|dataset| (dataset.title, dataset.spec.clone()))
+        .chain(sources.dbsnp.clone().map(|spec| (DBSNP, spec)))
+        .map(|(title, spec)| Download {
+            title: title.to_string(),
             spec,
             regions: frequency.clone(),
         })
         .collect();
     if let Some(spec) = &sources.phased {
         out.push(Download {
+            title: PHASED.to_string(),
             spec: spec.clone(),
             regions: haplotype_regions(windows, placed),
         });
@@ -183,7 +192,7 @@ impl Evidence {
         }
         let mut datasets = Vec::new();
         for dataset in std::mem::take(&mut sources.datasets) {
-            note!("{}: {}", dataset.name, dataset.spec);
+            note!("reading {}: {}", dataset.title, dataset.spec);
             let (required, title) = (dataset.required, dataset.title);
             match Counted::read(dataset, &regions, cache) {
                 Ok(counted) => datasets.push(counted),
@@ -194,7 +203,7 @@ impl Evidence {
         sources.datasets = datasets.iter().map(|counted| counted.dataset.clone()).collect();
         let mut dbsnp = Dbsnp::default();
         if let Some(spec) = &sources.dbsnp {
-            note!("dbSNP: {spec}");
+            note!("reading {DBSNP}: {spec}");
             // If dbSNP is unavailable the run continues without it.
             let lines = fetch_vcf(spec, &regions, cache).unwrap_or_else(|e| {
                 note!("warning: dbSNP could not be read; no rsIDs, no relayed frequencies: {e:#}");
@@ -217,7 +226,7 @@ impl Evidence {
         }
         let mut panel = None;
         if let Some(spec) = &sources.phased {
-            note!("phased panel: {spec}");
+            note!("reading {PHASED}: {spec}");
             // Additional evidence: if the panel is unavailable the run
             // continues without the haplotype check.
             match load_panel(spec, &sources.pedigree, &hap_regions, cache) {

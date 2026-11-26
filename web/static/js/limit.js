@@ -115,8 +115,8 @@ export function renderLimit() {
       ? fact('any', 'even a base never seen passes', [`A base that no dataset has seen scores ${scoreText(model.score(0))}, which is at or above this limit.`])
       : Number.isFinite(at)
         ? fact(percent(at), 'frequency a difference must be shown to reach', [
-          `A difference scores ${state.limit} or more when the data guarantee, with 95% confidence, a frequency of at least ${percent(at)} in some population of some source.`,
-          'This guaranteed frequency is lower than the observed one, the more so the fewer people were examined: 3 carriers among 200 chromosomes guarantee less than 300 among 20,000.',
+          `A difference scores ${state.limit} or more when its lowest plausible frequency (the lower end of the 95% confidence range) is ${percent(at)} or more in some population of some dataset.`,
+          'That figure is below the observed frequency, the more so the fewer people were examined: 3 carriers among 200 chromosomes show less than 300 among 20,000.',
           'A difference shown to reach 1% in a population is supported whatever this limit.'])
         : fact('none', 'no frequency reaches this score in this run', ['The score curve of this run stays below this limit even for a base that everyone carries.']),
     everything

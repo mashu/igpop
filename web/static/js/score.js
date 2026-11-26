@@ -99,7 +99,7 @@ export function comparisonChart(v) {
     picture.append(text(slot0, plot.top - 8, 'plot-title', title, 'start'));
     for (let decade = -6; decade <= 0; decade += 1) {
       picture.append(svg('line', { x1: xOf(10 ** decade), x2: xOf(10 ** decade), y1: plot.top, y2: plot.bottom, class: 'grid' }));
-    }    // From 1% on a variant is common, and supported whatever its score.
+    }    // The frequency a variant must demonstrably reach to be called common.
     picture.append(svg('line', { x1: xOf(0.01), x2: xOf(0.01), y1: plot.top, y2: plot.bottom, class: 'one-percent' }));
   };
 
@@ -160,7 +160,7 @@ export function comparisonChart(v) {
     picture.append(text(xOf(10 ** decade), ALL.bottom + 14, 'tick', `${Number((100 * 10 ** decade).toPrecision(1))}%`, decade === 0 ? 'end' : 'middle'));
   }
   picture.append(text((slot0 + slot1) / 2, ALL.bottom + 14, 'tick', 'never seen'));
-  picture.append(text((x0 + x1) / 2, ALL.bottom + 30, 'axis-name', 'Support: the frequency the data guarantee in the best population'));
+  picture.append(text((x0 + x1) / 2, ALL.bottom + 30, 'axis-name', 'Support: the lowest plausible frequency in the best population'));
 
   if (v) {
     const at = xOf(support);
@@ -178,7 +178,7 @@ function comparisonLegend(v) {
     el('span', { class: 'key' }, el('i', { class: 'swatch band-score' }), ' its 95% range'),
     el('span', { class: 'key' }, el('i', { class: 'swatch real' }), ' real variants'),
     el('span', { class: 'key' }, el('i', { class: 'swatch' }), ' all possible changes'),
-    el('span', { class: 'key' }, el('i', { class: 'line' }), ' 1%: common from here'),
+    el('span', { class: 'key' }, el('i', { class: 'line' }), ' 1%'),
     v ? el('span', { class: 'key' }, el('i', { class: 'swatch this-mark' }), ' this difference') : null);
 }
 

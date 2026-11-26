@@ -138,7 +138,7 @@ function mappingRow(group, sources) {
     el('th', { scope: 'row' }, group.named,
       el('small', { class: 'muted', text: ` ${plural(group.alleles.length, 'allele')}: ${group.alleles.slice(0, 4).map(short).join(', ')}${group.alleles.length > 4 ? ', …' : ''}` }),
       group.state === 'rule' ? el('small', { class: 'map-rule', text: `The gene list has no gene called ${group.named}. It knows these alleles as ${group.gene}, so they are sent there automatically.` }) : null),
-    el('td', { class: 'map-link' }, el('span', { class: `arrow a-${link.arrow}`, 'aria-hidden': 'true' }), el('span', { class: 'map-how', title: link.help || '', text: link.label })),
+    el('td', { class: 'map-link' }, el('span', { class: `arrow ${link.arrow}`, 'aria-hidden': 'true' }), el('span', { class: 'map-how', title: link.help || '', text: link.label })),
     el('td', {}, target),
     el('td', {}, decisionSelect(`What to do with ${group.named}`, chosen, group.named, (value) => decide(group, value)), ' ', toggle))];
 }

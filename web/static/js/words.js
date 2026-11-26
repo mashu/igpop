@@ -44,7 +44,7 @@ export const HAPLOTYPES = {
   not_checked: { label: 'Not checked', help: 'Not placed, or no phased data for this build.' },
 };
 
-export const OUTPUTS = ['report.md', 'final.tsv', 'alleles.tsv', 'variants.tsv', 'alignments.tsv', 'alignments.txt', 'score_model.tsv', 'score_levels.tsv', 'haplotype_calibration.tsv', 'dbsnp_datasets.tsv'];
+export const OUTPUTS = ['report.md', 'final.tsv', 'alleles.tsv', 'variants.tsv', 'alignments.tsv', 'alignments.txt', 'score_model.tsv', 'score_levels.tsv', 'haplotype_calibration.tsv', 'populations.tsv', 'site_quality.tsv', 'datasets.tsv'];
 
 export const ROUTES = {
   frequency: { label: 'by frequency', help: 'Each difference is an established population variant.' },
@@ -62,7 +62,9 @@ export const FILE_NOTES = {
   'score_model.tsv': 'The curve behind the score',
   'score_levels.tsv': 'Real variants and possible changes counted per level of support',
   'haplotype_calibration.tsv': 'How often an arbitrary change is found on phased chromosomes',
-  'dbsnp_datasets.tsv': 'dbSNP datasets and whether each was used',
+  'populations.tsv': 'Every count behind the verdicts: one row per difference and population',
+  'site_quality.tsv': 'How far each dataset\u2019s counts can be trusted at each difference',
+  'datasets.tsv': 'The populations of the run: who they are and how many chromosomes',
 };
 
 export const sortGenes = (a, b) => a.localeCompare(b, 'en', { numeric: true });
@@ -89,10 +91,10 @@ export const scoreText = (x) => (x >= 10 ? x.toFixed(0) : x >= 1 ? x.toFixed(1) 
 
 export const pct = (x) => (x >= 0.995 ? '100%' : `${Number((100 * x).toPrecision(2))}%`);
 
-// Why the 1000 Genomes genotypes at a position are less reliable: the
-// project's own criteria for a site, in plain words.
+// Why the genotypes of a dataset at a position are less reliable: the
+// site criteria of site_quality.tsv, in plain words.
 export const SITE_QC = [
-  [/^FILTER=/, 'the project\u2019s variant filter did not pass this call: the reads that support it look less like a true variant than usual'],
+  [/^FILTER=/, 'the dataset\u2019s own variant filter did not pass this call: the reads that support it look less like a true variant than usual'],
   [/^missingness/, 'more than 5% of the people have no genotype here, usually because too few reads could be placed'],
   [/^HWE/, 'the numbers of carriers of one and of two copies do not fit together in any population, as happens when reads of a second copy of the gene are mixed in'],
   [/^mendelian/, 'in more than 5% of the families the child\u2019s genotype does not fit the parents\u2019'],

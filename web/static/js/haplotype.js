@@ -1,11 +1,16 @@
 // The haplotype check of an opened allele.
 
 import { el } from './dom.js?v=BUILD';
-import { POPS, POP_NAMES } from './populations.js?v=BUILD';
+import { groupTitle } from './populations.js?v=BUILD';
 import { state } from './state.js?v=BUILD';
 import { given, number } from './tsv.js?v=BUILD';
 import { changeWords, detailSection } from './variants.js?v=BUILD';
 import { HAPLOTYPES } from './words.js?v=BUILD';
+
+// The phased panel is that of 1000 Genomes: its chromosomes are counted
+// in the five groups of that project, named as in datasets.tsv.
+const PANEL_GROUPS = ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'];
+const PANEL = { GRCh38: '1kGP_30x', GRCh37: '1kGP_phase3' };
 
 export function haplotypePanel(allele) {
   const info = HAPLOTYPES[allele.hap_status];
@@ -32,7 +37,7 @@ export function haplotypePanel(allele) {
     const caption = which === 'exact'
       ? `${total.toLocaleString('en')} of ${Number(allele.hap_total).toLocaleString('en')} chromosomes of unrelated people${donors}.`
       : `${total.toLocaleString('en')} of ${Number(allele.hap_total).toLocaleString('en')} chromosomes of unrelated people.`;
-    const shares = POPS.map((pop) => {
+    const shares = PANEL_GROUPS.map((pop) => {
       const [count, size] = (allele[`hap_${which}_${pop}`] || '0/0').split('/').map(Number);
       return { pop, count, size, share: size ? count / size : 0 };
     });
@@ -42,7 +47,7 @@ export function haplotypePanel(allele) {
       el('p', { text: caption }),
       el('table', { class: 'bars' }, el('caption', { class: 'sr', text: `${title}, per population group` }),
         el('tbody', {}, shares.map((s) => el('tr', {},
-          el('th', { scope: 'row', text: POP_NAMES[s.pop] }),
+          el('th', { scope: 'row', text: groupTitle(allele.build, PANEL[allele.build], s.pop) }),
           el('td', {}, el('span', { class: 'bar-fill', style: `--share:${(100 * s.share) / top}%` })),
           el('td', { class: 'num', text: `${s.count.toLocaleString('en')} of ${s.size.toLocaleString('en')}` }),
           el('td', { class: 'num', text: `${(100 * s.share).toFixed(s.share < 0.01 ? 2 : 1)}%` }))))),
